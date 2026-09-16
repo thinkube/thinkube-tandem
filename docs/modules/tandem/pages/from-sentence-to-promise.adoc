@@ -10,18 +10,27 @@ Write a line such as "Finished tasks stop crowding the ones I still have to do" 
 
 A sentence a person writes has two parts, and the machine reads exactly those two: what it is about, and what must become true of it. Nothing else is read into it.
 
-[mermaid]
+[d2,alt="One sentence read into what it is about and what must become true of it, grouped into a thing to build, worked out into a promise with its lines, and a check written before the code"]
 ....
-flowchart TB
-  s["Your sentence<br/><i>Finished tasks stop crowding the ones I still have to do.</i>"]
-  s --> sub["what it is about<br/><b>Finished tasks</b>"]
-  s --> cl["what must become true of it<br/><i>stop crowding the ones I still have to do</i>"]
-  sub --> thing["a thing to build<br/>the sentences about the same subject, together:<br/><i>I can see at a glance what still needs doing</i>"]
-  cl --> p["a promise, when you build that thing<br/><i>Finished tasks are kept out of the list of things still to do,<br/>with a control that brings them back into view when wanted.</i><br/>lands in: the tasks store, the home page"]
-  p --> l1["By default the tasks page shows no card for a finished task<br/>· checked when it is built"]
-  p --> l2["The control's label reads in each of the three offered languages<br/>· judged by a reviewer at delivery"]
-  p --> l3["Hiding or revealing finished tasks never changes the order of the rest<br/>· only you can see this"]
-  l1 --> c["a check, written before the code,<br/>by a worker that never sees the code"]
+direction: down
+sentence: "Your sentence\n\"Finished tasks stop crowding\nthe ones I still have to do.\""
+about: "what it is about\nFinished tasks"
+claim: "what must become true of it\nstop crowding the ones\nI still have to do"
+thing: "a thing to build\nthe sentences about the same subject:\n\"I can see at a glance\nwhat still needs doing\""
+promise: "a promise, when you build that thing\nFinished tasks are kept out of the list\nof things still to do, with a control that\nbrings them back into view when wanted\nlands in: the tasks store, the home page"
+line1: "By default the tasks page shows\nno card for a finished task\n· checked when it is built"
+line2: "The control's label reads in each\nof the three offered languages\n· judged by a reviewer at delivery"
+line3: "Hiding or revealing finished tasks\nnever changes the order of the rest\n· only you can see this"
+check: "a check, written before the code,\nby a worker that never sees the code"
+sentence -> about
+sentence -> claim
+about -> thing
+thing -> promise: "when you build it"
+claim -> promise
+promise -> line1
+promise -> line2
+promise -> line3
+line1 -> check
 ....
 
 *Reading.* *Read these N* shows the sentence back with its two parts marked: the subject highlighted, the claim underlined. Under the box, *What I read in your words* lists each subject with how many claims it carries. Two sentences that name the same subject, "My tasks" and "Finished tasks", meet under it; that is how the machine knows they belong together without you saying so. A sentence that never names its subject shows the subject in brackets and the word *names nothing*, so you can see that the machine guessed. Reading records nothing; if it read you wrong, change the words and read again.

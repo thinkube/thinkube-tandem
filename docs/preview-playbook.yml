@@ -12,11 +12,7 @@ ui:
     snapshot: true
 asciidoc:
   extensions:
-    - asciidoctor-kroki
-  attributes:
-    kroki-server-url: https://kroki.io
-    kroki-fetch-diagram: true
-    kroki-default-format: svg
+    - ./lib/d2-block.js
 output:
   dir: docs/build/site
 runtime:

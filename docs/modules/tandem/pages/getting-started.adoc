@@ -37,13 +37,15 @@ If your workspace has more than one folder, Tandem asks which repository you mea
 
 The strip is there so that you never have to work out what to do next. Across the top of the space is one line saying where you are, such as *9 lines written, not read*, and one button, the next thing you can do. Under the strip are the names of the four pages: *the box*, *your sentences*, *what it will do*, *the run*. The strip moves you forward; the page names let you look back, and *back to now* returns.
 
-[mermaid]
+[d2,alt="The four pages of the space in the order the strip moves through them: the box, your sentences, what it will do, the run"]
 ....
-flowchart LR
-  box["the box<br/>write, read"] --> sentences["your sentences<br/>keep, group"]
-  sentences --> work["what it will do<br/>promises, sign"]
-  work --> run["the run<br/>cards, then the report"]
-  run -- "Go on to the next" --> sentences
+direction: right
+box: "the box\nwrite, read"
+sentences: "your sentences\nkeep, group"
+work: "what it will do\npromises, sign"
+run: "the run\ncards, then the report"
+box -> sentences -> work -> run
+run -> sentences: "Go on to the next" {style.stroke-dash: 4}
 ....
 
 == 3. Write in the box

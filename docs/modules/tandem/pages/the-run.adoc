@@ -10,21 +10,27 @@ After *Build these N* the page *the run* shows one card per piece of work with a
 
 The machine building your thing is not trusted to grade its own work. That one decision fixes the order of everything you see on the run page.
 
-[mermaid]
+[d2,alt="The run as its cards show it: preparing the tree, the check and code workers, audit and tests brought under, the closing gate, handing it over, taking it live, on the running product, the report"]
 ....
-flowchart TB
-  door["preparing the tree<br/>the project must build before anything is touched"]
-  door --> check["check<br/>a worker writes the checks<br/>without seeing the code"]
-  door --> code["code<br/>another worker writes the code<br/>without seeing the checks"]
-  check --> audit["audit<br/>every check of this piece,<br/>on the real state"]
-  code --> audit
-  code --> tests["tests brought under<br/>the project's own tests,<br/>after the code lands"]
-  audit --> gate["The closing gate<br/>every check again, clean;<br/>the project's own suite"]
-  tests --> gate
-  gate --> hand["handing it over<br/>merged and pushed"]
-  hand --> live["taking it live<br/>the platform builds and deploys"]
-  live --> product["on the running product<br/>one reviewer per promise,<br/>in a browser"]
-  product --> report["the report"]
+direction: down
+door: "preparing the tree\nthe project must build before anything is touched"
+check: "check\na worker writes the checks\nwithout seeing the code"
+code: "code\nanother worker writes the code\nwithout seeing the checks"
+audit: "audit\nevery check of this piece,\non the real state"
+tests: "tests brought under\nthe project's own tests,\nafter the code lands"
+gate: "The closing gate\nevery check again, clean;\nthe project's own suite"
+hand: "handing it over\nmerged and pushed"
+live: "taking it live\nthe platform builds and deploys"
+product: "on the running product\none reviewer per promise,\nin a browser"
+report: "the report"
+door -> check
+door -> code
+check -> audit
+code -> audit
+code -> tests
+audit -> gate
+tests -> gate
+gate -> hand -> live -> product -> report
 ....
 
 * *preparing the tree* comes first because a project that does not build before the run touched anything could never ship what the run delivers. The door proves the project's own build and finds its test commands.

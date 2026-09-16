@@ -21,9 +21,13 @@ inside the tool.
 - A list of labels is a table with a column for what each means and
   what to do, never a sentence that strings the labels together.
 - A flow that has more than three steps is a diagram, drawn from what
-  the reader sees (Kroki renders `[mermaid]` blocks at build time).
-- Captures come from a walk of the real product; the file
-  `thinkube-release/walks/` holds the walks and their observations.
+  the reader sees. Diagrams are `[d2,alt="…"]` literal blocks in the page;
+  `docs/lib/d2-block.js` renders them with the local `d2` binary during the
+  build, with the ELK layout. The build needs `d2` on PATH and nothing on
+  the network. The site repository carries the same extension in
+  `lib/d2-block.js`; a change to one is made to both.
+- Captures come from a walk of the real product; `thinkube-release/walks/`
+  holds the walks and their observations.
 - No time figures. No internals page "for developers" beside the user
   pages; that account lives in the code and the commit messages.
 
