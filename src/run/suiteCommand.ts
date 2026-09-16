@@ -37,11 +37,15 @@ const firstLine = (output: string): string => output.trim().split("\n").pop() ??
  * failing is its business. "command not found" is not an answer, and
  * reporting it as a red suite tells a person their work broke when what
  * broke is the run's idea of how to test their repository.
+ *
+ * The words runners answer in: TAP (`ok 1`), pytest and jest (`1 failed`),
+ * go (`--- FAIL`), and node's own reporter, which answers `ℹ pass 1` and
+ * `ℹ fail 0` rather than TAP from node 22 on.
  */
 export function aRunnerAnswered(code: number | null, output: string): boolean {
   return (
     code === 0 ||
-    /^(not )?ok \d+|\b\d+ (passed|failed|failures?)\b|^(--- )?(PASS|FAIL)\b|^# (tests|fail)/m.test(output)
+    /^(not )?ok \d+|\b\d+ (passed|failed|failures?)\b|^(--- )?(PASS|FAIL)\b|^# (tests|fail)|^\u2139 (tests|pass|fail) \d+/m.test(output)
   );
 }
 

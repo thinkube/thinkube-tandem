@@ -34,7 +34,7 @@ import * as path from "node:path";
 import type { Exec } from "./oracle";
 import { isProbePath, isTestPath } from "./testHomes";
 import { releaseBorrowed, removeOwned } from "./ownTree";
-import { askForTheSuite, proveSuite } from "./suiteCommand";
+import { aRunnerAnswered, askForTheSuite, proveSuite } from "./suiteCommand";
 import { proved, type Proved } from "./proved";
 import { linkProvisioned } from "./linkProvisioned";
 import { tail } from "./toolWords";
@@ -504,7 +504,7 @@ async function proveRunOne(
   // Held means the runner RAN the test — green, or red in the runner's own
   // words. A red test on the base is the base's business; a command that
   // cannot run one file at all is not a way to run one.
-  const ran = r.code === 0 || /^(not )?ok \d+|\b\d+ (passed|failed)\b|^(--- )?(PASS|FAIL)\b/m.test(r.output);
+  const ran = aRunnerAnswered(r.code, r.output);
   const why = tail(r.output, 300).split("\n").filter((l) => l.trim()).pop() ?? "";
   args.log(`  ${ran ? "held" : "did not hold"} in ${since(t0)}${ran ? "" : ` — ${why}`}`);
   return ran ? { held: args.runOne, tried: true, sample } : { held: "", tried: true, sample, why };
