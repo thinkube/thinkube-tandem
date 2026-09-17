@@ -54,9 +54,9 @@ Two moments are yours and only yours. *Sign* freezes exactly what you saw into w
 
 The Tandem icon in Thinkube IDE opens the space: your sentences at the top, what the machine derived from them below, and one button for the next step. Everything Tandem does is on that page.
 
-* xref:build-your-first-change-with-tandem.adoc[Build your first change with Tandem]: from an empty box to a change running, screen by screen.
+* xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem]: from an empty box to a change running, screen by screen.
 * xref:from-sentence-to-promise.adoc[How a sentence becomes a promise]: what the machine reads in your words, and how that becomes promises, checks and a documentation page.
-* xref:turn-what-the-reviewers-noticed-into-the-next-change.adoc[Turn what the reviewers noticed into the next change]: turning what the reviewers found into the next thing to build.
+* xref:turn-what-the-reviewers-noticed-into-the-next-change.adoc[Build the improvements Tandem's reviewers suggest]: turning what the reviewers found into the next thing to build.
 * xref:the-run.adoc[While it builds]: what the run page shows and why the machine works the way it does.
 * xref:the-report.adoc[Reading the report and deciding]: what each section and button means.
 * xref:words-on-the-page.adoc[The words on the page]: every line the strip can show and what to do about it.

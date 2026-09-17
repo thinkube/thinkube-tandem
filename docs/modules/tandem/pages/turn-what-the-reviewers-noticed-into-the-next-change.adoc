@@ -1,4 +1,4 @@
-= Turn what the reviewers noticed into the next change
+= Build the improvements Tandem's reviewers suggest
 :page-type: playbook
 :page-area: tandem
 :page-tagline: Keep the findings a report lists, put them in the box as sentences, and build them without touching what is already built
@@ -29,7 +29,7 @@ You keep six findings from two reports of the todo app, turn them into six sente
 
 *Required*
 
-* xref:build-your-first-change-with-tandem.adoc[Build your first change with Tandem]: a space with at least one delivered thing.
+* xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem]: a space with at least one delivered thing.
 
 *Optional*
 
@@ -100,7 +100,7 @@ On the walk the six sentences became four new things, carrying sentences 11; 10;
 
 === Step 5. Build the first
 
-Press *Build the first*, then *Build these N* on the work page, as in xref:build-your-first-change-with-tandem.adoc[Build your first change with Tandem]. The run builds the thing, deploys it and reports.
+Press *Build the first*, then *Build these N* on the work page, as in xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem]. The run builds the thing, deploys it and reports.
 
 On the walk the first new thing was sentence 11, "keep the task list in one predictable order". It took 7 min to work out and 17 min to run, and ended delivered with 8 checks passed and the reviewer on the running product green. After *Go on to the next*, the strip said *15 sentences · 3 things to build*.
 
@@ -108,7 +108,7 @@ On the walk the first new thing was sentence 11, "keep the task list in one pred
 
 * xref:the-report.adoc[Reading the report and deciding]: *Go on to the next*, *Take it back out* and *Run it again*.
 * xref:defect-ledger.adoc[The defect ledger]: what the runs caught and repaired.
-* xref:build-your-first-change-with-tandem.adoc[Build your first change with Tandem]: the full path of one thing.
+* xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem]: the full path of one thing.
 
 == Troubleshooting
 

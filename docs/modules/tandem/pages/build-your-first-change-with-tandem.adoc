@@ -1,4 +1,4 @@
-= Build your first change with Tandem
+= Build your first application change with Tandem
 :page-type: playbook
 :page-area: tandem
 :page-tagline: Write what you want in plain sentences, see how they were read, sign the promises, and get the change running in your app
@@ -192,7 +192,7 @@ image::tandem-14-everything-built.png[The space with everything built: three acc
 
 === Step 11. Next steps
 
-* xref:turn-what-the-reviewers-noticed-into-the-next-change.adoc[Turn what the reviewers noticed into the next change]: the reviewers' findings as the next sentences.
+* xref:turn-what-the-reviewers-noticed-into-the-next-change.adoc[Build the improvements Tandem's reviewers suggest]: the reviewers' findings as the next sentences.
 * xref:the-report.adoc[Reading the report and deciding]: every section and button of the report.
 * xref:the-run.adoc[While it builds]: what happens in each phase of a run.
 
