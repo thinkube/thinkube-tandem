@@ -2,7 +2,7 @@
 :page-type: reference
 
 .TL;DR
-Every defect a run catches is one row in `defects/<YYYY-MM>.jsonl` at the store's root. A row is written the moment the defect is found and never edited. *Tandem: Show Defects* renders the month as a table with the fate of every row. xref:defect-ledger.adoc[The defect ledger] is what the rows mean and why they are kept.
+Every defect a run catches is one row in `defects/<YYYY-MM>.jsonl` at the store's root. A row is written the moment the defect is found and never edited. *Tandem: Show Defects* renders the month as a table with the fate of every row. xref:index.adoc[Thinkube Tandem] says why the rows are kept.
 
 == The file
 
@@ -21,7 +21,7 @@ One file per month at the store's root, shared by every space; each row names th
 | Where it happened: the thinking space, the signed work (`TEP-<author>-<n>`), the run, the piece of work and the worker.
 
 | `activity`, `trigger`, `type`, `stage`, `impact`
-| The classification; the values are listed on xref:defect-ledger.adoc#_the_axes[The axes].
+| The classification; the values are listed under <<_the_axes,The axes>>.
 
 | `detail`
 | The evidence, in the words of whatever caught it.
@@ -29,6 +29,23 @@ One file per month at the store's root, shared by every space; each row names th
 | `refs`
 | Related identifiers: a commit, a check, a file.
 |===
+
+== The axes
+
+[cols="1,1,3",options="header"]
+|===
+| ODC attribute | Field in a row | What it holds in Tandem
+
+| Activity | `activity` | What the run was doing when the defect surfaced: `preflight`, `check authoring`, `unit execution`, `worker question`, `verify-oracle supervision`, `closing gate`, `closing`, `run`, `refresh`, `diagnosis`, `challenge`, `check repair`, `gate repair`, `clearance`, `tool development`.
+| Trigger | `trigger` | What surfaced it: `probe-audit`, `containment`, `gate-verifier`, `supervisor`, `oracle-ruling`, `author-resume`, `closer`, `stub-scan`, `gate-ac`, `gate-infra`, `suite`, `watchdog`, `crash`, `window-reload`, `self-repair`, and the preflight refusals such as `plan-check-homes` and `signature-drift`.
+| Defect type | `type` | Whose fault it was, as the judge saw it: `code`, `test`, `contract` (the brief lacked a fact), `gate`, `machine` (Tandem's own machinery, wherever the failure was caught), `infrastructure`, `environment`, `decision`. A closed set.
+| Qualifier | `qualifier` | `missing`, written for a deferral the honesty scan found in delivered code.
+| Stage | `stage` | Where in the pipeline it belongs: `author`, `brief`, `check`, `clearance`, `altitude`.
+| Impact | `impact` | The cost, as one sentence the catching site chose: `run refused`, `round lost`, `unit undelivered`, `the author repaired its own work`, `closed what no other actor could`, `delivery withheld`, and so on.
+| Fate | computed when read | `healed`, `reached the person`, or `not known`.
+|===
+
+The idea is IBM's Orthogonal Defect Classification: every defect is classified in a few seconds along attributes that do not depend on each other, and the distribution of a few hundred rows says where the method leaks. Tandem adds the fate, and the tool's own defects.
 
 == The fate of a row
 
@@ -55,7 +72,7 @@ Every deploy, and every start of the extension, harvests the lines it has not ha
 
 `type` is a closed set the code cannot stray from: `code`, `test`, `contract`, `gate`, `machine`, `infrastructure`, `environment`, `decision`. The machine's own failures, a check that could not be graded, a stall, a crash, a lock nobody released, are typed `machine` wherever they are caught.
 
-== Limits
+== Good to know
 
-* `activity`, `trigger` and `impact` are free strings chosen by the site that caught the defect; a monthly reading counts spellings as well as kinds.
-* Rows from runs that ended before endings were written read *not known*.
+* `activity`, `trigger` and `impact` are strings chosen by the site that caught the defect, so a monthly reading counts spellings as well as kinds.
+* A row's fate resolves from the run's ending record; rows from runs that ended before ending records existed read *not known*.

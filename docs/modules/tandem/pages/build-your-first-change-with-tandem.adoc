@@ -36,7 +36,7 @@ You make a todo app from the web app template, write nine sentences about it, an
 
 *Optional*
 
-* xref:from-sentence-to-promise.adoc[How a sentence becomes a promise]: one sentence followed all the way to its checks.
+* xref:index.adoc[Thinkube Tandem]: how a sentence becomes a promise, and how a run works.
 * xref:words-on-the-page.adoc[The words on the page]: every label and state word.
 
 === Supported hardware
@@ -193,8 +193,7 @@ image::tandem-14-everything-built.png[The space with everything built: three acc
 === Step 11. Next steps
 
 * xref:turn-what-the-reviewers-noticed-into-the-next-change.adoc[Build the improvements Tandem's reviewers suggest]: the reviewers' findings as the next sentences.
-* xref:the-report.adoc[Reading the report and deciding]: every section and button of the report.
-* xref:the-run.adoc[While it builds]: what happens in each phase of a run.
+* xref:words-on-the-page.adoc[The words on the page]: every state word on the run and the report.
 
 == Troubleshooting
 
@@ -209,4 +208,20 @@ image::tandem-14-everything-built.png[The space with everything built: three acc
 | In a freshly opened window, the first click on a space in *Projects* opens nothing
 | The extension is still starting
 | Click again after a few seconds.
+
+| *Build these N* says documentation is needed
+| Every thing carries a documentation promise, and neither its page nor *Not needed* is there
+| Press *Not needed* on the documentation promise with your reason, or let the page be built.
+
+| A card says *needs you* and nothing moves
+| A worker stopped on a question only you can answer, about what you want
+| The card offers a box and *Send*. The status bar says *needs an answer* until you do.
+
+| The report says "the reviewers are locked out, so none was started"
+| The reviewers' browser could not sign in to the running product
+| Open the address yourself and sign in. If that works, press *Run it again*; the lines they would have judged read *not judged* until then.
+
+| *Take it back out* is refused and names a commit
+| A commit of your own, made outside Tandem, sits on top of the delivery
+| Move that commit aside first; taking the delivery out would take it too.
 |===

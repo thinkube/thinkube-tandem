@@ -33,7 +33,7 @@ You keep six findings from two reports of the todo app, turn them into six sente
 
 *Optional*
 
-* xref:the-report.adoc[Reading the report and deciding]: every section of the report.
+* xref:index.adoc[Thinkube Tandem]: how a run works and what the report says.
 
 === Supported hardware
 
@@ -106,8 +106,8 @@ On the walk the first new thing was sentence 11, "keep the task list in one pred
 
 === Step 6. Next steps
 
-* xref:the-report.adoc[Reading the report and deciding]: *Go on to the next*, *Take it back out* and *Run it again*.
-* xref:defect-ledger.adoc[The defect ledger]: what the runs caught and repaired.
+* xref:words-on-the-page.adoc[The words on the page]: every state word on the report and the run.
+* xref:defects.adoc[The defect ledger, reference]: what the runs caught and repaired.
 * xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem]: the full path of one thing.
 
 == Troubleshooting

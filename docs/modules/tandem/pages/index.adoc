@@ -1,10 +1,12 @@
 = Thinkube Tandem
 :page-type: concept
+:page-layout: area
+:page-area: tandem
+:page-aliases: from-sentence-to-promise.adoc, the-run.adoc, the-report.adoc, defect-ledger.adoc, identity.adoc, troubleshooting.adoc
 
-_An experimental intent-driven development methodology for working with Claude Code, still changing._
+An experimental way of working with Claude Code, still changing: you write what you want in plain sentences, Tandem builds it, proves it, deploys it and reports, and you decide.
 
-.TL;DR
-The example is a todo app made from the web app template, running at its own address. Say to Claude Code: "Make an app called todo from the web app template, then put these three lines in the box of a new thinking space:"
+The example on these pages is a todo app made from the web app template, running at its own address. Say to Claude Code: _"Make an app called todo from the web app template, then put these three lines in the box of a new thinking space:"_
 
 [source,text]
 ----
@@ -13,17 +15,7 @@ I can see how many tasks I have without counting cards.
 Deleting a task asks me first.
 ----
 
-Claude makes the app and calls Tandem's `save_draft`; the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into the todo app, deployed, judged on the running product, and a report that says what happened to each of your sentences. xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem] walks it screen by screen.
-
-== The decision
-
-You ask for a car and you get a tricycle: something that satisfies the description and is not the thing. That is the problem Tandem exists for. Working on your own with an AI coder, code arrives fast, and every check can be green while the thing you asked for is not there. What goes wrong is not the code.
-
-* Nobody checks that what was built is what you asked. The coder says "done", and you read the diff or you trust it.
-* Nothing records what was promised. A week later, the reason a thing works the way it does is in a conversation that scrolled away.
-* Every conversation starts from nothing. What you decided last time is not in front of the coder this time.
-
-Tandem's decision is that your sentence is the record. You write what you want, in your own words, one line per thing. The machine reads those lines, shows you how it understood them, and derives everything else from them in front of you: which files change, what must become true, which checks will prove it. Your words are never edited by the machine.
+Claude makes the app and calls Tandem's `save_draft`; the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into the todo app, deployed, judged on the running product, and a report that says what happened to each of your sentences.
 
 [d2,alt="You write sentences, the machine reads them and proposes things to build, you pick one and sign, workers build it under checks, it is merged and judged on the running product, and you decide"]
 ....
@@ -39,31 +31,21 @@ write -> read -> pick -> sign -> build -> live -> decide
 decide -> write: "what the work noticed\nbecomes the next sentences" {style.stroke-dash: 4}
 ....
 
-Two moments are yours and only yours. *Sign* freezes exactly what you saw into work to build; nothing is built before it. *Decide* on the delivery: go on, take it back out, or run it again; nothing stays without it. Between the two the machine works alone, and it is not trusted. The checks are written by a worker that never sees the code. Whether a check is green is decided by a separate judge, not by the coder's word. A worker that writes outside the files it declared has those files reverted. Everything that could not be delivered is written on the report.
+== How it works
 
-== What it saves you
+* *Your sentence is the record.* The machine reads two things in each line, what it is about and what must become true of it, and shows you the reading before anything is kept. *Read these N* records nothing; *Keep these N* makes your words the record, and the machine never edits them. Everything else is derived from them and can be derived again.
+* *Sentences become things, things become promises.* Sentences about the same subject are grouped into a thing to build, named in your words. When you build a thing, each claim becomes a promise: what will be true, the files it lands in, and the lines that must become true, each settled one way: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. The choices your sentences left open are listed for you to replace before you sign. Every thing also carries a documentation promise: a page in the project's `docs/` folder, or your reason why none is needed.
+* *Signing freezes what runs.* *Build these N* signs exactly the promises you saw and starts the run on a branch. A run is a process of its own; closing the window does not end it, and *Stop* reaches it from any window.
+* *The machine that builds is not trusted to grade its own work.* One worker writes the checks without seeing the code; another writes the code without seeing the checks. A separate judge decides whether a piece is green. A worker that writes outside the files it declared has them reverted. The closing gate runs every check again from a clean tree and the project's own suite, and only a green gate merges. The platform then builds and deploys, and one reviewer per promise opens the running product in a browser and judges what it sees. A worker's question about what you want reaches you as *needs you*, in your own words.
+* *The report answers your sentences.* Each sentence comes back with one word, *done* in the usual case, and the checks that proved it; *not judged* when a check or a reviewer could not reach it, never a pass that was not proved. *What the work noticed, and did not do* lists what the reviewers saw and did not settle. The decision is yours: *Go on to the next*, *Take it back out* (reverts the delivery's merges), *Run it again*, or *Say it does not hold* beside a sentence the product does not keep, which makes it work again.
+* *Findings become the next sentences.* Tick the findings you want on a report and keep them for later; one press puts them in the box as sentences, and *Group the rest* gives them things of their own without touching what is built.
+* *Every defect a run catches is one row in a ledger.* A worker writing outside its files, a check that never went green, a question the run had to answer for a worker, a deferral found in delivered code: each appends a row to `defects/<YYYY-MM>.jsonl` beside the store, with what surfaced it, whose fault it was, what it cost, and its fate: healed by the machine, or reached you. *Tandem: Show Defects* shows the month as a table with totals, and a kind of row that keeps coming back is a defect in the method.
+* *Everything Tandem records lives in the store, never in your code.* `~/thinkube-tandem-store` is a git repository of its own with every space, delivery, record and the ledger. *Tandem: Activate Repository* records a project once and finds it again from the repository's own remote; restore the store on another machine and every space re-attaches to its repository.
+* *Two moments are yours.* Claude Code can write the sentences with `save_draft`. Keeping, choosing, signing and accepting are presses only you make, and Tandem's tools refuse them to Claude.
 
-* *No tickets.* You write the sentence a person would say. The promises are derived in front of you, with the choices the machine made listed for you to replace.
-* *No reading of diffs to know whether it worked.* The report carries its proofs: which checks ran, which passed, what a reviewer judged on the running product, and what only you can confirm.
-* *No silent scope creep.* What a worker touches outside its declared files is reverted.
-* *No merge you did not choose.* The work waits for your decision.
-* *No undocumented change.* Every thing carries a documentation promise, judged by a reviewer like the others; xref:from-sentence-to-promise.adoc#_documentation_is_part_of_every_thing[Documentation is part of every thing].
-* *No post-mortems.* Every defect a run catches is one row in a ledger that outlives the space. xref:defect-ledger.adoc[The defect ledger] is how the method learns.
+== Reference
 
-== Where it shows up
-
-The Tandem icon in Thinkube IDE opens the space: your sentences at the top, what the machine derived from them below, and one button for the next step. Everything Tandem does is on that page.
-
-* xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem]: from an empty box to a change running, screen by screen.
-* xref:from-sentence-to-promise.adoc[How a sentence becomes a promise]: what the machine reads in your words, and how that becomes promises, checks and a documentation page.
-* xref:turn-what-the-reviewers-noticed-into-the-next-change.adoc[Build the improvements Tandem's reviewers suggest]: turning what the reviewers found into the next thing to build.
-* xref:the-run.adoc[While it builds]: what the run page shows and why the machine works the way it does.
-* xref:the-report.adoc[Reading the report and deciding]: what each section and button means.
-* xref:words-on-the-page.adoc[The words on the page]: every line the strip can show and what to do about it.
-* xref:defect-ledger.adoc[The defect ledger], xref:configuration.adoc[Configuration and settings], xref:troubleshooting.adoc[When something goes wrong].
-
-== Limits
-
-* Keeping, choosing, signing and accepting are yours; Tandem's tools refuse them to Claude Code by design.
-* A run is a process of its own: closing or reloading the window that started it does not end it.
-* Tandem is still changing; a page and the product can differ for a while after a release.
+* xref:words-on-the-page.adoc[The words on the page]: every line the strip can show, every state word, and what to press.
+* xref:configuration.adoc[Configuration and settings]: Tandem's commands and settings in Thinkube IDE.
+* xref:store.adoc[The store]: the file layout of what Tandem records.
+* xref:defects.adoc[The defect ledger, reference]: the fields of a row and the run-ending records.

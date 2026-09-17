@@ -13,7 +13,7 @@
 
 const { execFileSync } = require('node:child_process')
 
-const D2_ARGS = ['--layout', 'elk', '--pad', '16', '--scale', '1', '-', '-']
+const D2_ARGS = ['--layout', 'elk', '--theme', '1', '--pad', '16', '--scale', '1', '-', '-']
 
 function escapeAttribute (text) {
   return String(text)

@@ -159,7 +159,7 @@ The bands name the kinds of card: *check*, *code*, *tests brought under*, *on th
 
 == The report
 
-*Cuts* lists every signed piece of work; each chip is its number and the day and time. *Report* and *Run and logs* switch between the two views of one cut. The sections and every button are on xref:the-report.adoc[Reading the report and deciding]. The word beside each sentence: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*, or *in the project, and it does not do this*.
+*Cuts* lists every signed piece of work; each chip is its number and the day and time. *Report* and *Run and logs* switch between the two views of one cut. The sections and every button are on xref:index.adoc[Thinkube Tandem]. The word beside each sentence: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*, or *in the project, and it does not do this*.
 
 == The status bar
 
@@ -167,8 +167,8 @@ The bands name the kinds of card: *check*, *code*, *tests brought under*, *on th
 
 == Tandem: Show Defects
 
-A table per month: *N found · N healed by the run · N reached the person · N not known*, then the columns *when*, *TEP* (the number of the signed work, as the *Cuts* row shows it), *slice* (the piece of work it was found in), *trigger*, *impact*, *became*, *detail*. xref:defect-ledger.adoc[The defect ledger] says what they mean.
+A table per month: *N found · N healed by the run · N reached the person · N not known*, then the columns *when*, *TEP* (the number of the signed work, as the *Cuts* row shows it), *slice* (the piece of work it was found in), *trigger*, *impact*, *became*, *detail*. xref:defects.adoc[The defect ledger, reference] says what they mean.
 
-== Limits
+== Good to know
 
-* The words here are as the extension renders them at the version this page was written against; a word can move before the page does.
+The words here are as the extension renders them at the version this page was written against. When a word on the page and a word here differ, the page is the newer one.

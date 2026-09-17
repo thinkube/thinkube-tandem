@@ -26,7 +26,7 @@ Everything Tandem records lives in a separate git repository, `~/thinkube-tandem
 
 == The defect ledger lives at the root
 
-`defects/<YYYY-MM>.jsonl` sits at the store's root, not inside a space. Every space writes to the same monthly file and every row names the space it came from, so deleting a space never deletes the record of what went wrong in it. xref:defect-ledger.adoc[The defect ledger] says what the rows mean.
+`defects/<YYYY-MM>.jsonl` sits at the store's root, not inside a space. Every space writes to the same monthly file and every row names the space it came from, so deleting a space never deletes the record of what went wrong in it. xref:defects.adoc[The defect ledger, reference] says what the rows mean.
 
 == What guards it
 
@@ -34,6 +34,6 @@ Everything Tandem records lives in a separate git repository, `~/thinkube-tandem
 * *Secret scan.* Every write is scanned for secret-shaped content, tokens, keys, private key blocks; a hit refuses the write and names the pattern.
 * *Your words, verbatim.* Your sentences are stored as typed and never edited by the machine.
 
-== Limits
+== Good to know
 
-* The store is one git repository; a second machine that writes to the same store needs its own clone and the shared remote.
+The store is one git repository. A second machine writes to the same store through its own clone and the shared remote.
