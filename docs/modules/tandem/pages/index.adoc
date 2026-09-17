@@ -17,25 +17,25 @@ Deleting a task asks me first.
 
 Claude makes the app and calls Tandem's `save_draft`; the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into the todo app, deployed, judged on the running product, and a report that says what happened to each of your sentences.
 
-[d2,alt="You write sentences, the machine reads them and you keep them, it groups them into things to build in order, Build the first works out that thing's promises and checks, you read them and sign, workers build it under checks, it is merged and judged on the running product, and you decide"]
+[d2,alt="You write sentences, the machine reads them and you keep them, it groups them into things to build, each working end to end and each small, Build the first works out that thing's promises and checks, you read them and sign, workers build it under checks, it is merged and judged on the running product, and you decide, then the next thing is built"]
 ....
 direction: down
 write: "You write sentences in the box"
 read: "The machine reads them; you keep them"
-group: "It groups them into things to build, in order"
+group: "It groups them into things to build:\neach works end to end, each is small"
 work: "Build the first: it works out\nthat thing's promises and checks"
 sign: "You read the promises and sign"
 build: "Workers build it on a branch;\nthe checks are written before the code"
 live: "Merged, deployed, judged on the running product"
-decide: "The report; you decide"
+decide: "The report; you decide,\nand the next thing is built"
 write -> read -> group -> work -> sign -> build -> live -> decide
-decide -> write: "what the work noticed\nbecomes the next sentences" {style.stroke-dash: 4}
 ....
 
 == How it works
 
 * *Your sentence is the record.* The machine reads two things in each line, what it is about and what must become true of it, and shows you the reading before anything is kept. *Read these N* records nothing; *Keep these N* makes your words the record, and the machine never edits them. Everything else is derived from them and can be derived again.
-* *Sentences become things, things become promises.* Sentences about the same subject are grouped into a thing to build, named in your words. When you build a thing, each claim becomes a promise: what will be true, the files it lands in, and the lines that must become true, each settled one way: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. The choices your sentences left open are listed for you to replace before you sign. Every thing also carries a documentation promise: a page in the project's `docs/` folder, or your reason why none is needed.
+* *Every sentence is built, one thing at a time.* A sentence in the box is something you want built; ideas you are still weighing belong somewhere else. Tandem groups the sentences into things to build, each named in your words. A thing is large enough to be a piece of working functionality end to end, and small enough that one run can build it, prove it and deploy it with little to keep in view. The things come in the order they build on each other: *Build the first* starts the first, and *Go on to the next* moves on once it is delivered.
+* *Things become promises.* When you build a thing, each claim becomes a promise: what will be true, the files it lands in, and the lines that must become true, each settled one way: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. The choices your sentences left open are listed for you to replace before you sign. Every thing also carries a documentation promise: a page in the project's `docs/` folder, or your reason why none is needed.
 * *Signing freezes what runs.* *Build these N* signs exactly the promises you saw and starts the run on a branch. A run is a process of its own; closing the window does not end it, and *Stop* reaches it from any window.
 * *The machine that builds is not trusted to grade its own work.* One worker writes the checks without seeing the code; another writes the code without seeing the checks. A separate judge decides whether a piece is green. A worker that writes outside the files it declared has them reverted. The closing gate runs every check again from a clean tree and the project's own suite, and only a green gate merges. The platform then builds and deploys, and one reviewer per promise opens the running product in a browser and judges what it sees. A worker's question about what you want reaches you as *needs you*, in your own words.
 * *The report answers your sentences.* Each sentence comes back with one word, *done* in the usual case, and the checks that proved it; *not judged* when a check or a reviewer could not reach it, never a pass that was not proved. *What the work noticed, and did not do* lists what the reviewers saw and did not settle. The decision is yours: *Go on to the next*, *Take it back out* (reverts the delivery's merges), *Run it again*, or *Say it does not hold* beside a sentence the product does not keep, which makes it work again.
