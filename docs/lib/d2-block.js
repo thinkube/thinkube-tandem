@@ -10,10 +10,17 @@
 //
 // The d2 binary must be on PATH. A missing binary or a diagram d2 rejects
 // stops the build with d2's own message.
+//
+// A diagram wider than the article column would be shrunk, and its text with
+// it, so one wider than MAX_WIDTH stops the build. Lay a wide diagram out in
+// rows (grid-rows, grid-columns) or top to bottom (direction: down).
 
 const { execFileSync } = require('node:child_process')
 
 const D2_ARGS = ['--layout', 'elk', '--theme', '1', '--pad', '16', '--scale', '1', '-', '-']
+
+// The width of the article column, in CSS pixels, on a desktop screen.
+const MAX_WIDTH = 792
 
 function escapeAttribute (text) {
   return String(text)
@@ -42,7 +49,14 @@ function d2BlockProcessor () {
   this.process((parent, reader, attrs) => {
     const doc = parent.getDocument()
     const where = `${doc.getAttribute('docfile') || doc.getAttribute('docname') || 'a page'}`
-    const svg = renderD2(reader.getString(), where)
+    const rendered = renderD2(reader.getString(), where)
+    const viewBox = rendered.match(/viewBox="[-\d.]+ [-\d.]+ ([\d.]+) [\d.]+"/)
+    if (!viewBox) throw new Error(`${where}: d2 produced an SVG without a viewBox`)
+    const width = Math.round(Number(viewBox[1]))
+    if (width > MAX_WIDTH) {
+      throw new Error(`${where}: a d2 diagram is ${width} px wide; the column is ${MAX_WIDTH} px, and a wider diagram shrinks its text. Lay it out in rows or top to bottom.`)
+    }
+    const svg = rendered
       .replace(/^<\?xml[^>]*\?>\s*/, '')
       .replace(/^<svg /, '<svg style="max-width:100%;height:auto" ')
     const alt = attrs.alt ? ` role="img" aria-label="${escapeAttribute(attrs.alt)}"` : ''
