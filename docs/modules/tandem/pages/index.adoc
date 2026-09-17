@@ -17,17 +17,18 @@ Deleting a task asks me first.
 
 Claude makes the app and calls Tandem's `save_draft`; the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into the todo app, deployed, judged on the running product, and a report that says what happened to each of your sentences.
 
-[d2,alt="You write sentences, the machine reads them and proposes things to build, you pick one and sign, workers build it under checks, it is merged and judged on the running product, and you decide"]
+[d2,alt="You write sentences, the machine reads them and you keep them, it groups them into things to build in order, Build the first works out that thing's promises and checks, you read them and sign, workers build it under checks, it is merged and judged on the running product, and you decide"]
 ....
 direction: down
 write: "You write sentences in the box"
-read: "The machine reads them and proposes things to build"
-pick: "You pick one; it works out promises and checks"
-sign: "You sign"
+read: "The machine reads them; you keep them"
+group: "It groups them into things to build, in order"
+work: "Build the first: it works out\nthat thing's promises and checks"
+sign: "You read the promises and sign"
 build: "Workers build it on a branch;\nthe checks are written before the code"
 live: "Merged, deployed, judged on the running product"
 decide: "The report; you decide"
-write -> read -> pick -> sign -> build -> live -> decide
+write -> read -> group -> work -> sign -> build -> live -> decide
 decide -> write: "what the work noticed\nbecomes the next sentences" {style.stroke-dash: 4}
 ....
 
@@ -41,7 +42,7 @@ decide -> write: "what the work noticed\nbecomes the next sentences" {style.stro
 * *Findings become the next sentences.* Tick the findings you want on a report and keep them for later; one press puts them in the box as sentences, and *Group the rest* gives them things of their own without touching what is built.
 * *Every defect a run catches is one row in a ledger.* A worker writing outside its files, a check that never went green, a question the run had to answer for a worker, a deferral found in delivered code: each appends a row to `defects/<YYYY-MM>.jsonl` beside the store, with what surfaced it, whose fault it was, what it cost, and its fate: healed by the machine, or reached you. *Tandem: Show Defects* shows the month as a table with totals, and a kind of row that keeps coming back is a defect in the method.
 * *Everything Tandem records lives in the store, never in your code.* `~/thinkube-tandem-store` is a git repository of its own with every space, delivery, record and the ledger. *Tandem: Activate Repository* records a project once and finds it again from the repository's own remote; restore the store on another machine and every space re-attaches to its repository.
-* *Two moments are yours.* Claude Code can write the sentences with `save_draft`. Keeping, choosing, signing and accepting are presses only you make, and Tandem's tools refuse them to Claude.
+* *Two moments are yours.* Claude Code can write the sentences with `save_draft`. Keeping your sentences, building a thing, signing and accepting are presses only you make; Tandem gives Claude no tool for them.
 
 == Reference
 
