@@ -4,7 +4,7 @@
 _What the machine does with the lines you write, shown on one of them, and why every promise it makes can be traced back to your words._
 
 .TL;DR
-Write a line such as "Finished tasks stop crowding the ones I still have to do" and press *Read these N*. The machine marks in your sentence what it is about and what must become true of it, groups sentences about the same thing, and, when you build that thing, turns each "must become true" into a promise with the files it lands in and the lines a check will prove. What you have afterwards is a promise you can read against your own sentence, and checks written before any code exists.
+Write a line about your app, in the todo app of the example "Finished tasks stop crowding the ones I still have to do", and press *Read these N*. The machine marks in your sentence what it is about and what must become true of it, groups sentences about the same thing, and, when you build that thing, turns each "must become true" into a promise with the files it lands in and the lines a check will prove. What you have afterwards is a promise you can read against your own sentence, and checks written before any code exists.
 
 == The decision
 

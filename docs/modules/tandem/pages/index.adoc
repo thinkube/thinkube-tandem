@@ -4,7 +4,7 @@
 _An experimental intent-driven development methodology for working with Claude Code, still changing._
 
 .TL;DR
-Say to Claude Code: "Put these three lines in the box of the tasks space:"
+The example is a todo app made from the web app template, running at its own address. Say to Claude Code: "Make an app called todo from the web app template, then put these three lines in the box of a new thinking space:"
 
 [source,text]
 ----
@@ -13,7 +13,7 @@ I can see how many tasks I have without counting cards.
 Deleting a task asks me first.
 ----
 
-Claude calls Tandem's `save_draft` and the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into your project, deployed, judged on the running product, and a report that says what happened to each of your sentences.
+Claude makes the app and calls Tandem's `save_draft`; the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into the todo app, deployed, judged on the running product, and a report that says what happened to each of your sentences. xref:build-your-first-change-with-tandem.adoc[Build your first application change with Tandem] walks it screen by screen.
 
 == The decision
 
