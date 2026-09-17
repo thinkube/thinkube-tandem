@@ -17,18 +17,20 @@ Deleting a task asks me first.
 
 Claude makes the app and calls Tandem's `save_draft`; the lines appear in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into the todo app, deployed, judged on the running product, and a report that says what happened to each of your sentences.
 
-[d2,alt="You write sentences, the machine reads them and you keep them, it groups them into things to build, each working end to end and each small, Build the first works out that thing's promises and checks, you read them and sign, workers build it under checks, it is merged and judged on the running product, and you decide, then the next thing is built"]
+[d2,alt="You write sentences, the machine reads them and you keep them, it groups them into things to build that each work end to end and are each small, building the next thing works out its promises and checks, you read them and sign, workers build it under checks, it is merged, deployed and judged on the running product, and in the report you decide; you go on to the next thing, and what the work noticed becomes the next sentences"]
 ....
 direction: down
 write: "You write sentences in the box"
 read: "The machine reads them; you keep them"
 group: "It groups them into things to build:\neach works end to end, each is small"
-work: "Build the first: it works out\nthat thing's promises and checks"
+work: "Build the next thing: it works out\nits promises and checks"
 sign: "You read the promises and sign"
 build: "Workers build it on a branch;\nthe checks are written before the code"
 live: "Merged, deployed, judged on the running product"
-decide: "The report; you decide,\nand the next thing is built"
+decide: "The report; you decide"
 write -> read -> group -> work -> sign -> build -> live -> decide
+work <- decide: "go on to\nthe next thing" {style.stroke-dash: 4}
+write <- decide: "what the work noticed\nbecomes the next sentences" {style.stroke-dash: 4}
 ....
 
 == How it works
