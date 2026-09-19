@@ -1,0 +1,49 @@
+/*
+ * The Thinkube typography, shipped inside the extension: Poppins for text,
+ * and NotoSansM Nerd Font, the family the Thinkube IDE sets as
+ * editor.fontFamily, so code in the panel matches the editor. The webview
+ * only loads fonts the extension serves itself (font-src is its cspSource).
+ * Licenses: Poppins-OFL.txt and NotoSansM-Nerd-Font-OFL.txt beside this file.
+ */
+
+@font-face {
+  font-family: "Poppins";
+  src: url("./Poppins-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Poppins";
+  src: url("./Poppins-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Poppins";
+  src: url("./Poppins-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Poppins";
+  src: url("./Poppins-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "NotoSansM Nerd Font";
+  src: url("./NotoSansMNerdFont-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "NotoSansM Nerd Font";
+  src: url("./NotoSansMNerdFont-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+}
