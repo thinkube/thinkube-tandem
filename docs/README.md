@@ -3,8 +3,9 @@
 These are the maintainer's documents: how the machine is designed, why it
 is designed that way, and what it currently is. They are written for
 whoever changes Tandem, not for whoever uses it. The user's documentation
-is the Antora site under `modules/ROOT/pages/` — see the bottom of this
-page for how the two relate.
+is the Antora pages under `docs/modules/tandem/pages/`. The Thinkube docs
+site (thinkube.org) builds them into its Tandem section. See the bottom of
+this page for how the two relate.
 
 ## Start here
 
@@ -40,7 +41,7 @@ not for what is true.
 
 ## The two bodies of documentation
 
-The Antora site (`docs/antora.yml`, pages in `modules/ROOT/pages/`) is for
+The Antora pages (`docs/antora.yml`, pages in `docs/modules/tandem/pages/`) are for
 the person **using** Tandem: what to press, what a gate refuses, what a
 delivery means. It describes behaviour and never internals.
 
