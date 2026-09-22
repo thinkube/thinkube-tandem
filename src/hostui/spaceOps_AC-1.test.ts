@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — a space's tab is titled with the human's own words whenever
  * they recorded one: spaceTitle must return the space's name.txt verbatim,

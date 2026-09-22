@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — proves the audit card's green chip stopped being computed
  * from a `role === "code"` filter and now comes only from an empty

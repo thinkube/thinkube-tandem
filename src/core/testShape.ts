@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What counts as a test-shaped or probe-shaped path — the one rule the rest
  * of the machine reads: the adapter, the write fence, the read block, the

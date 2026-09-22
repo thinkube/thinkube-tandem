@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The adapter — the ONLY new code that faces the engine. A signed TEP's
  * changes become slices in exactly the shape the imported scheduler eats

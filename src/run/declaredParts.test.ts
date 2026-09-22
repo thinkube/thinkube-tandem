@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What a repository declares about its parts reaches the door and the
  * placement of checks: each part's own single-test command, and each part

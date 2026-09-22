@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — verifiedDoors now checks the door's page as well as its own
  * control: a door whose control renders on a page that itself never renders

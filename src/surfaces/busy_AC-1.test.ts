@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — the one busy line must name a running space and count its
  * units: busyLine, given one busy space whose worker units read one of

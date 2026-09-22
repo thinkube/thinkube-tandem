@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Sessions for PROJECT thinking spaces (work, not code — Amendment 1):
  * the space lives in the store, reads the repositories the human CHECKED

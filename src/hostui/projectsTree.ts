@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The navigator — the v1 three-level drill-down restored (Amendment 1):
  * products at the top, REPOSITORIES underneath (code homes; the cards),

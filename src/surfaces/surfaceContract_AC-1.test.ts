@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — refusalSentence is a new seam: a control that is off now
  * says which control it is and why, in one sentence, instead of a bare

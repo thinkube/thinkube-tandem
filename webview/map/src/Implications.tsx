@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Every staged implication of a decision in force, each with a way to
  * apply it or set it aside — and, once more than one is waiting, one

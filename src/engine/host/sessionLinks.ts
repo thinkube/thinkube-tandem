@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Session-link core — pure fs logic, no vscode dependency (so it can be
  * smoke-tested with plain node against a temp dir).

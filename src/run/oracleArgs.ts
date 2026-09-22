@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Everything the slice oracle and its arbiters read, assembled once: the
  * trees, the checks, the plan's ownership, and the powers a ruling may

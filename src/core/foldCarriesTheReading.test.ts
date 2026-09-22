@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The fold carries the reading. Two authors' latest records fold into one
  * space; the subjects, claims and sets in them must arrive, the way asks

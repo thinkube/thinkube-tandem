@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION: promiseLabelOf is a new seam — before it existed, a run
  * card's title had no way to show the promise it keeps in the space's own

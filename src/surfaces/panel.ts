@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The space panel: loads the built map bundle and bridges its registered
  * actions to the session. Pushes the whole surface state after every act —

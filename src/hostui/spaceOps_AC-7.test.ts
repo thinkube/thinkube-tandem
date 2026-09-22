@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — proves the missing-build message becomes copy-pasteable:
  * when show() runs against an extension folder with no built surface, the

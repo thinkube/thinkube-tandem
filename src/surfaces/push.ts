@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What the surface is shown: the whole state of a space, rebuilt after
  * every act. The webview holds nothing of its own beyond selection, so

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Grounding a subject: the whole subject at once, under every rule in
  * force, so one round sees everything that must become true of it and

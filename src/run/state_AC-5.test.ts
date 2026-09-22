@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — sliceChecks is a new field on the run record: saveRun must
  * write it to disk alongside the units and logs, and RunState.from must

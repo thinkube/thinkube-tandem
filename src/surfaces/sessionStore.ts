@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The session's disk seams, factored out: the per-ask digest store and the
  * append-only space persistence (secret-scanned records; state as the fold).

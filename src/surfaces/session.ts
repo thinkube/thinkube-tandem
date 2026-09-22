@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The v2 session: one space, exactly the registered actions, every change
  * persisted to the store. Signing starts the run; accepting merges the

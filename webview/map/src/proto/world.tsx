@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The approved prototype's viewport, ported faithfully: NATIVE listeners
  * (wheel is non-passive so preventDefault works; drag tracks on window so

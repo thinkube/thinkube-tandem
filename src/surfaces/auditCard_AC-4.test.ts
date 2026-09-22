@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — the audit card goes green exactly when there is nothing
  * left unpassed: unpassedWorkers(units, "SL-1") returns an empty list

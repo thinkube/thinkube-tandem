@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What is still CURRENT: which promises\' ground moved (stale), and which
  * checks\' standing proofs moved since they were bound (proof drift).

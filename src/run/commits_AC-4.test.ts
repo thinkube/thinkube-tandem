@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — makeCommitBook now takes this run's own runId and must ride
  * it onto every slice commit it makes, as a trailer in the commit message

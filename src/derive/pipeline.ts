@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The derivation pipeline — the rounds between an ask and a decidable set
  * of changes, consolidated so knowledge is read once and reused:

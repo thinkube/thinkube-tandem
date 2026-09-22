@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What a run needs from whoever starts it: the repository, the models, the
  * commands this repository answers to, and the seams a test replaces.

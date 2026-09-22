@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — blinding is about held-out evidence only: refusedToolUse
  * allows a blinded coder's Read of a production path, since a coder that

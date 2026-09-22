@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — the audit card must never go green while the slice's own
  * tester is still working: unpassedWorkers keeps reporting a `test` unit

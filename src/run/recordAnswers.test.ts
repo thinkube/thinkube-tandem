@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What others write on a run's record reaches the driver and survives
  * the driver's own saves: a stop, and an answer to a parked worker.

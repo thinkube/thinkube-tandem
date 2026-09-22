@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — closeGate must file its own lines under the step named
  * "gate" (the same name its card carries) instead of the run-wide default,

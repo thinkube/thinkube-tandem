@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A one-test command that was tried on a real test and failed refuses the
  * run at the door. It used to be carried in as if nothing had been tried,

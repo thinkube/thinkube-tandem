@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The two gates and the run between them, host side: signing mints the
  * TEP (the click IS the approval) and starts the build; the build

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Per-slice verify-oracle assembly for the run: detached snapshot helpers,
  * the oracle factory over the engine's createVerifyOracle, and the run

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — signedIdleNotice is a new seam: one function now decides the
  * "this work is signed and nothing was delivered" notice, in place of each

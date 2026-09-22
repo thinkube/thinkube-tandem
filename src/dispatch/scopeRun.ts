@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * One dispatch per scope, in plan order (§7quater): each repository the
  * TEP touches gets its own worktree, branch and delivery; the anchor

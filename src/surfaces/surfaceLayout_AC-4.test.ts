@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — the four pages are named once, and surfaceRegions is driven
  * from that same shared list rather than a second, hand-typed one.

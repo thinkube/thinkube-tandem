@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Reframing: the one way to correct the machine. Everything derived comes
  * from the human's sentences, so a wrong reading, a wrong grouping and a

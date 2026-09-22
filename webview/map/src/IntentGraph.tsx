@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The reading page: what I understood of what you wrote, before anything
  * costs money. Your sentences, each inside the thing it was read into,

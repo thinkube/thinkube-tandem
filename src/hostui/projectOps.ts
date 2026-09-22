@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Bringing a repository under Tandem respects the platform's order: a
  * repository is NEVER created here — new applications are born only by

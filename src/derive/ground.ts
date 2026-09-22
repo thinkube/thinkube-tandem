@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Grounded derivation: one ask in, grounded nodes out. The round reads the
  * repository (read tools only) and returns nodes whose grounding names the

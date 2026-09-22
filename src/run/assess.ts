@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Grading assessment checks at the closing gate: a FRESH judge-tier
  * round — never the builder — reads the delivered code in the tester's

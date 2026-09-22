@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The oracle's rounds, with the owner rule applied: a round's failures are
  * classified; the check-owned ones are repaired by the tester's re-author

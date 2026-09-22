@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * defectStats — pure aggregation over the thinking space's JSONL defect log (TEP-22/SP-1).
  *

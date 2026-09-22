@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The one SDK round runner. Rounds are read-only over a repository and
  * return their final text; anything that mutates goes through workers with

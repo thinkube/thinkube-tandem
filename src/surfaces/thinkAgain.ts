@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Think again: withdraw the signed cut that delivered nothing, and derive
  * its promises anew under every rule and decision now in force.

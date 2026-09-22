@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // Side-channel approval-token store (SP-6/3, TEP-6).
 //
 // The human-approval gate works only if the agent never handles the token: the ReviewPanel's

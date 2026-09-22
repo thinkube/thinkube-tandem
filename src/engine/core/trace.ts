@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { AcResult, AcVerification } from "./closingGate";
 import { Fault } from "./redispatch";
 // ── Durable, structured verification trace (SP-6/7 AC5) ────────────────────

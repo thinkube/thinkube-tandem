@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The code graph: a deterministic structural map of the repository, built
  * by graphify (tree-sitter, no model, local) and cached under the

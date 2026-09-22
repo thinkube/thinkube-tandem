@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The door and the delivery are phases of the run: each has a state, says
  * what it is doing, and owns the lines written while it is in progress —

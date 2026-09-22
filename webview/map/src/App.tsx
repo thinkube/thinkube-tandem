@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The Tandem space surface. A strip across the top always says where the
  * space is and holds the one thing to press next; under it, the page for

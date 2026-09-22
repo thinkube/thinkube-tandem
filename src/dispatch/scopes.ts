@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Scope partitioning for a multi-scope TEP (§7quater): changes group by
  * the scope their touchpoints carry ("" = the anchor scope); a change

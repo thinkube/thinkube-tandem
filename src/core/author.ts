@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Who is thinking. The author keys every record path and every minted id,
  * so it must differ between people. A value the platform provisions

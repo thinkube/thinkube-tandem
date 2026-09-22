@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What your sentences became: the things to build, in the order to build
  * them, each carrying the sentences of yours it was read from.

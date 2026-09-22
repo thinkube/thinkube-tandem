@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — exactly one page in the shared surface contract draws the
  * ask list. The contract names that page once, as ASKS_PAGE, so the

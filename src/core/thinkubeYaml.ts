@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Reading a repository's `thinkube.yaml` — the platform's own declaration
  * of what an app is: its containers, how each is built and tested, and how

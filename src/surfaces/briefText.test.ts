@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A unit's brief reads back into its parts: the promise, where it lands,
  * what must be true — and a tester's into criteria under their promise.

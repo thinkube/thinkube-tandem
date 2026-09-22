@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * SessionLinkService — keeps launcher-created Claude sessions visible in
  * claude-code's native Session History picker. See sessionLinks.ts for the

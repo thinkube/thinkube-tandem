@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 'use strict'
 
 // Asciidoctor.js block extension: renders a [d2] literal or listing block

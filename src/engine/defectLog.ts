@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * ODC find-time defect capture (TEP-22 mechanical half, minimal v1 — 2026-07-14).
  *

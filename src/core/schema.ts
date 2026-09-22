@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import type { TreeShape } from "../gates/moduleSizes";
 /**
  * The core artifacts of Tandem: asks, nodes, units, cuts, work orders,

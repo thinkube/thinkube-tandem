@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The door and the delivery are cards on the run page, read the way every
  * card is read, and there is no second place the run's lines are shown.

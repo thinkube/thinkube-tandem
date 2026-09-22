@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The walk: every press a person makes, in order, over a real session and
  * a real store, with the model's rounds replaced by recorded answers.

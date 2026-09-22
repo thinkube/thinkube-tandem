@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The run's delivery-side bookkeeping split out of plan.ts: the honesty
  * scan over delivered code, the delivery record persisted beside the space,

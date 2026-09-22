@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The ledger is about the machine, not about any one piece of work: it
  * lives at the store's root, one file per month across every space, and

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * One SDK worker executing one execution unit inside the TEP worktree.
  * Footprint containment is the engine's doctrine re-hosted: a PostToolUse

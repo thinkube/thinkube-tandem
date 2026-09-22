@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The title a run card wears: the promise its unit is keeping, in the
  * space's own words — not the unit id, which names nothing a person asked

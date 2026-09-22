@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The audit card's own verdict: a slice is green only when every worker
  * that serves it — its coders, its tester, and the maintainer of its

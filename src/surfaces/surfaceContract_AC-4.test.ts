@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — noteRefusal/lastRefusal are a new pair: the surface can hold
  * one refusal sentence across a render so a message line can show it, and

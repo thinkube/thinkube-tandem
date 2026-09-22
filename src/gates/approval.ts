@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The minted-approval helpers over the engine's token machinery: the
  * signed PAIR's content hash (the render the human read + the grounded

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // Human-approval token primitive for decision-point gates (SP-6/3, TEP-6 mechanism 2).
 //
 // The review panel's Approve button — a UI action only the maintainer can take — mints a

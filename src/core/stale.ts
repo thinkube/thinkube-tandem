@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Staleness, computed on read and never stored: a node's grounding claims
  * are current only while its stamp matches the repo's present state.

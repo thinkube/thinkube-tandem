@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A finding reaches the surface as the pair its finder wrote: what was
  * seen, and the ask drafted from it. The report shows both — the ask is

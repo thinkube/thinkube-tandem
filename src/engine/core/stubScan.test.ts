@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The honesty scan reads confessions, not names. `TaskStatus.TODO` is an
  * enum's own member; a comment saying TODO is a deferral.

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The run's commit book: when a slice's last unit finishes green, its probes
  * ride into the code tree and the slice commits — later tester snapshots see

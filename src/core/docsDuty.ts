@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The one rule that says whether a cut's documentation decision is settled:
  * it lands documentation, it carries a recorded exemption, or it owes

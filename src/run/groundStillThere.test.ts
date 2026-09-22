@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A cut is written against the code as it was. Between the writing and the
  * run — or in the middle of the run, arriving with a base merge — somebody

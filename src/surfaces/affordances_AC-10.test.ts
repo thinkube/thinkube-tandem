@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — builtSurfaceText is a new seam: reading the built webview
  * text is now an injected function, so the door proof can be driven without

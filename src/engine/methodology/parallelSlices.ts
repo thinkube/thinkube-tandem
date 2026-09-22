@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Parallel-slice declarations and the file-disjointness check (
  * ). For sibling slices to run **concurrently** in isolated

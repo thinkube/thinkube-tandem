@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * An observation is not a check — at every layer one could enter as a
  * check: classified at birth by the grounding parser, skipped by the

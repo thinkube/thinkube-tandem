@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The check-proposal round: for one promise without a check, the machine
  * proposes one — a runnable check when a test can honestly reach it, an

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — a coder must never write a test: refusedToolUse refuses a
  * coder's Write to a path under a `__tests__/` directory, and says so in

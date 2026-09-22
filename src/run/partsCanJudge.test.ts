@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A repository that is several parts, each with a proved single-test
  * command, can run one check and read its verdict — no repository-wide

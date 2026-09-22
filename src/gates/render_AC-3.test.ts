@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — a criterion whose text heads an entry in delivery.observations
  * (the gate's own "what only the person can certify" list, worded as

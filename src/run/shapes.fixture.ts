@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The repository shapes the machine claims to work in, as tiny real
  * repositories — and workers that misbehave on purpose.

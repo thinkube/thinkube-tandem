@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { isEscalated } from "./redispatch";
 import { ExecutionUnit, WorkUnit, batchExecutionUnits } from "./base";
 // ── Work-unit DAG scheduler (makespan over the Spec's units) ─────────────

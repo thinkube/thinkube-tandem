@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // ── Judge guidance on the slice card (2026-07-12): the auditable rework channel ─────
 //
 // When the closing gate goes red and the judge routes the fault to one role, the judge's

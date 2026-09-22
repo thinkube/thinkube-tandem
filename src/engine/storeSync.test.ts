@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The store's sync must not fail in silence behind a dead process's lock.
  * Four days of records once went uncommitted behind one, and a space

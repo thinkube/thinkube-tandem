@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /** Bundles the button-table harness for node (see buttons.tsx). */
 import { defineConfig } from "vite";
 import * as path from "node:path";

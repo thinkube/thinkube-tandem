@@ -1,4 +1,9 @@
 /*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
  * The Thinkube typography, shipped inside the extension: Poppins for text,
  * and NotoSansM Nerd Font, the family the Thinkube IDE sets as
  * editor.fontFamily, so code in the panel matches the editor. The webview

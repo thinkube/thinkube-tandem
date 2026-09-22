@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * HELD-OUT — the signed-idle notice is the one seam a page reads instead of
  * wording "this work is signed and nothing was delivered" itself. This

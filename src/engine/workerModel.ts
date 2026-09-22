@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // Pinned, decoupled worker model (SP-17/1) — the ONE place the worker model resolves.
 //
 // Every orchestrated Agent SDK worker (code/test-author, assessor, judge, acceptance-auditor) must

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Pure, vscode-free core of the thinking space orchestrator: the work-unit DAG +
  * scheduler, plus session-log helpers that parse a worker's persisted `.jsonl` events.

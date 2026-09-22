@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The two signatures. Signing a cut binds the PAIR: the render the human
  * read and the grounded members underneath it — neither can drift under a

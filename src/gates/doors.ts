@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Doors: a claim that needs a person to act needs a place to act — a page
  * and a control that actually render. The machine proves it, never the

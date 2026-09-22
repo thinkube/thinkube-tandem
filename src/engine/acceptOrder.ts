@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The merge → stamp → retire ordering of an accept-land, extracted into one pure,
  * injectable place (, #10-residual).

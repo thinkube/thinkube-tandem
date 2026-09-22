@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Prompt-template loading (context tranche, 2026-07-14) — PROSE as doctrine, contracts as code.
  *

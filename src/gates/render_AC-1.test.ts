@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — criterionVerdicts is a new export: it must return one entry
  * for EVERY acceptance criterion of every promise in the delivery's cut,

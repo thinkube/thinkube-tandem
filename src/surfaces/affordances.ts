@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The affordance registry: every capability the system accepts maps to a
  * human door — a page and a gesture — or declares itself machine-only with

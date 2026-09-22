@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A failed reading is not a fact. A reading that returns nothing must not
  * be remembered as "nothing needed", and a blank must never be proven: a

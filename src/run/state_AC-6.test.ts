@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — sliceCheckTally is a new function the audit card reads: it
  * must count how many of a slice's recorded criteria passed against the

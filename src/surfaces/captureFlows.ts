@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What a decision does to work already derived, and the wipe that clears
  * derived thinking without touching a word the human wrote.

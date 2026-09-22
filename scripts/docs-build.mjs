@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 // Worktree-safe Antora build for the `tandem` docs component.
 //
 // Runs docs/preview-playbook.yml from the repo root and always lands the built

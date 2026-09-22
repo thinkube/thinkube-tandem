@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The model round: a pasted list is not a queue of tickets, it is a
  * description of one world. This round reads every sentence at once and

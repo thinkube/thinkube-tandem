@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — gradeSlice is a new seam on RunState: recording a slice's
  * per-criterion outcomes must make both ordinals readable back through

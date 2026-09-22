@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The postMessage bridge. The webview accepts exactly the session's
  * registered actions and renders exactly what the host pushes — no state

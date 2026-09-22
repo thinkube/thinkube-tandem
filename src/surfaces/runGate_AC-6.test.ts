@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — the push wiring is new: spacePush must carry the
  * signedIdleNotice's result as `signedIdle` on the pushed object, so a

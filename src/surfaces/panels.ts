@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The panel registry: one panel per thinking space key, so several spaces
  * stay open at once. A panel is made once per key and reused on every

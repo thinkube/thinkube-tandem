@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The rail beside the graphs: what the machine is doing right now, what it
  * has delivered, and the one press that commits.

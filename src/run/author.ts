@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The authoring round: an SDK session that may WRITE, fenced to the paths
  * it was given. Reading rounds live in derive/round.ts and never mutate;

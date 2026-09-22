@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The work page is what will be true: the promises of the thing in hand,
  * each with its criteria as ticks, and the line that unlocks Build.

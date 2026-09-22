@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — logTail(step) must fold in a sub-step's own lines: asking for
  * "gate" today returns only what was logged under "gate" itself, so a

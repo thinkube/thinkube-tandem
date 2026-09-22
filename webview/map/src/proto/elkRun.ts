@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The approved prototype's ELK invocation, ported: layered layout over
  * MEASURED node sizes with ORTHOGONAL edge routing — positions AND edge

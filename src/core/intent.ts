@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The intent contract: the human's asks are the root of the graph.
  *  - Asks are stored verbatim and are append-only; no function in this

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Host-side thinking-space gestures (SPEC Amendment 1): resolving which
  * thinking space a repository is working in — remembered per repository, a

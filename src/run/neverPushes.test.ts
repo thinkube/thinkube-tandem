@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A worker is told, once, in its brief: its commits stay on the branch and
  * Accept is what pushes. A worker that pushed mid-run put half-built work

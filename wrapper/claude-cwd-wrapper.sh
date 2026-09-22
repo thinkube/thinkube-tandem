@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Copyright Alejandro Martínez Corriá and the Thinkube contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Phase 2: cwd-patching wrapper.
 #
 # Portable across macOS (development) and Linux / code-server (production).

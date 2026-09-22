@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Capture through the model: the pasted sentences become asks (the human's
  * words, kept whole), the model round proposes what they are about, and the

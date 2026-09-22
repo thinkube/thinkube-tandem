@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Renders the surface for every phase and page without a host, and lists
  * every button with its enabled state — the button table, as the reader

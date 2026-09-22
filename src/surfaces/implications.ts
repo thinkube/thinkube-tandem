@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Staged implications, read off the push: each is a decision already in
  * force whose consequence has not yet been applied or set aside. A row

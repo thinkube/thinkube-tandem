@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Extension entry point. One command opens the space panel; the session
  * owns the space end to end — signing starts the run, accepting merges on

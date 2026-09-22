@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * One rule for the single line that says whether the machine is busy: which
  * thinking space, what it is doing, whether a worker needs an answer, and

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Attaching to a space that is not on disk is refused by name, never
  * answered with an empty space; and a space another identity wrote in

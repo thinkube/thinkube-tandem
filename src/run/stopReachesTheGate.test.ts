@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Stop reaches the closing gate's reviews. Sixty reviews are asked five at
  * a time; a run stopped during them used to grade every one before the

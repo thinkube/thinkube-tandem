@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A card's state, said twice: a tone for its frame and a short word that
  * survives being drawn small. Colour alone is not a word — at the zoom

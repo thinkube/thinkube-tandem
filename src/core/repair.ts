@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Repair of a record whose claim ids were minted twice. Two different
  * claims sharing one id is corrupt data, and the damage is silent: a

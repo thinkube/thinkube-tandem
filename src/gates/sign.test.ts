@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The sign gate's own drives: what a signature covers, what the person
  * reads before signing, and when a delivery of a many-repository cut may

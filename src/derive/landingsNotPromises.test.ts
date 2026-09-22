@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The completeness pass adds landings to the promises the sentences made;
  * it never adds a promise. On a fresh reading of the todo template it

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — thinking about asks counts as busy even with no run: spaceBusy
  * returns a truthy, non-undefined value for a session-shaped object that is

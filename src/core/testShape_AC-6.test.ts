@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * INVARIANT — a blinded coder must never read held-out evidence:
  * refusedToolUse refuses a Read of a test-shaped path when the worker is

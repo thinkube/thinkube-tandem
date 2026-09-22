@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The top-to-bottom order of the space surface's regions, for every page.
  * One place names it, so the row of pages draws at the same position

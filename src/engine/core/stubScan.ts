@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { clip } from "./guidance";
 // ── Stub scan (the go-set, deterministic half — context tranche 2026-07-14) ─────
 //

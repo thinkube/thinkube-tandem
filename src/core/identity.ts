@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Identity discipline (SPEC §7ter): identity is a minted, immutable id in
  * the project's card, written once at enablement. The card is kept in the

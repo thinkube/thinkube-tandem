@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Projects in the v1 sense (SPEC Amendment 1): a bounded piece of WORK
  * that may touch several repositories — never code. A project lives in

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Documentation is part of every delivery by default. A chosen thing whose
  * promises land no page gets the page promised by the machine, minted so

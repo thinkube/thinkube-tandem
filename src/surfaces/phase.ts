@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The phase of a space: one word the host and the surface both read, so a
  * control is enabled exactly when the host would act on it and disabled when

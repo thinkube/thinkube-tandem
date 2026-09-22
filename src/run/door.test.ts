@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The door: what a run proves about a repository before any worker runs,
  * what it borrows from the checkout beside it, and what it must never let

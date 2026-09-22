@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What came back: your sentences, and what happened to each — done, not
  * kept, not judged, not started. A failure is said under the sentence it

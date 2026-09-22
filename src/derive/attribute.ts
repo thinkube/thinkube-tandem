@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Attribution: which claim does a promise make true. The grounding and
  * completeness rounds are asked this as they derive; when one of them

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The engine's pure core, split at its own section markers at import
  * time (moves only). The fidelity manifest pins the reconstruction hash

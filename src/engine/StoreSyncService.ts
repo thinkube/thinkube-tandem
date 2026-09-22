@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * STORE AUTOSYNC — the thinking-space store commits and pushes itself every
  * five minutes when dirty.

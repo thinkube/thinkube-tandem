@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The run's plan-side bookkeeping: execution locks, per-slice probe and
  * test-home maps, the closing gate's verification list, and the roles'

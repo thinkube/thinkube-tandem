@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Grouping after sets exist adds things to build for the sentences no set
  * carries, and keeps the sets that exist — built, delivered or accepted.

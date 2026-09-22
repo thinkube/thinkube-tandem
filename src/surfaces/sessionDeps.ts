@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Everything a session is given: the round runner, the store homes, the
  * forge, the injectable judgment rounds, and the §7quater scope wiring.

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The closing gate: everything after the last unit — probes ride the
  * branch, the delivered tree is built, every check runs, assessments are

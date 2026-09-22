@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The mechanical look behind the grounding's testability judgement: a probe
  * that names a symbol its touchpoint files hold but never export is a probe

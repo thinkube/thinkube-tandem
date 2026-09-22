@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A repair the reviewers asked for is measured by the tree changing and
  * building, not by the build alone — which already passed when they looked.

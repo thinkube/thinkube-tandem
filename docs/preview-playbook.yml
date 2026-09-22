@@ -1,3 +1,6 @@
+# Copyright Alejandro Martínez Corriá and the Thinkube contributors
+# SPDX-License-Identifier: Apache-2.0
+
 site:
   title: Tandem Methodology (preview)
   start_page: thinkube-docs:tandem:index.adoc

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — the implication controls now have declared doors: before
  * this, a surface could stop rendering the apply/set-aside/apply-all

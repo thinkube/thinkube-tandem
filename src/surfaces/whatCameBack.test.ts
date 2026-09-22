@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The delivery report reads for the person who asked: their sentences and
  * what happened to each, a failure in plain words under the sentence it

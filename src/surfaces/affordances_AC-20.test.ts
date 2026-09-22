@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — a promise whose door or page could not be proved is now
  * named on the delivery page instead of quietly losing its "see it" line:

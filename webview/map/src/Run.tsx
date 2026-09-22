@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The orchestration flow view — the APPROVED PROTOTYPE's second tab: the
  * SAME HTML node cards laid out by ELK (layered, RIGHT, orthogonal

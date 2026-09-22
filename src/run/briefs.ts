@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The TEP rendered for worker briefs: the asks' verbatim words, the
  * decisions in force, and the grounded changes with their acceptance

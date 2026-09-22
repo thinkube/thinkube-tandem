@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What will be true when this is done: the promises of the thing in hand,
  * each with its criteria. This is the contract, readable and

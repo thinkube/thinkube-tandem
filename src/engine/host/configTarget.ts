@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Resolve the `.claude` scope a config CRUD action targets (SP-tgvhfk_SL-2).
  *

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * One push per page, built from the recorded push, for checks that render
  * the surface. The page follows the state, so a check that wants a page

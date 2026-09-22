@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import { loadTemplate } from "../promptTemplates";
 import { BUNDLED_WORKER_PREAMBLE, UNDELIVERED_FORMAT_STANZA, stripSatisfies } from "./redispatch";
 import { SchedUnit } from "./dag";

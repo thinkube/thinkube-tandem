@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The cut is closed under `needs` (the v1 rule, human-restored): what a
  * change depends on ships with it. Adding pulls the dependency closure

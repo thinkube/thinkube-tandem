@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — proves the documentation decision crosses the whole bridge:
  * the surface's WebToHost union carries the exemption action with its

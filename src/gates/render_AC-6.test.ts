@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — today the gate's undelivered list is built only from what
  * workers themselves confessed (docs obligations, stub-scan confessions);

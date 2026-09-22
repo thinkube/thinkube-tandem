@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /** A delivery's findings are read in their own words, never as [object Object]. */
 import { test } from "node:test";
 import assert from "node:assert/strict";

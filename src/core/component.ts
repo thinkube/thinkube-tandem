@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A COMPONENT is everything that must ship together: the objects a sentence
  * speaks about, plus every other sentence that speaks about those objects.

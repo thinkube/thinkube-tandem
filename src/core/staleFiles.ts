@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Which files changed in a repository since a recorded commit — committed
  * moves plus uncommitted edits. Undefined when the recorded commit is

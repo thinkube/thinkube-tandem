@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The survey decides what kind of target a repository is — from evidence,
  * asking nobody — and finds the parts it is made of.

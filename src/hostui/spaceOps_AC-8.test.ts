@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — proves the new "load" action is a pure re-ask for state: it
  * calls push exactly once and records nothing on the session — no draft

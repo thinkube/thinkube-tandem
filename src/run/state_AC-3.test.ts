@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — tapGrades is a new wrapper: it must forward the per-AC
  * results of BOTH verify() and confirmGreen() to onGrade, while passing the

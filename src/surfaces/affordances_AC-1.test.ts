@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — handleInbound's answer-worker action now delivers straight
  * to the parked worker instead of vanishing into a second answer box.

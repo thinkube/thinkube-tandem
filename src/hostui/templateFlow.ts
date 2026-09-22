@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Start-from-nothing (SPEC Amendment 1 §4, Option A): a new application
  * is born ONLY from the platform's template catalog. The candidates are

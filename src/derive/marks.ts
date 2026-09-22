@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * What to draw on a sentence: which words became a claim, which words
  * name the subject, and where a subject the sentence never names has to

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — proofOfPass is a new function the surface draws a pass from:
  * given a positive log-line count it must report proven true and put the

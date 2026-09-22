@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Two rules about the shape of this repository itself: nothing grows past
  * reading size, and nothing is kept that nothing reaches.

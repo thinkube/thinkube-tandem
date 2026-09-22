@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION: subjectKey is a new seam — before it existed, a subject read
  * from the asks had no label of its own that a test could check. This pins

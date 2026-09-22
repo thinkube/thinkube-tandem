@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — committedSlicesOf must widen from a bare slice-name list to
  * pairs of slice and run id: a commit's body now carries the run trailer

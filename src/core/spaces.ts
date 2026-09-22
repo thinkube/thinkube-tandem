@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The thinking-space level (SPEC Amendment 1): a repository or project
  * holds MANY named thinking spaces, each an independent stream of

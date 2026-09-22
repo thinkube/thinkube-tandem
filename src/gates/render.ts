@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The gate renders: decision-sized, written from the graph, never authored.
  * A render exists so the human can make exactly one decision; if it cannot

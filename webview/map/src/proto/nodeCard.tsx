@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * A unit card: bold wrapping title, the FULL abstract (always complete —
  * the human's ruling; text wraps, never truncates), chip badges, an

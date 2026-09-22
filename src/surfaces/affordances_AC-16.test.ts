@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — renderDeliveryPage prints a "see it" line naming the page
  * label and gesture for a promise present in the experience map it is

@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The hand-over is the one act that lands work: the branch merges here,
  * the result is pushed, and nothing is pushed before that — a worker's

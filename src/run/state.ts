@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * Live state of one TEP run: per-unit states, the logs, parked workers
  * awaiting an answer, and the abort registry. The panel renders this; the

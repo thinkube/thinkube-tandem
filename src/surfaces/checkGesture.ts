@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The unstick gesture, host side: the machine writes ONE check for a
  * promise that has none; the human accepts or rewords — their wording

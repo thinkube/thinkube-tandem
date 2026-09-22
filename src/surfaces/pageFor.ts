@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * The page is the state. Nothing is navigated: what the space is doing
  * decides what is on screen, the way the mock's states follow each other.

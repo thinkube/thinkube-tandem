@@ -1,3 +1,8 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /**
  * TRANSITION — standingPassLine is a new function on the run's plan-side
  * bookkeeping: given a run id, its sentence must name that run id and say
