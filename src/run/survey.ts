@@ -9,7 +9,7 @@
  *
  * The platform has five shapes, and Tandem's job differs downstream of the
  * merge in each: an app in `apps/` fires the whole gitops pipeline on push
- * (webhook → Argo test-in-image → Kaniko → Harbor → ArgoCD); a template is
+ * (webhook → Argo test-in-image → Buildah → Harbor → ArgoCD); a template is
  * validated by deploying it through thinkube-control; thinkube-control
  * itself is a copier template deployed by an ansible component; the
  * playbook repo validates on the live cluster via each component's

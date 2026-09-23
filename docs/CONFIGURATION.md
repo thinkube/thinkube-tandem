@@ -141,7 +141,7 @@ CONTAINER_REGISTRY` with no default), and every validation is a full deploy.
 **Verified.** Push → Gitea webhook → Argo Events Sensor (a Lua filter skips
 the adapter's own `.argocd-source-*` commits) → Workflow from the
 `<app>-build` template → per container `test-<c>` then `build-<c>` with
-`dependencies: [test-<c>]`, so **failing tests block the build** → Kaniko →
+`dependencies: [test-<c>]`, so **failing tests block the build** → Buildah →
 Harbor → the adapter commits `k8s/.argocd-source-<app>.yaml` pinning the new
 tag and triggers an ArgoCD sync. `todo` has tests enabled for both
 containers.

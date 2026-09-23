@@ -8,7 +8,7 @@
  *
  * A delivery on this platform is not finished at the merge. For an app,
  * the push itself fires the pipeline — webhook, tests in the declared
- * image, Kaniko, Harbor, ArgoCD — and the answers to the promises marked
+ * image, Buildah, Harbor, ArgoCD — and the answers to the promises marked
  * `settledBy` exist only there, afterwards. For a playbook component, the
  * answer is its own `18_test.yaml` run against the live cluster. For a
  * package, it is a person who installed it.
