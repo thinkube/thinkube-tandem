@@ -6,3 +6,6 @@ media/
 
 # coverage output from a measuring run, never source
 coverage/
+
+# Local Claude Code and Tandem state
+.claude/ .tandem/
