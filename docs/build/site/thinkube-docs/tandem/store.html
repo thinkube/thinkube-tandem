@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>The store :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="store.html">The store</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/store.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">The store</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<div class="title">TL;DR</div>
+<p>Everything Tandem records lives in a separate git repository, <code>~/thinkube-tandem-store</code> by default, never in your code. Restore the store on a new machine and every space, delivery and record comes back and re-attaches to the right repository.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_is_in_it"><a class="anchor" href="#_what_is_in_it"></a>What is in it</h2>
+<div class="sectionbody">
+<div class="literalblock">
+<div class="content">
+<pre>cards/&lt;id&gt;.yaml                 one project's identity, and how to find its repository
+spaces/&lt;project-id&gt;/            every thinking space of one project
+  &lt;space-name&gt;/
+    name.txt                    the space's name as you typed it
+    &lt;author&gt;/
+      runs/&lt;work&gt;.log           the run log, written as it happens
+      runs/cut-&lt;work&gt;.json      the signed work and its run's record
+      deliveries/&lt;work&gt;.json    the delivery and its proofs
+      digests/&lt;sentence&gt;.md     the reading of the code made for one sentence
+      graphs/                   the derived graph
+      records/                  the space's history, snapshot by snapshot
+  tep-counter-&lt;author&gt;.txt      the numbering of signed work, TEP-&lt;author&gt;-&lt;n&gt;
+products/&lt;name&gt;.yaml            a product grouping label
+defects/&lt;YYYY-MM&gt;.jsonl         the defect ledger
+headless/                       runs started from the command line</pre>
+</div>
+</div>
+<div class="paragraph">
+<p><code>&lt;work&gt;</code> is the number of a signed piece of work, <code>TEP-&lt;author&gt;-&lt;n&gt;</code>; it is the number the <strong>Cuts</strong> row shows.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_defect_ledger_lives_at_the_root"><a class="anchor" href="#_the_defect_ledger_lives_at_the_root"></a>The defect ledger lives at the root</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><code>defects/&lt;YYYY-MM&gt;.jsonl</code> sits at the store&#8217;s root, not inside a space. Every space writes to the same monthly file and every row names the space it came from, so deleting a space never deletes the record of what went wrong in it. <a href="defect-ledger.html" class="xref page">The defect ledger</a> says what the rows mean.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_guards_it"><a class="anchor" href="#_what_guards_it"></a>What guards it</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Autosync.</strong> The store commits and pushes itself whenever it has changed; the pushed remote is the backup. A stale git lock left by a dead process is cleared rather than failing every sync after it.</p>
+</li>
+<li>
+<p><strong>Secret scan.</strong> Every write is scanned for secret-shaped content, tokens, keys, private key blocks; a hit refuses the write and names the pattern.</p>
+</li>
+<li>
+<p><strong>Your words, verbatim.</strong> Your sentences are stored as typed and never edited by the machine.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limits"><a class="anchor" href="#_limits"></a>Limits</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The store is one git repository; a second machine that writes to the same store needs its own clone and the shared remote.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

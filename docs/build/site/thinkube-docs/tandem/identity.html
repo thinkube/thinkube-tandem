@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Projects and identity :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="identity.html">Projects and identity</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/identity.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">Projects and identity</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<div class="title">TL;DR</div>
+<p>A thinking space belongs to a project, and a project is one repository, or one folder inside it. Tandem records the project once, when you press <strong>Tandem: Activate Repository</strong>, and finds it again from the repository&#8217;s own remote and path. Move the repository, clone it on another machine, and its spaces are there.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_decision"><a class="anchor" href="#_the_decision"></a>The decision</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>For your spaces to still be there tomorrow, Tandem has to look at a repository and know which project it is. That link is kept in the store, beside the spaces, and never in your repository: it is minted once when you activate the project, and it holds the project&#8217;s id, its label, its product grouping, and enough to find the repository again.</p>
+</div>
+<div class="paragraph">
+<p>A repository is matched back to its project from what it can always say about itself: its git remote and the path of the project inside it, empty for a whole repository or a folder such as <code>packages/web</code> for a part of one. The remote is compared by what it points at, not by how it is spelled: an SSH address and an HTTPS address of the same repository are one repository. A repository with no remote is matched by where it sits on disk and re-links itself if you move it.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_it_saves_you"><a class="anchor" href="#_what_it_saves_you"></a>What it saves you</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Nothing to write by hand.</strong> You activate a repository once; the record is the machine&#8217;s.</p>
+</li>
+<li>
+<p><strong>A rename costs nothing.</strong> The label is yours to change; nothing is keyed by it, so the spaces stay put.</p>
+</li>
+<li>
+<p><strong>A restore comes back whole.</strong> The store is the thing you back up, and it carries the identity too, so every space re-attaches to its repository on a new machine.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_where_it_shows_up"><a class="anchor" href="#_where_it_shows_up"></a>Where it shows up</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Tandem: Activate Repository</strong> creates the project; activating the same repository twice is refused, so one project&#8217;s history is never split in two.</p>
+</li>
+<li>
+<p>The status bar shows <strong>Tandem: &lt;product&gt; / &lt;repository&gt;</strong>; <strong>Tandem: Switch Repository</strong> changes it.</p>
+</li>
+<li>
+<p>A git worktree, a second checkout of a repository you already have, is not a project. Activating one is refused and points you at the repository it belongs to.</p>
+</li>
+<li>
+<p><code>.tandem/</code> in your repository keeps only facts about the code itself: how the project is installed, prepared, tested and built, its conventions when it declares any, and your prompt overrides. Those belong with the source.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limits"><a class="anchor" href="#_limits"></a>Limits</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>A project record left in the repository by an older version is moved into the store the first time the project is seen.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

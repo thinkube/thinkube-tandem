@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Reading the report and deciding :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="the-report.html">Reading the report and deciding</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/the-report.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">Reading the report and deciding</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p><em>The report answers your sentences one by one. This page is what each section says, what each button does, and which press is yours in each case.</em></p>
+</div>
+<div class="paragraph">
+<div class="title">TL;DR</div>
+<p>When the strip says <strong>built, deployed and running at &lt;address&gt;</strong>, read the report&#8217;s first paragraph and <strong>What you asked for, and what happened</strong>, then press <strong>Go on to the next</strong>. If the product does not do what you asked, press <strong>Say it does not hold</strong> beside that sentence and the ordinary <strong>Build</strong> repairs it. If the delivery should not stay, press <strong>Take it back out</strong>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_why_this_is_one_sentence"><a class="anchor" href="#_why_this_is_one_sentence"></a>Why this is one sentence</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The report is written so that a person can decide without reading code. Every sentence you wrote comes back with one word saying what happened to it, the checks that proved it are listed under it, and whatever the machine could not settle is on the page rather than left out. Your decision is one press, and the three presses are the whole decision.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_by_hand_and_what_is_happening_underneath"><a class="anchor" href="#_by_hand_and_what_is_happening_underneath"></a>By hand, and what is happening underneath</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_the_strip"><a class="anchor" href="#_the_strip"></a>The strip</h3>
+<div class="paragraph">
+<p>The strip names the ending. <strong>built, deployed and running at &lt;address&gt;</strong> is the usual one: merged, built by the platform, judged on the product. <strong>coded, checked and merged into the project</strong> is the same for a repository the platform does not deploy. <strong>delivered — waiting for your decision</strong> is a delivery that was not merged and waits for <strong>Accept it</strong> or <strong>Not this</strong>. <strong>delivered — withheld</strong> means a promise could not be kept or the product does not build; nothing was merged.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_sections"><a class="anchor" href="#_the_sections"></a>The sections</h3>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>What you asked for, and what happened.</strong> Each of your sentences with a word: <strong>done</strong>; <strong>being built</strong>; <strong>not judged</strong>, when a check or a reviewer could not reach it; <strong>answered after the merge</strong>, for a line the platform&#8217;s build answered; <strong>landed earlier</strong>; or <strong>in the project, and it does not do this</strong>. Under a done sentence, its checks as chips; press one to read the evidence, and where a reviewer judged it on the running product, the picture it took.</p>
+</li>
+<li>
+<p><strong>Nobody could settle these — they are yours to check.</strong> Lines only the running product can show, declared at signing as something no check and no reviewer can drive. <strong>It held</strong> and <strong>It did not</strong> record your answer.</p>
+</li>
+<li>
+<p><strong>What the machine could not judge.</strong> Checks that could not run at all, with why. Nothing here says the work is wrong.</p>
+</li>
+<li>
+<p><strong>What the work noticed, and did not do.</strong> What the reviewers saw and could not settle, each with the ask a person would say. None of it stopped the delivery. <a href="turn-what-the-reviewers-noticed-into-the-next-change.html" class="xref page">Taking up what the work noticed</a> is what to do with them.</p>
+</li>
+<li>
+<p><strong>Already in the project, from an earlier delivery</strong> and <strong>Not started</strong>: your other sentences and where they stand.</p>
+</li>
+<li>
+<p><strong>The run&#8217;s own account, for a developer.</strong> Folded away: every check and its verdict, in full.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_the_buttons"><a class="anchor" href="#_the_buttons"></a>The buttons</h3>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Press</th>
+<th class="tableblock halign-left valign-top">What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Go on to the next</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The work is already in the project. This closes the decision and moves the strip to what is left to build. It moves nothing in git.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Take it back out</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reverts this delivery&#8217;s merges, and every delivery this space merged after it, newest first, and pushes. The project builds as it did before. Refused, with the commit named, if a later commit of your own, made outside Tandem, sits on top of the delivery: taking the delivery out would take that commit with it.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Run it again</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Runs the signed work again, from the project as it stands. Nothing is signed twice and nothing you wrote changes.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Think it again</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Withdraws the signature. The promises are derived anew and signed as new work.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Accept it</strong> / <strong>Not this</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">For a delivery that was not merged, when the strip says <strong>delivered — waiting for your decision</strong>. <strong>Accept it</strong> merges and pushes; <strong>Not this</strong> leaves the work on its branch.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Say it does not hold</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Beside a delivered sentence, or one of its proved lines, when the product does not do it. What you write makes that promise work again on <strong>your sentences</strong>. It works on any cut, however old.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>It held</strong> / <strong>It did not</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Your answer for a line only you could check on the running product.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Ask the platform again</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Re-reads what the platform did with the merged work. Press it after a fix, when a card is frozen at a failed build.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Ask Claude to fix it</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">When the platform refused to build the merged work: opens a Claude Code session in that repository with the platform&#8217;s own words and what the run already tried.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_going_back_to_an_earlier_cut"><a class="anchor" href="#_going_back_to_an_earlier_cut"></a>Going back to an earlier cut</h3>
+<div class="paragraph">
+<p>Every signed piece of work leaves its report, its run with every step&#8217;s log, and the pictures its reviewers took. The <strong>Cuts</strong> row at the top of the run page lists them all, newest first; choose one and switch between <strong>Report</strong> and <strong>Run and logs</strong>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_when_something_is_wrong_later"><a class="anchor" href="#_when_something_is_wrong_later"></a>When something is wrong later</h3>
+<div class="paragraph">
+<p>Nothing about a delivery is final. Work that is live and wrong is said to be wrong on the sentence itself, with <strong>Say it does not hold</strong>, in your own words, and that sentence becomes work again. It is the same press for the latest cut and for the oldest one in the space.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limits"><a class="anchor" href="#_limits"></a>Limits</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Take it back out</strong> is refused when a later commit of your own, made outside Tandem, sits on top of the delivery; the commit is named, and moving it aside is yours to do first.</p>
+</li>
+<li>
+<p><strong>Accept it</strong> is refused for a withheld delivery and while any line of the work is red; an unkept promise is never handed over.</p>
+</li>
+<li>
+<p>A finding you do not keep stays on its report and may be reported again by a later reviewer.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>
