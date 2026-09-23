@@ -19,6 +19,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { TandemSession } from "./session";
 import { emptySpace } from "../core/schema";
+import { saveRun } from "../run/record";
+import { RunState } from "../run/state";
 
 function fresh(dir: string): TandemSession {
   return new TandemSession({
@@ -81,4 +83,18 @@ test("a set already signed is not in hand again, and an empty cut names nothing"
   const d = fresh(emptyDir);
   d.load();
   assert.equal(d.chosenSpec(), undefined, "nothing in hand names no set");
+});
+
+test("while its run goes on, the thing being built is still in hand after the window reloads", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-reload-running-"));
+  const a = fresh(dir);
+  a.space = { ...space(), cuts: [{ id: "cut-1", changeIds: ["n1"], specId: "spec-t-1" }] } as never;
+  a.cutNodeIds = new Set(["n1"]);
+  a.persist();
+  saveRun(dir, { cutId: "cut-1", at: new Date().toISOString(), state: "running", owner: { pid: process.pid, at: "t" } } as never, new RunState(() => {}));
+
+  const b = fresh(dir);
+  b.load();
+  assert.equal(b.running, true, "the run is read as going on");
+  assert.equal(b.chosenSpec()?.id, "spec-t-1", "the thing in hand is the one the run builds");
 });

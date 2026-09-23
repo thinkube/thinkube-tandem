@@ -174,3 +174,11 @@ test("the platform that could not judge makes no work, and can be asked again", 
   assert.equal(d.afterMerge?.outcome, "unjudged", "a cache it could not write is not the work failing");
   assert.match(d.afterMerge?.detail ?? "", /could not run/);
 });
+
+test("a pipeline that never settles is said on its delivery, not on the page open by then", async () => {
+  const { d, notes } = await ask("Running", [{ name: "build-backend", status: "Running" }]);
+  assert.equal(d.afterMerge?.outcome, "unjudged");
+  assert.equal(d.afterMerge?.said, "the platform's pipeline");
+  assert.match(d.afterMerge?.detail ?? "", /did not settle within the watch/);
+  assert.deepEqual(notes.filter((n) => n), [], "no line goes to the page that happens to be open");
+});

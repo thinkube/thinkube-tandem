@@ -380,7 +380,12 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const openSpaceFor = async (projectId?: string): Promise<void> => {
     if (projectId) await context.workspaceState.update("tandem.activeProject", projectId);
-    const s = await ensureSession(context, true);
+    // The first open in a fresh window loads the session and the space,
+    // which takes a while: the status bar says the click was taken.
+    const s = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: "Tandem: opening the thinking space…" },
+      () => ensureSession(context, true),
+    );
     if (!s) return;
     updateStatusBar(rememberedProject(context));
     (forgetProjects(), projectsTree?.refresh());

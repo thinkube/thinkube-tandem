@@ -53,7 +53,7 @@ import { claimRunLock, isMaintainUnit, maintainedElsewhere, plannedByPending, se
 import { probeSourceReader, settleTransfers } from "./owner";
 import { makeDiagnoser } from "./diagnose";
 import { finishAuthoring } from "./authoring";
-import { findingsIn } from "./findings";
+import { workerFindings } from "./findings";
 import { unitCloser } from "./closeUnit";
 import { buildOracleArgs } from "./oracleArgs";
 import { runWaits } from "./waits";
@@ -493,11 +493,11 @@ export async function dispatchTep(
         }
         if (!ok) failWith(next.id, ...(outcome.undelivered ?? ["failed"]));
         if (ok && role === "test") decisions.push(...extractDecisions(outcome.finalText).map((text) => ({ unit: next.id, text })));
-        // What it noticed and left alone, in its own words, for the person.
-        for (const f of findingsIn(outcome.finalText)) {
-          noticed.push({ ...f, saw: `${next.id}: ${f.saw}` });
-          log(`👀 ${next.id}: ${f.saw}`, next.id);
-        }
+        // What it noticed and left alone: the ones with an ask for the
+        // person, the rest for the developer in the run's log.
+        const seen = workerFindings(next.id, outcome.finalText);
+        noticed.push(...seen.forPerson);
+        for (const line of seen.log) log(line, next.id);
         break;
       }
 

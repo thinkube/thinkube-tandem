@@ -131,14 +131,13 @@ export function App(props: {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {spinStyle}
       {push.activity && !push.grounding?.length ? (
+        // In the page's own flow, above the strip: laid over it, the pill
+        // hid half of the strip's line while a round ran.
         <div
           data-thinking
           style={{
-            position: "fixed",
-            top: 8,
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 50,
+            alignSelf: "center",
+            margin: `${SP.xs}px 0`,
             display: "flex",
             gap: 8,
             alignItems: "center",
@@ -147,7 +146,6 @@ export function App(props: {
             borderRadius: 14,
             padding: `${SP.xs}px ${SP.lg}px`,
             fontSize: FS.body,
-            boxShadow: "0 2px 8px #0008",
           }}
         >
           <span className="tandem-spin" style={{ display: "inline-block" }}>⟳</span>

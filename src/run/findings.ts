@@ -58,3 +58,23 @@ export function findingsIn(text: string): Finding[] {
   }
   return out;
 }
+
+/**
+ * A worker's findings, split by who can use them. One with an ask is the
+ * person's to weigh, in the worker's words; one with no ask is a note for
+ * the developer and stays in the run's log. The unit id is the
+ * developer's, so it is in the log lines and never in the person's text.
+ */
+export function workerFindings(unit: string, finalText: string): { forPerson: Finding[]; log: string[] } {
+  const forPerson: Finding[] = [];
+  const log: string[] = [];
+  for (const f of findingsIn(finalText)) {
+    if (f.ask) {
+      forPerson.push(f);
+      log.push(`👀 ${unit}: ${f.saw}`);
+    } else {
+      log.push(`👀 ${unit}: ${f.saw} — a note with no ask, kept for the developer`);
+    }
+  }
+  return { forPerson, log };
+}

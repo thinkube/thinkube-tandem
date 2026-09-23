@@ -288,11 +288,11 @@ function livePid(pid: number): boolean {
 export function readRun(
   storeDir: string,
   onChanged: () => void,
-): { state: RunState; running: boolean; note?: string } | undefined {
+): { state: RunState; running: boolean; note?: string; cutId: string } | undefined {
   const last = loadLastRun(storeDir);
   if (!last) return undefined;
   const seen = runSituation(last);
-  return { state: RunState.from(last, onChanged), ...seen };
+  return { state: RunState.from(last, onChanged), ...seen, cutId: last.cutId };
 }
 
 /** What a surface should say about a run it is only watching. */

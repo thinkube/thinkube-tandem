@@ -96,7 +96,15 @@ export async function ensureWorkSession(args: {
   storageDir: string;
 }): Promise<import("../surfaces/session").TandemSession | undefined> {
   const wp = findWorkProject(args.storeRoot, args.ownerKey.slice(3));
-  if (!wp) return undefined;
+  if (!wp) {
+    // Said, not swallowed: a click that finds no project must not look
+    // like a click that did nothing.
+    if (args.interactive)
+      void vs().window.showWarningMessage(
+        `Tandem — the project ${args.ownerKey.slice(3)} is not in the store at ${args.storeRoot}`,
+      );
+    return undefined;
+  }
   const slug = await args.chooseSpace(args.ownerKey, args.interactive);
   if (!slug) return undefined;
   const key = `${args.ownerKey}/${slug}`;

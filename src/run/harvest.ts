@@ -374,7 +374,21 @@ export async function watchGitopsAfterAccept(a: {
     }
     await sleep(20_000);
   }
-  a.log("the pipeline did not settle within the watch — what it did with the merged work is not known here yet; read it again later");
+  // The watch ends without an answer. That is said on the delivery it is
+  // about, where the platform can be asked again, and not as a line on
+  // whatever page is open by then.
+  a.update(
+    {
+      ...d,
+      afterMerge: {
+        at: new Date().toISOString(),
+        outcome: "unjudged",
+        said: "the platform's pipeline",
+        detail: "it did not settle within the watch, so what it did with the merged work is not known yet",
+      },
+    },
+    "",
+  );
 }
 
 /**

@@ -904,6 +904,13 @@ export class TandemSession {
           ? readRunOf(this.deps.storeDir, this.lookingAtCut, () => this.deps.onChanged?.())
           : readRun(this.deps.storeDir, () => this.deps.onChanged?.());
         if (seen) Object.assign(this, { runState: seen.state, running: seen.running, runNote: seen.note });
+        // The cut in hand is signed once its run starts, so the cut alone no
+        // longer names it: while the run goes on, the thing in hand is the
+        // one that run is building.
+        if (seen?.running && !this.cutSpecId) {
+          const runCut = this.lookingAtCut ?? ("cutId" in seen ? seen.cutId : undefined);
+          this.cutSpecId = this.space.cuts.find((c) => c.id === runCut)?.specId;
+        }
       }
       void this.refreshStaleness().then(() => this.deps.onChanged?.());
     } catch {
