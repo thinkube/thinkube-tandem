@@ -155,11 +155,15 @@ Under *What will be true when this is done*, each line under a promise says wher
 | Also on a card: this card is part of the cut being built now. A cut is one signed piece of work.
 |===
 
-The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*. The first and last cards are *preparing the tree*, *The closing gate*, *handing it over*, *taking it live*. The meanings the other Tandem pages give:
+The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*. The first and last cards are *preparing the tree*, *The closing gate*, *handing it over*, *taking it live*. What each one means:
 
 * *check*: a worker writes the checks before the code, without seeing the code.
 * *code*: a worker writes the code, without seeing the checks.
+* *tests brought under*: after the code has landed, a worker updates the existing tests of that part of the project to the new behaviour. It writes tests only, never code, and the checks must stay green.
 * *on the running product*: a reviewer opens the running product in a browser and judges what it sees.
+* *audit*: a worker grades the checks against the real state of the project. It writes nothing.
+* *door* and *preparing the tree*: before any worker starts, the run is claimed, the checks are placed, and the working copy is prepared and proved.
+* *delivery* and *handing it over*: after the closing gate, the report is written, the branch is pushed, and the delivery is opened for you.
 * *live* and *taking it live*: the platform builds and deploys the merged work.
 * *The closing gate*: every check runs again from a clean tree, with the project's own suite. Only a green gate merges.
 
@@ -167,10 +171,14 @@ The bands name the kinds of card: *check*, *code*, *tests brought under*, *on th
 
 == The report
 
-*Cuts* lists every signed piece of work; each chip is its number and the day and time. *Report* and *Run and logs* switch between the two views of one cut. The sections and every button are on xref:index.adoc[Thinkube Tandem]. The word beside each sentence: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*, or *in the project, and it does not do this*. The meanings the other Tandem pages give:
+*Cuts* lists every signed piece of work; each chip is its number and the day and time. *Report* and *Run and logs* switch between the two views of one cut. The sections and every button are on xref:index.adoc[Thinkube Tandem]. The word beside each sentence: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*, or *in the project, and it does not do this*. What each one means:
 
 * *done*: the checks proved it. They are listed under the sentence.
+* *being built*: the work for it is signed and running.
 * *not judged*: a check or a reviewer could not reach it. It is never counted as a pass.
+* *answered after the merge*: every check passed except some that wait for the platform, the cluster or a person. Those answer after the work is merged.
+* *landed earlier*: an earlier piece of work already delivered this sentence.
+* *in the project, and it does not do this*: a check failed. The code is in the project, but it does not do what the sentence asks.
 
 == The status bar
 
