@@ -70,7 +70,7 @@ The *Projects* view also carries *New Product*, *New here…*, *Set Product…*,
 |`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
 (github.com remotes use the `gh` CLI instead); Thinkube Git is a Gitea forge.
 
-|`thinkubeTandem.controlUrl` |empty |thinkube-control's base URL, for the template catalogue and for making a new application. Empty reads it from the connected MCP server's configuration.
+|`thinkubeTandem.controlUrl` |empty |Thinkube Control's base URL, for the template catalogue and for making a new application. Empty reads it from the connected MCP server's configuration.
 
 |`thinkubeTandem.controlToken` |empty |API token for thinkube-control. Empty reads it from the connected MCP server's configuration.
 |===
