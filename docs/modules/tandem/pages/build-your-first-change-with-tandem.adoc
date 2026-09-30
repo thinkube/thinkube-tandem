@@ -41,16 +41,8 @@ You make a todo app from the web app template, write nine sentences about it, an
 
 === Supported hardware
 
-[cols="1,1,1,2",options="header"]
-|===
-| Node | Architecture | GPU | On the reference walk
-
-| tkamd1 | amd64 | none | Thinkube IDE, where Tandem and its workers run
-| tkamd2 | amd64 | 2 × RTX 3090, 24 GB each | —
-| tkspark | arm64 | GB10, 121.7 GB unified | —
-|===
-
-Tandem's model rounds call Claude; the app is built and deployed by the platform like any other.
+* *GPU:* not needed. Tandem's model rounds call Claude, and the app is built and deployed by the platform like any other.
+* *Architecture:* amd64 or arm64.
 
 === Prerequisites
 
