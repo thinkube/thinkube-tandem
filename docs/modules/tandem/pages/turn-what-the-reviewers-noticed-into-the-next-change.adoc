@@ -16,8 +16,8 @@
 
 A reviewer judging the running product asks one question about each thing it sees that nobody asked for: does this stop the work being delivered? If it does, the work fixes it. If it does not, it becomes a finding, and the delivery goes ahead.
 
-* *Findings never block.* They are listed under *What the work noticed, and did not do*, each with the sentence a person would say to want it fixed.
-* *Keeping is not building.* You keep the findings you want for later, so the things you chose to build first keep their place.
+* *Findings are listed; the delivery goes ahead.* Each finding is under *What the work noticed, and did not do*, with the sentence a person would say to want it fixed.
+* *Kept findings wait until you choose to build them.* You keep the findings you want for later, so the things you chose to build first keep their place.
 * *Kept findings become sentences.* One press puts them all in the box, where they are read, kept and grouped like any sentence you write.
 * *Built work stays built.* Grouping the new sentences leaves the accepted things as they are.
 
@@ -45,7 +45,7 @@ You keep six findings from two reports of the todo app, turn them into six sente
 *Platform*
 
 * Thinkube running, with Thinkube IDE open. Ask Claude: _"what's running?"_
-* A thinking space with a delivered thing whose report lists findings.
+* A thinking space (the page where you write your sentences and follow their work) with a delivered thing whose report lists findings.
 
 *Components*
 
@@ -53,10 +53,10 @@ You keep six findings from two reports of the todo app, turn them into six sente
 
 === Time & risk
 
-* *Estimated time:* 30 min for one sentence. On the reference walk: keeping six findings and putting them in the box 2 min, reading and keeping them 2 min, grouping 1 min, working out the first thing 7 min, and its run 17 min.
+* *Estimated time:* 30 min, up to the first new thing delivered. On the reference walk: keeping six findings and putting them in the box 2 min, reading and keeping them 2 min, grouping 1 min, working out the first thing 7 min, and its run 17 min.
 * *Risk level:* Low. The new things are built like any other, on a branch merged at delivery; the accepted things are not built again.
 * *Rollback:* On the new thing's report, press *Take it back out*.
-* *Last updated:* 2026-09-17. Written from the walk of 2026-09-14 on the todo app, Tandem 2.0.343 to 2.0.345.
+* *Last updated:* 2026-09-17. Written from a test walk on the todo app.
 
 == Instructions
 
@@ -64,15 +64,25 @@ You keep six findings from two reports of the todo app, turn them into six sente
 
 Open a delivered thing's report and scroll to *What the work noticed, and did not do*. Each finding has a box to tick, what was seen, and under it *Ask:* followed by the sentence to want it fixed.
 
-On the walk, the third report listed missing accents in the language menu, the Spanish delete question, the Catalan confirmation, and a delete confirmation that does not name the task. The first report listed the count line changing shape and new tasks landing in no fixed place.
+On the walk, the third report listed four findings:
+
+* missing accents in the language menu;
+* the Spanish delete question;
+* the Catalan confirmation;
+* a delete confirmation that does not name the task.
+
+The first report listed two:
+
+* the count line changing shape;
+* new tasks landing in no fixed place.
 
 === Step 2. Keep the ones you want
 
 Tick the findings you want. The button under the list changes from *Select what to keep for later* to *Keep the N selected for later*. Press it.
 
-Each finding now reads *kept for later* where it stands, and a section *Kept for later* appears under the report, naming the cut that noticed each one. It gathers what you kept from every report of the space: on the walk, four from the third report and two from the first, listed together.
+Each finding now reads *kept for later* where it stands, and a section *Kept for later* appears under the report, naming the report each one came from. It gathers what you kept from every report of the space: on the walk, four from the third report and two from the first, listed together.
 
-image::tandem-15-kept-for-later.png[A report with two findings kept for later, and under it the Kept for later section gathering six from two cuts, with Put these 6 in the box]
+image::tandem-15-kept-for-later.png[A report with two findings kept for later, and under it the Kept for later section gathering six from two reports, with Put these 6 in the box]
 
 === Step 3. Put them in the box
 

@@ -6,16 +6,12 @@ The *Configuration* view under the space manages Claude Code's own configuration
 
 == The Configuration tree
 
-Below the space in the Tandem container, the *Configuration* view manages
-Claude Code configuration per scope (project or user): hooks, commands,
-skills, agents, MCP servers, permissions, and installed plugins — with
-add / open / delete from the tree and its context menus. The view follows
-your active project.
+The *Configuration* view is below the space in the Tandem container. You add, open and delete items from the tree and its context menus. The view follows your active project.
 
 == Choosing the repository
 
 Tandem never assumes which folder of a multi-root workspace you mean.
-The active repository is chosen once and remembered per workspace:
+You choose the active repository once; Tandem remembers it for each workspace. You choose it with:
 
 * the status-bar item `Tandem: <product> / <repo>`;
 * the `<repo> ▾` button in the map;
@@ -55,7 +51,7 @@ The *Projects* view also carries *New Product*, *New here…*, *Set Product…*,
 
 |`thinkubeTandem.volumeModel` |`sonnet` |The model for the reading, the grouping, the naming of things, the questions and their answers, and the reading of the repository.
 
-|`thinkubeTandem.workerModel` |`sonnet` |The model the run's workers use; never taken from the environment.
+|`thinkubeTandem.workerModel` |`sonnet` |The model the run's workers use.
 
 |`thinkubeTandem.workerModelByRole` |`{}` |A different model for one kind of worker, for example `{"judge": "opus"}` for the one that decides whether a check is green.
 
@@ -67,10 +63,9 @@ The *Projects* view also carries *New Product*, *New here…*, *Set Product…*,
 
 |`thinkubeTandem.docsGateMode` |`blocking` |What *Accept it* does when the page a documentation promise named did not land: `blocking` refuses, `advisory` accepts and says so. Signing always needs the documentation promise or *Not needed*; this setting changes nothing there.
 
-|`thinkubeTandem.giteaToken` |empty |API token for a Gitea forge
-(github.com remotes use the `gh` CLI instead); Thinkube Git is a Gitea forge.
+|`thinkubeTandem.giteaToken` |empty |API token for Thinkube Git. Remotes on github.com use the `gh` CLI instead.
 
 |`thinkubeTandem.controlUrl` |empty |Thinkube Control's base URL, for the template catalogue and for making a new application. Empty reads it from the connected MCP server's configuration.
 
-|`thinkubeTandem.controlToken` |empty |API token for thinkube-control. Empty reads it from the connected MCP server's configuration.
+|`thinkubeTandem.controlToken` |empty |API token for Thinkube Control. Empty reads it from the connected MCP server's configuration.
 |===

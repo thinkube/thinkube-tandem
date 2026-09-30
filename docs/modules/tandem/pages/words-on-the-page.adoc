@@ -2,10 +2,10 @@
 :page-type: reference
 :description: Every line the strip can show, every button, and every state word on Thinkube Tandem's pages, with what each means and what to do.
 
-_Only two marks appear on Tandem's pages, a tick and a cross; everything else says what it is in words. This is the lookup table for those words. If you find a symbol whose meaning is not written next to it, that is a defect; say so._
+_Only two marks appear on Tandem's pages, a tick and a cross. Everything else says what it is in words. This is the lookup table for those words. Every symbol has its meaning written next to it._
 
 .TL;DR
-Find the line the strip shows in the first table; the second column says where you are and the third what the button does next. The other tables cover the marks under a promise, the state words on the run's cards, and the words on the report.
+Find the line the strip shows in the first table. The second column says where you are, and the third says what the button does next. The other tables cover the marks under a promise (what will be true when the work is done), the state words on the run's cards, and the words on the report.
 
 == The strip
 
@@ -152,18 +152,29 @@ Under *What will be true when this is done*, each line under a promise says wher
 | The run stopped, or something this waited on failed, so this was never started. Not a failure of its own.
 
 | *cut*
-| Also on a card: this card is part of the work being built now.
+| Also on a card: this card is part of the cut being built now. A cut is one signed piece of work.
 |===
 
-The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*. The first and last cards are *preparing the tree*, *The closing gate*, *handing it over*, *taking it live*. The header counts *N of M workers done · N of M judged on the running product · N never ran*, then *finished*, *finished, with failures* or *not running*. A card's chip reads *passed — N log lines*, *N/M checks passed*, *AC-N failed*, or *some undelivered*. The key under the graph: *── needs what it produces · ╌╌ waits for its own probes*, the checks written before the code.
+The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*. The first and last cards are *preparing the tree*, *The closing gate*, *handing it over*, *taking it live*. The meanings the other Tandem pages give:
+
+* *check*: a worker writes the checks before the code, without seeing the code.
+* *code*: a worker writes the code, without seeing the checks.
+* *on the running product*: a reviewer opens the running product in a browser and judges what it sees.
+* *live* and *taking it live*: the platform builds and deploys the merged work.
+* *The closing gate*: every check runs again from a clean tree, with the project's own suite. Only a green gate merges.
+
+ The header counts *N of M workers done · N of M judged on the running product · N never ran*, then *finished*, *finished, with failures* or *not running*. A card's chip reads *passed — N log lines*, *N/M checks passed*, *AC-N failed*, or *some undelivered*. The key under the graph: *── needs what it produces · ╌╌ waits for its own probes*, the checks written before the code.
 
 == The report
 
-*Cuts* lists every signed piece of work; each chip is its number and the day and time. *Report* and *Run and logs* switch between the two views of one cut. The sections and every button are on xref:index.adoc[Thinkube Tandem]. The word beside each sentence: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*, or *in the project, and it does not do this*.
+*Cuts* lists every signed piece of work; each chip is its number and the day and time. *Report* and *Run and logs* switch between the two views of one cut. The sections and every button are on xref:index.adoc[Thinkube Tandem]. The word beside each sentence: *done*, *being built*, *not judged*, *answered after the merge*, *landed earlier*, or *in the project, and it does not do this*. The meanings the other Tandem pages give:
+
+* *done*: the checks proved it. They are listed under the sentence.
+* *not judged*: a check or a reviewer could not reach it. It is never counted as a pass.
 
 == The status bar
 
-*Tandem: <product> / <repository>* names the choice. While a space works: *<space>: N/M units*, with *— needs an answer* or *— quiet for N min*. With more than one space busy: *N spaces are busy — a worker needs an answer*.
+*Tandem: <product> / <repository>* names the choice. While a space (thinking space: the page where you write your sentences and follow their work) works: *<space>: N/M units*, with *— needs an answer* or *— quiet for N min*. With more than one space busy: *N spaces are busy — a worker needs an answer*.
 
 == Tandem: Show Defects
 
@@ -171,4 +182,4 @@ A table per month: *N found · N healed by the run · N reached the person · N 
 
 == Good to know
 
-The words here are as the extension renders them at the version this page was written against. When a word on the page and a word here differ, the page is the newer one.
+If a word in Tandem differs from this page, Tandem is right.

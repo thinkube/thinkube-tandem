@@ -6,7 +6,7 @@ Every defect a run catches is one row in `defects/<YYYY-MM>.jsonl` at the store'
 
 == The file
 
-One file per month at the store's root, shared by every space; each row names the space it came from. A row is appended at the moment a run catches something: a worker writing outside its declared files, a check that never went green, a check that could not run at all, a question the run had to answer for a worker, a deferral found in the delivered code, a finding carried to the report.
+One file per month, shared by every space. Each row names the space it came from. A run adds a row when it catches one of these: a worker writing outside its declared files, a check that never passes, a check that could not run at all, a question the run had to answer for a worker, a deferral found in the delivered code, or a finding carried to the report.
 
 == A row
 
@@ -18,13 +18,13 @@ One file per month at the store's root, shared by every space; each row names th
 | When the row was written, and the Tandem version that wrote it.
 
 | `space`, `spec`, `run`, `slice`, `unit`
-| Where it happened: the thinking space, the signed work (`TEP-<author>-<n>`), the run, the piece of work and the worker.
+| Where it happened: the thinking space (the page where you write your sentences and follow their work), the signed work (`TEP-<author>-<n>`), the run, the piece of work and the worker.
 
 | `activity`, `trigger`, `type`, `stage`, `impact`
 | The classification; the values are listed under <<_the_axes,The axes>>.
 
 | `detail`
-| The evidence, in the words of whatever caught it.
+| The evidence, in the words of whatever caught it, cut at 1,200 characters.
 
 | `refs`
 | Related identifiers: a commit, a check, a file.
@@ -36,11 +36,11 @@ One file per month at the store's root, shared by every space; each row names th
 |===
 | ODC attribute | Field in a row | What it holds in Tandem
 
-| Activity | `activity` | What the run was doing when the defect surfaced: `preflight`, `check authoring`, `unit execution`, `worker question`, `verify-oracle supervision`, `closing gate`, `closing`, `run`, `refresh`, `diagnosis`, `challenge`, `check repair`, `gate repair`, `clearance`, `tool development`.
-| Trigger | `trigger` | What surfaced it: `probe-audit`, `containment`, `gate-verifier`, `supervisor`, `oracle-ruling`, `author-resume`, `closer`, `stub-scan`, `gate-ac`, `gate-infra`, `suite`, `watchdog`, `crash`, `window-reload`, `self-repair`, and the preflight refusals such as `plan-check-homes` and `signature-drift`.
-| Defect type | `type` | Whose fault it was, as the judge saw it: `code`, `test`, `contract` (the brief lacked a fact), `gate`, `machine` (Tandem's own machinery, wherever the failure was caught), `infrastructure`, `environment`, `decision`. A closed set.
+| Activity | `activity` | What the run was doing when the defect surfaced: `preflight`, `check authoring`, `unit execution`, `worker question`, `verify-oracle supervision`, `closing gate`, `closing`, `run`, `refresh`, `diagnosis`, `challenge`, `check repair`, `gate repair`, `clearance`, `tool development`. These are internal values; see the table in *Tandem: Show Defects*.
+| Trigger | `trigger` | What surfaced it: `probe-audit`, `containment`, `gate-verifier`, `supervisor`, `oracle-ruling`, `author-resume`, `closer`, `stub-scan`, `gate-ac`, `gate-infra`, `suite`, `watchdog`, `crash`, `window-reload`, `self-repair`, and the preflight refusals such as `plan-check-homes` and `signature-drift`. These are internal values; see the table in *Tandem: Show Defects*.
+| Defect type | `type` | Whose fault it was, as the judge saw it: `code`, `test`, `contract` (the brief, the instructions a worker is given, lacked a fact), `gate`, `machine` (Tandem's own machinery, wherever the failure was caught), `infrastructure`, `environment`, `decision`. A closed set.
 | Qualifier | `qualifier` | `missing`, written for a deferral the honesty scan found in delivered code.
-| Stage | `stage` | Where in the pipeline it belongs: `author`, `brief`, `check`, `clearance`, `altitude`.
+| Stage | `stage` | Where in the pipeline it belongs: `author`, `brief`, `check`, `clearance`, `altitude`. These are internal values; see the table in *Tandem: Show Defects*.
 | Impact | `impact` | The cost, as one sentence the catching site chose: `run refused`, `round lost`, `unit undelivered`, `the author repaired its own work`, `closed what no other actor could`, `delivery withheld`, and so on.
 | Fate | computed when read | `healed`, `reached the person`, or `not known`.
 |===
@@ -68,11 +68,11 @@ Defect: the platform's verdict was compared in one case, so a pipeline
 that passed was read as a failure
 ----
 
-Every deploy, and every start of the extension, harvests the lines it has not harvested yet and writes one row per repair: `activity: tool development`, `trigger: self-repair`, `type: machine`, with the commit in `refs`. A commit that says nothing records nothing.
+Every deploy, and every start of the extension, reads the `Defect:` lines it has not read yet. It writes one row per repair: `activity: tool development`, `trigger: self-repair`, `type: machine`, with the commit in `refs`. A commit without that line records nothing.
 
-`type` is a closed set the code cannot stray from: `code`, `test`, `contract`, `gate`, `machine`, `infrastructure`, `environment`, `decision`. The machine's own failures, a check that could not be graded, a stall, a crash, a lock nobody released, are typed `machine` wherever they are caught.
+Tandem's own failures are typed `machine` wherever they are caught: a check that could not be graded, a stall, a crash, a lock nobody released.
 
 == Good to know
 
 * `activity`, `trigger` and `impact` are strings chosen by the site that caught the defect, so a monthly reading counts spellings as well as kinds.
-* A row's fate resolves from the run's ending record; rows from runs that ended before ending records existed read *not known*.
+* A row whose run wrote no ending record reads *not known*.

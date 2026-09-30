@@ -8,9 +8,9 @@ Everything Tandem records about your work lives in the store, a git repository o
 
 * *Your projects:* which code repository each project belongs to.
 * *Your thinking spaces:* your sentences exactly as you typed them, and each space's history, snapshot by snapshot.
-* *Your signed work:* each piece of work (`TEP-<author>-<n>`, the number the *Cuts* row shows), its run's log, the delivery with its proofs, and the reading of your code made for each sentence.
+* *Your signed work:* each piece of work, by its number (`TEP-<author>-<n>`, as the *Cuts* row shows it), its run's log, the delivery with its proofs, and the reading of your code made for each sentence.
 * *The defect ledger:* one file per month, `defects/<YYYY-MM>.jsonl`, shared by every space, so deleting a space never deletes the record of what went wrong in it. xref:defect-ledger.adoc[The defect ledger: ODC for work done with an AI] says why it is kept.
-* *Runs started from the command line.*
+* *Runs started from the command line:* the records of runs started by a command typed in a terminal, rather than by a button on a page.
 
 The store is at `~/thinkube-tandem-store` in Thinkube IDE.
 
