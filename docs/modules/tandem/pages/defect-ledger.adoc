@@ -10,8 +10,6 @@ Run *Tandem: Show Defects*. Every row is one defect one of your runs caught: wha
 
 Tandem records every defect its runs catch, to improve the process of building software with an AI. Each record is one row: what the run was doing, what surfaced the defect, whose fault it was, what it cost, the space and run it came from, and the evidence in the words of whatever caught it, which can quote your code and file paths. The rows are kept in your store, the git repository of your own where Tandem keeps everything it records (xref:store.adoc[The store]).
 
-Tandem will add features to analyze these defects and report the issues they reveal.
-
 == The decision
 
 Orthogonal Defect Classification (ODC) starts from a plain fact. Nobody has time to find the root cause of every defect. But anyone can classify a defect in a few seconds, along attributes that do not depend on each other: the type of the defect, the activity in which it was found, the trigger that made it appear, and the impact it had. Classified that way, a few hundred defects show where a process leaks. Nobody has to study any one of them. A rise in one type at one stage is a pattern, and the pattern names the repair.
@@ -40,7 +38,7 @@ The run was refused before any worker started, because the plan put the checks w
 
 == What a month says
 
-The ledger for September 2026 on the reference cluster holds 225 rows. By type and by trigger:
+Thinkube itself is developed with Tandem, and its development has collected this data and learned from it. One month of that work, September 2026, wrote 225 rows. By type and by trigger:
 
 [cols="1,1,2,1",options="header"]
 |===
@@ -54,7 +52,7 @@ The ledger for September 2026 on the reference cluster holds 225 rows. By type a
 | machine | 3 | stub-scan | 10
 |===
 
-Read it the ODC way. The largest group is `contract` defects found by the `supervisor`. The brief (the instructions a worker is given) lacked a fact the checks needed, and the supervisor gave that fact during the run. Of those 87 rows, 31 read as healed: the worker got its answer, or the question was carried on as a contract defect. 32 read as *round lost*: giving the missing fact cost one round of work. So the method leaks at the step that writes briefs. The `author-resume` and `closer` rows show a second pattern. 28 times, the coder went back to repair its own failing check and could not. 17 times, the closer finished what no other worker could, and 4 times it could not either. The three `machine` rows count too few; see Limits.
+Read it the ODC way. The largest group is `contract` defects found by the `supervisor`. The brief (the instructions a worker is given) lacked a fact the checks needed, and the supervisor gave that fact during the run. Of those 87 rows, 31 read as healed: the worker got its answer, or the question was carried on as a contract defect. 32 read as *round lost*: giving the missing fact cost one round of work. So the method leaks at the step that writes briefs. The `author-resume` and `closer` rows show a second pattern. 28 times, the coder went back to repair its own failing check and could not. 17 times, the closer finished what no other worker could, and 4 times it could not either. In this month some failures of Tandem's own machinery were recorded under other types, so the three `machine` rows count too few.
 
 The fates for the month, from the rows alone:
 
