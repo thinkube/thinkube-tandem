@@ -2,7 +2,7 @@
 :page-type: concept
 :page-layout: area
 :page-area: tandem
-:page-aliases: from-sentence-to-promise.adoc, the-run.adoc, the-report.adoc, defect-ledger.adoc, identity.adoc, troubleshooting.adoc
+:page-aliases: from-sentence-to-promise.adoc, the-run.adoc, the-report.adoc, identity.adoc, troubleshooting.adoc
 
 An experimental way of working with Claude Code, still changing: you write what you want in plain sentences, Tandem builds it, proves it, deploys it and reports, and you decide.
 
@@ -50,5 +50,6 @@ write <- decide: "what the work noticed\nbecomes the next sentences" {style.stro
 
 * xref:words-on-the-page.adoc[The words on the page]: every line the strip can show, every state word, and what to press.
 * xref:configuration.adoc[Configuration and settings]: Tandem's commands and settings in Thinkube IDE.
-* xref:store.adoc[The store]: the file layout of what Tandem records.
+* xref:store.adoc[The store]: what Tandem records about your work, where it is kept, and how it is backed up.
+* xref:defect-ledger.adoc[The defect ledger: ODC for work done with an AI]: what Tandem records about its runs to improve the process, and how a month of defects reads.
 * xref:defects.adoc[The defect ledger, reference]: the fields of a row and the run-ending records.
