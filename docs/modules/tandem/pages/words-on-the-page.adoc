@@ -187,7 +187,3 @@ The bands name the kinds of card: *check*, *code*, *tests brought under*, *on th
 == Tandem: Show Defects
 
 A table per month: *N found · N healed by the run · N reached the person · N not known*, then the columns *when*, *TEP* (the number of the signed work, as the *Cuts* row shows it), *slice* (the piece of work it was found in), *trigger*, *impact*, *became*, *detail*. xref:defects.adoc[The defect ledger, reference] says what they mean.
-
-== Good to know
-
-If a word in Tandem differs from this page, Tandem is right.

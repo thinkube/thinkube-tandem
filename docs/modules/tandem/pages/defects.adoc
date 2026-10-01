@@ -21,7 +21,7 @@ One file per month, shared by every space. Each row names the space it came from
 | Where it happened: the thinking space (the page where you write your sentences and follow their work), the signed work (`TEP-<author>-<n>`), the run, the piece of work and the worker.
 
 | `activity`, `trigger`, `type`, `stage`, `impact`
-| The classification; the values are listed under <<_the_axes,The axes>>.
+| The classification; the values are listed under <<_the_axes,The axes>>. `activity`, `trigger` and `impact` are strings chosen by the site that caught the defect, so a monthly reading counts spellings as well as kinds.
 
 | `detail`
 | The evidence, in the words of whatever caught it, cut at 1,200 characters.
@@ -71,8 +71,3 @@ that passed was read as a failure
 Every deploy, and every start of the extension, reads the `Defect:` lines it has not read yet. It writes one row per repair: `activity: tool development`, `trigger: self-repair`, `type: machine`, with the commit in `refs`. A commit without that line records nothing.
 
 Tandem's own failures are typed `machine` wherever they are caught: a check that could not be graded, a stall, a crash, a lock nobody released.
-
-== Good to know
-
-* `activity`, `trigger` and `impact` are strings chosen by the site that caught the defect, so a monthly reading counts spellings as well as kinds.
-* A row whose run wrote no ending record reads *not known*.
