@@ -1,7 +1,7 @@
 {
   "name": "thinkube-tandem-map",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "The Tandem space surface: capture, units map, the two gates. Built standalone into ../../media/map/.",
   "scripts": {
