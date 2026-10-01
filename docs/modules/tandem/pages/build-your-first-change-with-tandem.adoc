@@ -4,7 +4,6 @@
 :page-tagline: Write what you want in plain sentences, see how they were read, sign the promises, and get the change running in your app
 :page-difficulty: beginner
 :page-time: 1 h
-:page-time-note: per thing built; a slow test can add 20 minutes
 :page-risk: low
 :page-tags: Tandem, Sentences, Promises, Reports
 :page-order: 10
@@ -54,13 +53,6 @@ You make a todo app from the web app template, write nine sentences about it, an
 *Components*
 
 * None beyond the base platform.
-
-=== Time & risk
-
-* *Estimated time:* 1 h for the first thing. On the reference walk, writing, reading, keeping and grouping the nine sentences took 10 min, and each thing took 34 to 63 min from *Build the first* to delivered. A slow test can add 20 minutes.
-* *Risk level:* Low. Work is built on a branch and merged only when it is delivered; *Take it back out* reverts a delivery's merges.
-* *Rollback:* On the report, press *Take it back out*.
-* *Last updated:* 2026-09-17. Written from a test walk on a fresh todo app.
 
 == Instructions
 
@@ -182,6 +174,8 @@ Press *Go on to the next*. The strip offers *Build the first* for the next thing
 image::tandem-14-everything-built.png[The space with everything built: three accepted things, nine sentences each built and accepted, and the strip saying so]
 
 === Step 11. Next steps
+
+*To undo:* On the report, press *Take it back out*.
 
 * xref:turn-what-the-reviewers-noticed-into-the-next-change.adoc[Build the improvements Tandem's reviewers suggest]: the reviewers' findings as the next sentences.
 * xref:words-on-the-page.adoc[The words on the page]: every state word on the run and the report.

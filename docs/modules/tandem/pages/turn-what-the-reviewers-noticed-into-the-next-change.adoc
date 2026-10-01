@@ -51,13 +51,6 @@ You keep six findings from two reports of the todo app, turn them into six sente
 
 * None beyond the base platform.
 
-=== Time & risk
-
-* *Estimated time:* 30 min, up to the first new thing delivered. On the reference walk: keeping six findings and putting them in the box 2 min, reading and keeping them 2 min, grouping 1 min, working out the first thing 7 min, and its run 17 min.
-* *Risk level:* Low. The new things are built like any other, on a branch merged at delivery; the accepted things are not built again.
-* *Rollback:* On the new thing's report, press *Take it back out*.
-* *Last updated:* 2026-09-17. Written from a test walk on the todo app.
-
 == Instructions
 
 === Step 1. Read what the work noticed
@@ -109,6 +102,8 @@ Press *Build the first*, then *Build these N* on the work page, as in xref:build
 On the walk the first new thing was sentence 11, "keep the task list in one predictable order". It took 7 min to work out and 17 min to run, and ended delivered with 8 checks passed and the reviewer on the running product green. After *Go on to the next*, the strip said *15 sentences · 3 things to build*.
 
 === Step 6. Next steps
+
+*To undo:* On the new thing's report, press *Take it back out*.
 
 * xref:words-on-the-page.adoc[The words on the page]: every state word on the report and the run.
 * xref:defects.adoc[The defect ledger, reference]: what the runs caught and repaired.
