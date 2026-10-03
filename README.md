@@ -1,4 +1,4 @@
-# Thinkube Tandem
+# Thinkube Tandem Workshop
 
 A VS Code extension and an MCP server for building a change with Claude Code, from what a person asks for to a delivery the person accepts.
 

@@ -1,6 +1,6 @@
 {
   "name": "thinkube-tandem",
-  "displayName": "Thinkube Tandem",
+  "displayName": "Thinkube Tandem Workshop",
   "description": "Tandem — ground-truth-first pair development. You say what you want in your words; the machine grounds it in the code, you sign the cut, workers build from exact work orders, and you accept the delivery by experiencing it.",
   "version": "0.1.0",
   "publisher": "thinkube",
@@ -26,7 +26,7 @@
       "activitybar": [
         {
           "id": "thinkube-tandem",
-          "title": "Tandem",
+          "title": "Tandem Workshop",
           "icon": "resources/tk_ai.svg"
         }
       ]
