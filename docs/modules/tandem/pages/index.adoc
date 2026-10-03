@@ -4,7 +4,7 @@
 :page-area: tandem
 :page-aliases: from-sentence-to-promise.adoc, the-run.adoc, the-report.adoc, identity.adoc, troubleshooting.adoc
 
-An experimental way of working with Claude Code: you write what you want in plain sentences, Tandem builds it, proves it, deploys it and reports, and you decide.
+A way of working with Claude Code: you write what you want in plain sentences, Tandem builds it, proves it, deploys it and reports, and you decide.
 
 The example on these pages is a todo app made from the web app template, running at its own address. A thinking space is one page where you write your sentences and follow their work. Say to Claude Code: _"Make an app called todo from the web app template, then put these three lines in the box of a new thinking space:"_
 
