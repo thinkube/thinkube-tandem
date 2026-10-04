@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>When something goes wrong :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="troubleshooting.html">When something goes wrong</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/troubleshooting.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">When something goes wrong</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<div class="title">TL;DR</div>
+<p>Find what you see in the first column; the second says why it happens and the third what to press. If a page shows a symbol whose meaning is not written next to it, that is a defect in Tandem, not in your reading.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_why_this_is_one_sentence"><a class="anchor" href="#_why_this_is_one_sentence"></a>Why this is one sentence</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Every message Tandem shows says what happened in one sentence, and the page you are on offers the press that changes it. This table is for the cases where the press is not on the page you are looking at.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_by_hand_and_what_is_happening_underneath"><a class="anchor" href="#_by_hand_and_what_is_happening_underneath"></a>By hand, and what is happening underneath</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">What you see</th>
+<th class="tableblock halign-left valign-top">Why</th>
+<th class="tableblock halign-left valign-top">What to do</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The sidebar shows "Which project / repository…"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Your workspace has more than one folder and no repository is chosen yet</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Press <strong>Choose repository…</strong>; the choice is remembered per workspace.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The strip refuses <strong>Build these N</strong> with "the signature does not match"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The promises changed after you signed them, so what would run is not what you approved</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Open <strong>what it will do</strong>, read the promises again, and press <strong>Build these N</strong> again.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">"No forge is configured"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The repository has no remote Tandem can push to</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Add a remote. github.com remotes use the <code>gh</code> CLI; Thinkube Git needs <code>thinkubeTandem.giteaToken</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A line under a promise shows ✗</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A check ran against the delivered code and did not pass. This is the truth, not a glitch</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Press the check to read what it saw. Say what you want instead as a new line in the box; the delivery stays yours to refuse.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">"⛔ containment: … — reverted, unit failed"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A worker wrote outside the files it declared</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The stray files were put back and the run stopped, naming the piece of work. Press <strong>Run it again</strong>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">"REFUSED to write the store: secret-shaped content …"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A line you wrote, or a promise, contains something that looks like a credential</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Remove it from the text. The space stays as it is on the page.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><strong>Build these N</strong> says documentation is needed</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Every thing carries a documentation promise, and neither its page nor <strong>Not needed</strong> is there</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Press <strong>Not needed</strong> on the documentation promise with your reason, or let the page be built. <a href="from-sentence-to-promise.html#_documentation_is_part_of_every_thing" class="xref page">Documentation is part of every thing</a>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A card says <strong>needs you</strong> and nothing moves</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A worker stopped on a question only you can answer, about what you want</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The card offers a box and <strong>Send</strong>. The status bar says <strong>needs an answer</strong> until you do.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">"the reviewers are locked out, so none was started"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The reviewers' browser could not sign in to the running product</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The lines they would have judged stay <strong>not judged</strong>, and nothing already proved is taken away. Open the address yourself and sign in. If that works, press <strong>Run it again</strong>; if it does not, the product is what to fix.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A sentence reads <strong>not judged</strong> though its checks passed</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">One of its lines could not be reached on the running product; the reviewer said what stopped it</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Read that line on the report. Blocked is never counted against the work.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">A line says "judged with no picture saved"</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The reviewer decided it but saved no picture</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The verdict stands; only the picture is missing. The reviewer&#8217;s own words are on the line.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">You want an earlier cut&#8217;s report or logs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The page shows the cut you last chose</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Use the <strong>Cuts</strong> row at the top of the run page: every cut this space ran is there, with its <strong>Report</strong> and its <strong>Run and logs</strong>.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limits"><a class="anchor" href="#_limits"></a>Limits</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>A message quoted here is as the extension writes it at the version this page was written against; a word can move before the page does.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

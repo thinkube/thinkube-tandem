@@ -1,0 +1,92 @@
+{
+  "expect": {
+    "refused": false
+  },
+  "repoFiles": [
+    "src/extension.ts",
+    "src/surfaces/panel.ts",
+    "src/surfaces/panels.ts",
+    "src/surfaces/panel.test.ts"
+  ],
+  "uses": {
+    "src/extension.ts": [
+      "src/surfaces/panel.ts",
+      "src/surfaces/panels.ts"
+    ],
+    "src/surfaces/inbound.ts": [
+      "src/surfaces/panel.ts"
+    ]
+  },
+  "plan": [
+    {
+      "handle": "SL-5",
+      "units": [
+        {
+          "role": "code",
+          "footprint": [
+            "src/surfaces/panel.ts"
+          ]
+        },
+        {
+          "role": "test",
+          "footprint": [
+            "probes/x__SL-5_AC-1.test.mjs",
+            "probes/x__SL-5_AC-2.test.mjs"
+          ]
+        }
+      ]
+    },
+    {
+      "handle": "SL-6",
+      "units": [
+        {
+          "role": "code",
+          "footprint": [
+            "src/surfaces/panels.ts"
+          ]
+        },
+        {
+          "role": "test",
+          "footprint": [
+            "probes/x__SL-6_AC-1.test.mjs",
+            "probes/x__SL-6_AC-2.test.mjs",
+            "probes/x__SL-6_AC-3.test.mjs",
+            "probes/x__SL-6_AC-4.test.mjs",
+            "probes/x__SL-6_AC-5.test.mjs",
+            "probes/x__SL-6_AC-6.test.mjs"
+          ]
+        }
+      ]
+    },
+    {
+      "handle": "SL-7",
+      "units": [
+        {
+          "role": "code",
+          "footprint": [
+            "src/surfaces/panels.ts",
+            "src/extension.ts"
+          ]
+        },
+        {
+          "role": "test",
+          "footprint": [
+            "probes/x__SL-7_AC-1.test.mjs",
+            "probes/x__SL-7_AC-2.test.mjs",
+            "probes/x__SL-7_AC-3.test.mjs",
+            "probes/x__SL-7_AC-4.test.mjs",
+            "probes/x__SL-7_AC-5.test.mjs",
+            "probes/x__SL-7_AC-6.test.mjs",
+            "probes/x__SL-7_AC-7.test.mjs"
+          ]
+        }
+      ]
+    }
+  ],
+  "ordered": [
+    {
+      "after": "SL-7",
+      "waitsFor": "SL-5"
+    }
+  ]
+}

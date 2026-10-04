@@ -1,0 +1,159 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * Capture through the model: the pasted sentences become asks (the human's
+ * words, kept whole), the model round proposes what they are about, and the
+ * proposal waits for the human. Nothing is ground until they accept it —
+ * a wrong reading costs one cheap round, not seven expensive ones.
+ */
+import { Claim, Space, Subject } from "../core/schema";
+import { asksOfText } from "../derive/asks";
+import { solveModel, unaccountedFor } from "../derive/model";
+import type { TandemSession } from "./session";
+
+/**
+ * Record the sentences as asks, then ask the round what they are about. A
+ * reading already waiting is NOT replaced: the new sentences join it and
+ * the whole set is read again, because a list is one description and a
+ * later sentence can change what the earlier ones were about.
+ */
+/**
+ * Read everything this space holds: the sentences already recorded, then
+ * whatever is still being written. Always together, never one alone — a
+ * new sentence usually lands on a subject that already exists, and
+ * reading it by itself would invent a second subject for the same thing.
+ *
+ * The draft's lines have no ids yet; their places are held empty until
+ * the human keeps them.
+ */
+export function readEverything(s: TandemSession): Promise<{ ok: boolean; reason?: string }> {
+  const fresh = asksOfText(s.space.draft ?? "").map((a) => a.text);
+  return readModel(
+    s,
+    [...s.space.asks.map((a) => a.text), ...fresh],
+    [...s.space.asks.map((a) => a.id), ...fresh.map(() => "")],
+  );
+}
+
+export async function readModel(
+  s: TandemSession,
+  texts: string[],
+  askIds: string[],
+): Promise<{ ok: boolean; reason?: string }> {
+  s.activity = { label: "reading your list as one description", current: 1, total: 1, kind: "reading" };
+  s.deps.onChanged?.();
+  // The round's own failure lines are the diagnosis; without them a failed
+  // reading is a mystery.
+  const said: string[] = [];
+  const model = await (s.deps.solveModel ?? solveModel)(
+    { ...s.deps.round, log: (line) => said.push(line) },
+    texts,
+  ).catch((err: unknown) => {
+    said.push(err instanceof Error ? err.message : String(err));
+    return undefined;
+  });
+  s.activity = undefined;
+
+  if (!model) {
+    const reason =
+      said.join("\n").trim() || "the round returned nothing I could read as subjects and claims";
+    s.space = {
+      ...s.space,
+      proposal: undefined,
+      readingFailure: { reason, texts, askIds },
+    };
+    s.changed("I could not read your list. Nothing was derived — your sentences are recorded and waiting.");
+    return { ok: false, reason };
+  }
+
+  s.space = {
+    ...s.space,
+    readingFailure: undefined,
+    proposal: { askIds, texts, ...model, missing: unaccountedFor(model, texts.length) },
+  };
+  s.changed(
+    `${model.subjects.length} subject(s) — check them before I think about the code.`,
+  );
+  return { ok: true };
+}
+
+/** The human accepted: the proposal becomes the space's model. */
+export function applyModel(
+  space: Space,
+  pending: NonNullable<Space["proposal"]>,
+  author: string,
+): Space {
+  // A reading of some sentences starts by deleting what those sentences
+  // produced before: their subjects and claims, the promises derived from
+  // them, the things grouped around them, and the questions they raised.
+  // Signed work is a record and stays. Then the new reading is added.
+  const cleared = withoutReadingOf(space, new Set(pending.askIds.filter(Boolean)));
+  const subjects: Subject[] = [];
+  const claims: Claim[] = [];
+  const askOf = (n: number): string => pending.askIds[n - 1] ?? pending.askIds[0] ?? "";
+  pending.subjects.forEach((sub, i) => {
+    const id = `subject-${author}-${(space.subjects?.length ?? 0) + i + 1}`;
+    subjects.push({ id, name: sub.name, from: sub.from.map(askOf) });
+    sub.claims.forEach((c) => {
+      claims.push({
+        // One counter, one id: adding the position within the subject too
+        // mints the same id twice and attaches promises to the wrong claim.
+        id: `claim-${author}-${(space.claims?.length ?? 0) + claims.length + 1}`,
+        subjectId: id,
+        text: c.text,
+        ...(c.why ? { why: c.why } : {}),
+        fromAsk: askOf(c.from),
+        // Kept, because the page shows your sentence back with the reading
+        // marked inside it. Dropped here, the marks can be drawn while a
+        // reading is pending and never again after it is kept.
+        ...(c.quote ? { quote: c.quote } : {}),
+        ...(c.mention !== undefined ? { mention: c.mention } : {}),
+      });
+    });
+  });
+  return {
+    ...cleared,
+    subjects: [...(cleared.subjects ?? []), ...subjects],
+    claims: [...(cleared.claims ?? []), ...claims],
+  };
+}
+
+/** The space without anything the named sentences produced. */
+function withoutReadingOf(space: Space, askIds: ReadonlySet<string>): Space {
+  const signed = new Set(space.cuts.flatMap((c) => (c.signature ? c.changeIds : [])));
+  // A claim that signed work makes true is part of that record, and stays
+  // with the promise that serves it. Deleting it leaves the promise
+  // pointing at nothing, and a promise that cannot reach its claim cannot
+  // say which sentence it served — delivered work detaches from the ask
+  // it answered the moment those sentences are read again.
+  const heldByRecord = new Set(
+    space.nodes.filter((n) => signed.has(n.id) && n.servesClaim).map((n) => n.servesClaim as string),
+  );
+  const goneClaims = new Set(
+    (space.claims ?? []).filter((c) => askIds.has(c.fromAsk) && !heldByRecord.has(c.id)).map((c) => c.id),
+  );
+  const keptClaims = (space.claims ?? []).filter((c) => !goneClaims.has(c.id));
+  const keptSubjectIds = new Set(keptClaims.map((c) => c.subjectId));
+  const goneSubjects = new Set((space.subjects ?? []).filter((s) => !keptSubjectIds.has(s.id)).map((s) => s.id));
+  const signedSpecs = new Set(space.cuts.filter((c) => c.signature && c.specId).map((c) => c.specId));
+  return {
+    ...space,
+    subjects: (space.subjects ?? []).filter((s) => keptSubjectIds.has(s.id)),
+    claims: keptClaims,
+    nodes: space.nodes.filter(
+      (n) =>
+        signed.has(n.id) ||
+        (!n.serves.some((x) => goneSubjects.has(x) || askIds.has(x)) && !(n.servesClaim && goneClaims.has(n.servesClaim))),
+    ),
+    // A thing stands only while every subject it names stands.
+    ...(space.specs
+      ? { specs: space.specs.filter((sp) => signedSpecs.has(sp.id) || sp.subjectIds.every((id) => keptSubjectIds.has(id))) }
+      : {}),
+    // A question is raised in the name of a sentence or of a subject read
+    // from one; either way it goes with the reading, unless it was decided.
+    questions: space.questions.filter((q) => q.decided || !(askIds.has(q.askId) || goneSubjects.has(q.askId))),
+  };
+}

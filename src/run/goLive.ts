@@ -1,0 +1,125 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * Putting the work in front of the person.
+ *
+ * This is a development platform with one person on it, so there is no
+ * reason to hold finished work on a branch until someone approves it.
+ * The run merges, pushes, and waits until the platform has the new
+ * version answering at the address the repository declares. What comes
+ * back to the person is not "may I merge" but "here it is, running".
+ *
+ * Everything a criterion talks about exists from that moment, which is
+ * what lets the pages be judged by driving them rather than by mounting
+ * them in a browser that is not a browser.
+ */
+import type { PipelineReading } from "./harvest";
+import { waitOrStop } from "./waiting";
+
+export type Step = { say: (line: string) => void; doing: (line: string) => void };
+
+/** How the platform's own account of a run reads to a person. */
+function pipelineLine(r: PipelineReading): string {
+  const steps = r.stages ?? [];
+  const done = steps.filter((s) => /succeed/i.test(s.status)).length;
+  const now = steps.find((s) => /run|pending|progress/i.test(s.status));
+  if (!steps.length) return "the platform is building it";
+  return `${now ? now.name : "building"} — ${done} of ${steps.length} steps`;
+}
+
+/**
+ * Wait for the platform to build the pushed commit and for the address to
+ * answer. Every wait says what it is waiting on, because a person watching
+ * ten minutes of nothing cannot tell a build from a hang.
+ */
+export async function waitUntilLive(a: {
+  /** Where the repository says it is seen. */
+  at: string;
+  /** The app's name, as the platform knows it. */
+  app: string;
+  since: string;
+  read: (since: string) => Promise<PipelineReading>;
+  /** Does the address answer? Its status, or nothing when it does not. */
+  knock: (url: string) => Promise<number | undefined>;
+  step: Step;
+  /** The run's stop signal: the wait ends on it, not only on its own
+   *  patience. */
+  stop?: AbortSignal;
+  sleep?: (ms: number) => Promise<void>;
+  /** How long to wait in all, in ticks of ten seconds. */
+  patience?: number;
+}): Promise<{ live: boolean; why?: string; unjudged?: boolean }> {
+  const sleep = a.sleep ?? (async (ms: number) => void (await waitOrStop(ms, a.stop)));
+  const patience = a.patience ?? 90;
+  let built = false;
+  let saidNoticed = false;
+  // Whether the platform ever answered a question about the build, and
+  // the last reason it did not. A wait that never got an answer is not a
+  // refusal: nothing was judged, and saying "it did not go live" sends a
+  // repair after a fault nobody found.
+  let everRead = false;
+  let lastUnreachable: string | undefined;
+  let saidUnreachable = false;
+  const stopped = (): { live: false; why: string } => {
+    a.step.say("the run was stopped while it waited");
+    return { live: false, why: "the run was stopped" };
+  };
+  for (let tick = 0; tick < patience; tick++) {
+    if (a.stop?.aborted) return stopped();
+    if (!built) {
+      const reading = await a.read(a.since);
+      if (reading.unreachable) {
+        lastUnreachable = reading.unreachable;
+        const notYet = /^no pipeline\b/.test(reading.unreachable);
+        if (notYet && !saidNoticed) a.step.doing("waiting for the platform to notice the push");
+        if (!notYet && !saidUnreachable) {
+          saidUnreachable = true;
+          a.step.say(`the platform could not be asked: ${reading.unreachable}`);
+        }
+        if (!notYet) a.step.doing(`asking the platform again — ${reading.unreachable}`);
+      } else {
+        everRead = true;
+        if (!saidNoticed) {
+          saidNoticed = true;
+          a.step.say(`the platform is building ${a.app}`);
+        }
+        a.step.doing(pipelineLine(reading));
+        if (reading.settled) {
+          const held = (reading.phase ?? "").toLowerCase() === "succeeded";
+          if (!held) {
+            const broke = (reading.stages ?? []).filter((s) => /fail|error/i.test(s.status));
+            const why = broke.length
+              ? `${broke.map((s) => s.name + (s.said ? ` (${s.said})` : "")).join(", ")} did not pass`
+              : `the platform's build ended ${reading.phase || "without succeeding"}`;
+            a.step.say(`it did not go live: ${why}`);
+            return { live: false, why };
+          }
+          built = true;
+          a.step.say("the platform built it — waiting for the new version to answer");
+        }
+      }
+    } else {
+      a.step.doing(`waiting for ${a.at} to answer`);
+      const code = await a.knock(a.at);
+      if (code !== undefined && code < 500) {
+        a.step.say(`it is live at ${a.at}`);
+        return { live: true };
+      }
+    }
+    await sleep(10_000);
+    if (a.stop?.aborted) return stopped();
+  }
+  if (!built && !everRead) {
+    const why = `the platform could not be asked whether it built it: ${lastUnreachable ?? "no answer"}`;
+    a.step.say(`not judged: ${why}`);
+    return { live: false, why, unjudged: true };
+  }
+  const why = built
+    ? `${a.at} never answered`
+    : "the platform never finished building it";
+  a.step.say(`it did not go live: ${why}`);
+  return { live: false, why };
+}

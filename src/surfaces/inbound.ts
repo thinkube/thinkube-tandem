@@ -1,0 +1,323 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * What the surface sends back, and what the host does with it. Every
+ * action is checked against the phase first: a press the surface let
+ * through by mistake never starts work the phase forbids.
+ */
+import { TandemSession } from "./session";
+import { phaseOf, refusedNow } from "./phase";
+import { vs } from "./panel";
+
+export interface InboundAction {
+  action: string;
+  text?: string;
+  kind?: string;
+  items?: string[];
+  unitId?: string;
+  questionId?: string;
+  pinKind?: string;
+  /** exempt-docs carries the person's words for why documentation is not
+   *  needed — its own field, never the generic `text`. */
+  reason?: string;
+  // answer-worker carries unitId + text; stop-run carries nothing.
+  changeIds?: string[];
+  deliveryId?: string;
+  /** attest: which promise the person is answering, and their verdict. */
+  criterionId?: string;
+  held?: boolean;
+  proposalId?: string;
+  impactId?: string;
+  /** choose-set: which set of subjects becomes the cut. */
+  specId?: string;
+  stepId?: string;
+  page?: number;
+  into?: string;
+  /** open-look: which of a reviewer's screenshots to open. */
+  path?: string;
+  /** look-at-cut: whose account to open, or nothing for the newest. */
+  cutId?: string;
+}
+import { helpPrompt } from "./askForHelp";
+import type { PanelHostHooks } from "./panel";
+
+export async function handleInbound(
+  session: TandemSession,
+  msg: InboundAction,
+  push: (message?: string) => void,
+  hooks?: PanelHostHooks,
+): Promise<void> {
+  // The host refuses what the phase does not allow — a press the surface
+  // let through by mistake never starts work it must not start.
+  const refusal = refusedNow(msg.action, phaseOf(session));
+  if (refusal) {
+    push(refusal);
+    return;
+  }
+  if (msg.action === "switch-repo") {
+    await hooks?.onSwitchRepo?.();
+    return;
+  }
+  if (msg.action === "load") {
+    // The surface's first message after it finishes loading: it asks for
+    // the state it missed while it was not yet listening. Nothing here
+    // records anything — this is a read, not a gesture.
+    push();
+    return;
+  }
+  let note: string | undefined;
+  if (msg.action === "save-draft") {
+    // Typing costs nothing and interrupts nothing: the words are kept and
+    // the surface is not told anything it does not already know.
+    session.saveDraft(msg.text ?? "");
+    return;
+  } else if (msg.action === "read-draft") {
+    push("Reading what you wrote…");
+    const r = await session.readDraft();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "keep-draft") {
+    const r = session.keepDraft();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "cancel-capture") {
+    session.cancelCapture();
+    note = "Cancelled.";
+  } else if (msg.action === "build") {
+    push("Building…");
+    // The thing in hand, unless the press names one: a build with no set
+    // is a build of what was chosen, never of nothing.
+    const r = await session.build(msg.specId ?? session.cutSpecId ?? "");
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "think") {
+    const c = session.thinkingCost();
+    push(
+      c.subjects
+        ? `Thinking about ${c.subjects} object(s) — about ${c.rounds} rounds…`
+        : "Thinking…",
+    );
+    const r = await session.think();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "reframe" && msg.unitId && msg.text) {
+    push("Reading it again…");
+    const r = await session.reframe(msg.unitId, msg.text);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "amend" && msg.unitId && msg.text) {
+    push("Recording the amendment…");
+    const r = await session.amend(msg.unitId, msg.text);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "group-into-sets") {
+    push("Grouping your asks into sets…");
+    const r = await session.groupIntoSpecs();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "choose-set" && msg.specId) {
+    push("Working out what this set needs…");
+    const r = await session.chooseSpec(msg.specId);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "accept-delivery" && msg.deliveryId) {
+    const r = await session.acceptDelivery(msg.deliveryId);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "ask-platform-again") {
+    push("Asking the platform what it did with the merged work…");
+    await session.askPlatformAgain();
+  } else if (msg.action === "contradict" && (msg.unitId || msg.criterionId)) {
+    const r = session.contradict(
+      { ...(msg.unitId ? { promiseId: msg.unitId } : {}), ...(msg.criterionId ? { criterionId: msg.criterionId } : {}) },
+      msg.reason ?? "",
+    );
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "attest" && msg.deliveryId && msg.criterionId) {
+    const r = session.attestDelivery(msg.deliveryId, msg.criterionId, msg.held === true, msg.reason);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "ask-from-findings" && msg.deliveryId && msg.items?.length) {
+    // Into the capture box, where every ask starts: the person reads them,
+    // keeps them or does not. What was already taken is skipped, and the
+    // delivery remembers, so a second press never doubles a sentence.
+    const d = session.space.deliveries.find((x) => x.id === msg.deliveryId);
+    if (!d) note = "that delivery is not here any more";
+    else {
+      const already = new Set(d.findingsAsked ?? []);
+      // Only a finding with a drafted ask can become one: an observation
+      // with no draft is information, not a request.
+      const fresh = (d.findings ?? []).filter((f) => f.ask && msg.items!.includes(f.saw) && !already.has(f.saw));
+      if (!fresh.length) note = "those are in the box already";
+      else {
+        const wants = fresh.map((f) => f.ask!);
+        const box = session.space.draft ?? "";
+        session.saveDraft([box.replace(/\s*$/, ""), ...wants].filter(Boolean).join("\n"));
+        session.space = {
+          ...session.space,
+          deliveries: session.space.deliveries.map((x) =>
+            x.id === d.id ? { ...x, findingsAsked: [...(x.findingsAsked ?? []), ...fresh.map((f) => f.saw)] } : x,
+          ),
+        };
+        session.changed(
+          `${fresh.length} ask${fresh.length === 1 ? " is" : "s are"} in the box — read and keep them when you want them built`,
+        );
+      }
+    }
+  } else if (msg.action === "keep-findings" && msg.deliveryId && msg.items?.length) {
+    // Wanted, but not now. Nothing is read again and no ask is made, so a
+    // discovery never pushes itself in front of the goals a person chose
+    // to build first.
+    const d = session.space.deliveries.find((x) => x.id === msg.deliveryId);
+    if (!d) note = "that delivery is not here any more";
+    else {
+      const settled = new Set([...(d.findingsAsked ?? []), ...(d.findingsKept ?? [])]);
+      const fresh = (d.findings ?? []).filter((f) => f.ask && msg.items!.includes(f.saw) && !settled.has(f.saw));
+      if (!fresh.length) note = "those are kept already";
+      else {
+        session.space = {
+          ...session.space,
+          deliveries: session.space.deliveries.map((x) =>
+            x.id === d.id ? { ...x, findingsKept: [...(x.findingsKept ?? []), ...fresh.map((f) => f.saw)] } : x,
+          ),
+        };
+        session.changed(
+          `${fresh.length} kept for later — they wait in What the work noticed until you ask for them`,
+        );
+      }
+    }
+  } else if (msg.action === "ask-from-kept") {
+    // The moment the person decides the discoveries are what comes next:
+    // every kept finding, from every cut, into the capture box at once.
+    const kept = session.space.deliveries.flatMap((d) => {
+      const asked = new Set(d.findingsAsked ?? []);
+      const wants = new Set(d.findingsKept ?? []);
+      return (d.findings ?? [])
+        .filter((f) => f.ask && wants.has(f.saw) && !asked.has(f.saw))
+        .map((f) => ({ deliveryId: d.id, saw: f.saw, ask: f.ask! }));
+    });
+    if (!kept.length) note = "nothing is kept for later";
+    else {
+      const box = session.space.draft ?? "";
+      session.saveDraft([box.replace(/\s*$/, ""), ...kept.map((k) => k.ask)].filter(Boolean).join("\n"));
+      const takenOf = new Map<string, string[]>();
+      for (const k of kept) takenOf.set(k.deliveryId, [...(takenOf.get(k.deliveryId) ?? []), k.saw]);
+      session.space = {
+        ...session.space,
+        deliveries: session.space.deliveries.map((x) =>
+          takenOf.has(x.id) ? { ...x, findingsAsked: [...(x.findingsAsked ?? []), ...takenOf.get(x.id)!] } : x,
+        ),
+      };
+      session.changed(
+        `${kept.length} ask${kept.length === 1 ? " is" : "s are"} in the box — read and keep them when you want them built`,
+      );
+    }
+  } else if (msg.action === "look-at-cut") {
+    // A run in flight is what the page must show; looking back waits.
+    if (session.running && msg.cutId) note = "a run is in flight — what it is doing is on the page";
+    else {
+      const known = new Set(session.space.cuts.map((c) => c.id));
+      if (msg.cutId && !known.has(msg.cutId)) note = "that cut is not in this space";
+      else {
+        session.lookingAtCut = msg.cutId;
+        session.load();
+        session.changed(msg.cutId ? undefined : "showing the newest cut again");
+      }
+    }
+  } else if (msg.action === "open-look" && msg.path) {
+    // Only what this run wrote: a path from anywhere else is not the
+    // surface's to open.
+    // A picture this space produced: on a unit of the run that is loaded,
+    // or on a proof of one of its deliveries — a report outlives its run.
+    const looks = [
+      ...(session.runState?.view().units ?? []).flatMap((u) => u.looks ?? []),
+      ...session.space.deliveries.flatMap((d) => d.proofs.flatMap((p) => (p.looks ?? []).map((l) => l.path))),
+    ];
+    if (!looks.includes(msg.path)) note = "that picture does not belong to this space";
+    else if (!hooks?.onOpenFile) note = "this window cannot open files";
+    else await hooks.onOpenFile(msg.path);
+  } else if (msg.action === "ask-for-help" && msg.deliveryId) {
+    const d = session.space.deliveries.find((x) => x.id === msg.deliveryId);
+    if (!d) note = "that delivery is not here any more";
+    else if (!hooks?.onAskForHelp) note = "this window cannot open a Claude session";
+    else {
+      const cut = session.space.cuts.find((c) => c.id === d.cutId);
+      const repoRoot = session.deps.scope?.gitRoot ?? session.deps.round.repoRoot;
+      await hooks.onAskForHelp({
+        cwd: repoRoot,
+        prompt: helpPrompt({ repoRoot, delivery: d, space: session.space, ...(cut?.tepId ? { tep: cut.tepId } : {}) }),
+      });
+    }
+  } else if (msg.action === "reject-delivery" && msg.deliveryId) {
+    push("Taking the work back out of the project…");
+    const r = await session.rejectDelivery(msg.deliveryId);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "accept-question" && msg.questionId) {
+    push("Recording the decision…");
+    const r = await session.acceptQuestion(msg.questionId, msg.text);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "answer-worker" && msg.unitId && msg.text) {
+    // The one place an answer can land tells you what happened to it: it
+    // reaches the parked worker, or the worker is no longer waiting and
+    // nothing is delivered — never a silent vanish.
+    const delivered = session.answerWorker(msg.unitId, msg.text);
+    note = delivered ? undefined : "That worker is no longer waiting for an answer.";
+  } else if (msg.action === "dismiss-promise") {
+    const r = session.editModel({
+      kind: msg.action,
+      id: msg.unitId ?? "",
+      ...(msg.text ? { text: msg.text } : {}),
+    });
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "retry-model") {
+    push("Reading your list again…");
+    const r = await session.retryModel();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "read-log") {
+    session.readLog(msg.stepId ?? null);
+  } else if (msg.action === "stop-run") {
+    session.stopRun();
+  } else if (msg.action === "accept-impact" && msg.impactId) {
+    push("Re-deriving under the decision…");
+    const r = await session.decideImpact(msg.impactId, true);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "dismiss-impact" && msg.impactId) {
+    const r = await session.decideImpact(msg.impactId, false);
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "apply-all-impacts") {
+    const r = await session.applyAllImpacts();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "exempt-docs") {
+    const r = session.exemptDocs(msg.reason ?? "");
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "panic") {
+    const r = session.panic();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "open-cut-review") {
+    const doc = await vs().workspace.openTextDocument({
+      content: session.cutScreen(),
+      language: "markdown",
+    });
+    await vs().window.showTextDocument(doc, { preview: true });
+  } else if (msg.action === "propose-check") {
+    const r = await session.proposeCheckFor(msg.changeIds?.[0] ?? "");
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "accept-check") {
+    session.acceptCheck(
+      msg.changeIds?.[0] ?? "",
+      msg.text ?? "",
+      msg.kind === "assessment" ? "assessment" : "probe",
+    );
+  } else if (msg.action === "reread") {
+    push("Reading your sentences again from nothing…");
+    const r = await session.rereadAll();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "think-again") {
+    push("Withdrawing the signed cut and thinking its promises through again…");
+    const r = await session.thinkAgain();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "rerun") {
+    push("Starting the signed work again…");
+    const r = await session.rerun();
+    note = r.ok ? undefined : r.reason;
+  } else if (msg.action === "reground") {
+    push("Re-grounding…");
+    await session.reground();
+  }
+  push(note);
+}
+
+

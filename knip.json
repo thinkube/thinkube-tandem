@@ -1,0 +1,27 @@
+{
+  "workspaces": {
+    ".": {
+      "entry": [
+        "src/mcp/server.ts",
+        "src/run/driver.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@vscode/vsce",
+        "antora",
+        "asciidoctor-kroki"
+      ]
+    },
+    "webview/map": {
+      "entry": [
+        "harness/buttons.tsx"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "harness/**/*.{ts,tsx}"
+      ]
+    }
+  }
+}

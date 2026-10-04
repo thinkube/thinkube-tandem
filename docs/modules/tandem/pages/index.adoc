@@ -1,0 +1,78 @@
+= Thinkube Tandem
+:page-type: concept
+:page-layout: area
+:page-area: tandem
+:page-aliases: from-sentence-to-promise.adoc, the-run.adoc, the-report.adoc, identity.adoc, troubleshooting.adoc
+
+Thinkube Tandem is how you and a coding agent work on Thinkube together. The agent does the work; you decide what happens.
+
+It has three parts. *Tandem tools* give an agent the platform's operations. *Thinkube Tandem Chat* is a conversation with an agent in Thinkube IDE. *Thinkube Tandem Workshop* builds a change to an app with you, step by step.
+
+In the chat panel of Thinkube IDE, open the menu beside *+*, choose *New Tandem (powered by Pi) Session*, and ask: _"which Thinkube services are running?"_. The agent calls Thinkube Control's `list_services_minimal` and answers from it.
+
+[d2,alt="You and a coding agent work together: the agent reads the platform through the Tandem tools; in Thinkube Tandem Chat it asks you before it changes the platform and shows its edits for you to keep or undo; in Thinkube Tandem Workshop you keep the sentences, sign the promises and accept the result on the running product"]
+....
+direction: down
+you: "You decide" {width: 200; height: 56}
+agent: "A coding agent\ndoes the work" {width: 200; height: 70}
+parts: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 3
+  horizontal-gap: 30
+  tools: "Tandem tools\nthe platform's\noperations" {width: 200; height: 90}
+  chat: "Thinkube Tandem Chat\nasks before a change;\nedits to keep or undo" {width: 200; height: 90}
+  workshop: "Thinkube Tandem\nWorkshop\nyou keep, sign, accept" {width: 200; height: 90}
+}
+you <-> agent: "together"
+agent -> parts
+....
+
+== How it works
+
+* *You decide, the agent works.* An agent reads what it needs freely. In Thinkube Tandem Chat and Thinkube Tandem Workshop, a change to the platform or your code waits for you, as each part below says.
+
+=== Tandem tools
+
+* *The platform's operations, as tools.* Thinkube Control offers its operations to an agent through MCP (Model Context Protocol): services, apps, templates, models, notebooks, secrets. `tk-package-version` gives the latest versions of packages and images. Any agent can use them, Claude Code included.
+
+=== Thinkube Tandem Chat
+
+* *A conversation.* A chat runs Pi or opencode on the models your cluster serves, with the Tandem tools and the platform's operating rules. Each chat keeps its session, also after a reload.
+* *Your yes before a change.* The agent asks in the chat before a tool that changes the platform. Pi also asks before a shell command such as `rm -rf` or `sudo`, and a file Pi changes shows as a change you can keep or undo.
+
+=== Thinkube Tandem Workshop
+
+* *A change to an app, built with you.* You write what you want in plain sentences; the Workshop builds it, proves it, deploys it and reports, and you decide. It runs on Claude Code.
+
+The example on these pages is a todo app made from the web app template, running at its own address. A thinking space is one page where you write your sentences and follow their work. Say to Claude Code: _"Make an app called todo from the web app template, then put these three lines in the box of a new thinking space:"_
+
+[source,text]
+----
+Finished tasks stop crowding the ones I still have to do.
+I can see how many tasks I have without counting cards.
+Deleting a task asks me first.
+----
+
+Claude makes the app and puts the lines in the box, one per line. From there every press is yours: *Read these 3*, *Keep these 3*, *Group into things to build*, *Build the first*, *Build these N*. What you have afterwards is the change merged into the todo app, deployed, judged on the running product, and a report that says what happened to each of your sentences.
+
+* *Your sentence is the record.* The machine reads two things in each line, what it is about and what must become true of it, and shows you the reading before anything is kept. *Read these N* records nothing; *Keep these N* makes your words the record, and the machine never edits them. Everything else is derived from them and can be derived again.
+* *Every sentence is built, one thing at a time.* A sentence in the box is something you want built; ideas you are still weighing belong somewhere else. The Workshop groups the sentences into things to build, each named in your words. A thing is large enough to be a piece of working functionality end to end, and small enough that one run can build it, prove it and deploy it with little to keep in view. The things come in the order they build on each other: *Build the first* starts the first, and *Go on to the next* moves on once it is delivered.
+* *Things become promises.* When you build a thing, each claim (what a sentence says must become true) becomes a promise. A promise says what will be true, the files it lands in, and the lines that must become true. Each line is settled one way: *checked when it is built*, *judged by a reviewer at delivery*, or *only you can see this*. The choices your sentences left open are listed for you to replace before you sign. Every thing also carries a documentation promise: a page in the project's `docs/` folder, or your reason why none is needed.
+* *Signing freezes what runs.* *Build these N* signs exactly the promises you saw and starts the run on a branch. A run is a process of its own; closing the window does not end it, and *Stop* reaches it from any window.
+* *The machine that builds is not trusted to grade its own work.* One worker writes the checks without seeing the code. Another writes the code without seeing the checks. A separate judge decides whether a piece is green. A worker that writes outside the files it declared has those files reverted. The closing gate runs every check again from a clean tree, with the project's own suite. Only a green gate merges. The platform then builds and deploys. One reviewer per promise opens the running product in a browser and judges what it sees. A worker's question about what you want reaches you as *needs you*, in your own words.
+* *The report answers your sentences.* Each sentence comes back with one word, *done* in the usual case, and the checks that proved it; *not judged* when a check or a reviewer could not reach it, never a pass that was not proved. *What the work noticed, and did not do* lists what the reviewers saw and did not settle. The decision is yours: *Go on to the next*, *Take it back out* (reverts the delivery's merges), *Run it again*, or *Say it does not hold* beside a sentence the product does not keep, which makes it work again.
+* *Findings become the next sentences.* Tick the findings you want on a report and keep them for later; one press puts them in the box as sentences, and *Group the rest* gives them things of their own without touching what is built.
+* *Every defect a run catches is one row in a ledger.* A worker writing outside its files, a check that never passes, a question the run had to answer for a worker, a deferral found in delivered code: each adds a row to a monthly record in the store. The row says what found it, whose fault it was, what it cost, and its fate: healed by the machine, or reached you. *Tandem: Show Defects* shows the month as a table with totals. A kind of row that keeps coming back is a defect in the method.
+* *Everything the Workshop records lives in the store, never in your code.* The store is a git repository of its own, with every space, delivery, record and the ledger. *Tandem: Activate Repository* records a project once. The Workshop finds it again from the repository's own remote. Restore the store on another machine, and every space re-attaches to its repository.
+* *Two moments are yours.* Claude Code can write the sentences. Only you can keep, build, sign and accept. The Workshop gives Claude no tool for them.
+
+== Reference
+
+* xref:ROOT:reference/agentic-clients.adoc[Agentic clients in Thinkube IDE]: what Thinkube Tandem Chat, Pi and opencode are set up with, and how they ask before a change.
+* xref:control:index.adoc[Thinkube Control]: the operations the Tandem tools offer.
+* xref:words-on-the-page.adoc[The words on the page]: every line the strip can show, every state word, and what to press.
+* xref:configuration.adoc[Configuration and settings]: the Workshop's commands and settings in Thinkube IDE.
+* xref:store.adoc[The store]: what the Workshop records about your work, where it is kept, and how it is backed up.
+* xref:defect-ledger.adoc[The defect ledger: ODC for work done with an AI]: what the Workshop records about its runs to improve the process, and how a month of defects reads.
+* xref:defects.adoc[The defect ledger, reference]: the fields of a row and the run-ending records.

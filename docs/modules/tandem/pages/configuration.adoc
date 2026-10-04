@@ -1,0 +1,71 @@
+= Configuration and settings
+:page-type: reference
+
+.TL;DR
+The *Configuration* view under the space manages Claude Code's own configuration per project or user: hooks, commands, skills, agents, MCP servers, permissions, plugins. The commands and settings Tandem itself adds are listed below.
+
+== The Configuration tree
+
+The *Configuration* view is below the space in the Tandem container. You add, open and delete items from the tree and its context menus. The view follows your active project.
+
+== Choosing the repository
+
+Tandem never assumes which folder of a multi-root workspace you mean.
+You choose the active repository once; Tandem remembers it for each workspace. You choose it with:
+
+* the status-bar item `Tandem: <product> / <repo>`;
+* the `<repo> ▾` button in the map;
+* *Tandem: Switch Repository* in the command palette.
+
+Each repository has its own session and its own spaces in the store.
+
+== Commands
+
+The commands the extension contributes, as the command palette lists them:
+
+[cols="1,2"]
+|===
+|Command |What it does
+
+|*Tandem: Open Thinking Space* |Pick a repository, then one of its thinking spaces; it opens in an editor tab.
+|*Tandem: New Thinking Space* |Create a thinking space for the active repository.
+|*Tandem: Delete Thinking Space* |Remove one.
+|*Tandem: Open the Space* |Open the space of the active repository.
+|*Tandem: Switch Repository* |Change the repository Tandem works on.
+|*Tandem: Activate Repository* |Enable a repository that has no card yet.
+|*Tandem: Show Defects* |Render the defect ledger as a table.
+|*Tandem: Open the Docs* |Open this documentation.
+|===
+
+The *Projects* view also carries *New Product*, *New here…*, *Set Product…*, *Mark Done / Reopen* and *Choose Repositories to Read…* on its items.
+
+== Settings
+
+[cols="1,1,2"]
+|===
+|Setting |Default |Meaning
+
+|`thinkubeTandem.storeRoot` |empty |Root of the store. Empty means `~/thinkube-tandem-store`; spaces persist at `<root>/spaces/<project id>`.
+
+|`thinkubeTandem.groundingModel` |`opus` |The model that works a thing out: its promises, the files they land in and the lines that must become true.
+
+|`thinkubeTandem.volumeModel` |`sonnet` |The model for the reading, the grouping, the naming of things, the questions and their answers, and the reading of the repository.
+
+|`thinkubeTandem.workerModel` |`sonnet` |The model the run's workers use.
+
+|`thinkubeTandem.workerModelByRole` |`{}` |A different model for one kind of worker, for example `{"judge": "opus"}` for the one that decides whether a check is green.
+
+|`thinkubeTandem.maxConcurrent` |`4` |How many workers run at the same time.
+
+|`thinkubeTandem.suiteCommand` |`npm test` |The project's own test suite. The closing gate runs it, and its verdict is on the report.
+
+|`thinkubeTandem.prepareCommand` |_(machine-derived)_ |The build step a single check needs before it can run, such as compiling test files. The machine reads it from the repository's own manifests; set it only to override what it read.
+
+|`thinkubeTandem.docsGateMode` |`blocking` |What *Accept it* does when the page a documentation promise named did not land: `blocking` refuses, `advisory` accepts and says so. Signing always needs the documentation promise or *Not needed*; this setting changes nothing there.
+
+|`thinkubeTandem.giteaToken` |empty |API token for Thinkube Git. Remotes on github.com use the `gh` CLI instead.
+
+|`thinkubeTandem.controlUrl` |empty |Thinkube Control's base URL, for the template catalogue and for making a new application. Empty reads it from the connected MCP server's configuration.
+
+|`thinkubeTandem.controlToken` |empty |API token for Thinkube Control. Empty reads it from the connected MCP server's configuration.
+|===

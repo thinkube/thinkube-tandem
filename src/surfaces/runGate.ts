@@ -1,0 +1,747 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * The two gates and the run between them, host side: signing mints the
+ * TEP (the click IS the approval) and starts the build; the build
+ * dispatches one batch per repository; accepting merges the delivery on
+ * the forge. All state lands on the session's PRESENT space.
+ */
+import { signCut, acceptDelivery, SIGNATURE_RULE } from "../gates/sign";
+import { tepContentHash } from "../gates/approval";
+import { planScopes, refuseAnchorless } from "../dispatch/scopes";
+import { dispatchScopePlan } from "../dispatch/scopeRun";
+import { dropTestHomeOnlyNeeds } from "../dispatch/needs";
+import { DispatchOutcome } from "../run/dispatch";
+import { RunState, silentVerdict } from "../run/state";
+import { answersRequested, saveRun, slicesFinished, stopWasRequested } from "../run/record";
+
+/** How often the driver reads what others wrote on its record: a stop, an
+ *  answer. A person who answers a worker waits at most this long. */
+const PULSE_MS = 10 * 1000;
+import { appendDefect, ledgerRoot } from "../engine/defectLog";
+import { saveRunOutcome, slicesOf } from "../engine/runOutcome";
+import { acceptOrder } from "../engine/acceptOrder";
+import { foreignSince, landDelivery, revertDelivery } from "../run/land";
+import { execFile } from "node:child_process";
+import type { TandemSession } from "./session";
+import * as path from "node:path";
+import { downstreamOf } from "../run/survey";
+import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
+import { asFindings, exercised, lookAfterDeploy } from "../run/lookRound";
+import { draftWithFindings } from "../run/feedback";
+import { thinkubeDeclaration } from "../core/thinkubeYaml";
+import { makeLive } from "../run/makeLive";
+import type { Delivery } from "../core/schema";
+import { factsOf } from "../run/facts";
+
+/** A gesture's verdict: it succeeded, or it refused and says why. The two
+ *  cases are separate so a caller reading `reason` after `ok` is false gets
+ *  a string, never a possibly-absent one. */
+export type GestureResult = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Signed work that never delivered, if there is any.
+ *
+ * Only an ACCEPTED delivery ends a cut. A delivery that was withheld
+ * delivered nothing; one that is open and undecided — or that cannot be
+ * accepted, because a check or a review is red — is not the end of the work
+ * either. In all three the signed work is still there to run, and the way
+ * back in must stay reachable.
+ */
+/**
+ * What the platform did with work merged before this window existed.
+ *
+ * The verdict is watched from the accept that started it, so a window
+ * closed, reloaded or opened elsewhere never heard the answer, and a
+ * delivery whose merged tree broke stayed green for ever. Asked again
+ * here, once per accepted delivery that has no answer yet.
+ */
+export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
+  const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+  if (downstreamOf(gitRoot) !== "gitops-app") return;
+  // Merged is enough. The hand-over puts the work in the project before
+  // anyone decides, so a delivery waiting for a decision is exactly the
+  // one whose build the person wants read again.
+  for (const d of s.space.deliveries.filter((x) => (x.acceptedAt || x.mergedAt) && !x.afterMerge && !x.rejectedAt)) {
+    await watchGitopsAfterAccept({
+      gitRoot,
+      app: path.basename(gitRoot),
+      delivery: d,
+      acceptedAt: d.acceptedAt ?? d.mergedAt!,
+      update: (updated, note) => {
+        s.space = {
+          ...s.space,
+          deliveries: s.space.deliveries.map((x) => (x.id === updated.id ? updated : x)),
+        };
+        if (updated.afterMerge?.outcome === "broke") s.space = worldRefused(s.space, updated);
+        s.persist();
+        s.changed(note);
+      },
+      log: (l) => s.changed(l),
+    }).catch(() => undefined);
+  }
+}
+
+/**
+ * The platform judged merged work wanting: its criteria no longer hold.
+ *
+ * Narrowed to the delivery the pipeline was about — the accept that fired
+ * it — and, within it, to the promises whose footprint holds the file the
+ * failing step named, when it named one. A pipeline builds all of main;
+ * it is evidence about what changed since the last one that held, and
+ * nothing older is put back to work.
+ */
+function worldRefused(space: TandemSession["space"], d: Delivery): TandemSession["space"] {
+  const detail = d.afterMerge?.detail ?? "";
+  const cut = space.cuts.find((c) => c.id === d.cutId);
+  const mine = new Set(cut?.changeIds ?? []);
+  const nodes = space.nodes.filter((n) => mine.has(n.id));
+  // A named file narrows it to the promises that land there; no file
+  // named leaves the whole delivery answering for it.
+  const named = [...detail.matchAll(/[\w./-]+\.[a-z]{1,4}\b/g)].map((m) => m[0]);
+  const touched = named.length
+    ? nodes.filter((n) => (n.grounding?.touchpoints ?? []).some((t) => named.some((f) => t.path.endsWith(f) || f.endsWith(t.path))))
+    : [];
+  const answering = touched.length ? touched : nodes;
+  const at = new Date().toISOString();
+  const proved = new Set(d.proofs.filter((p) => p.verdict === "green" && p.criterionId).map((p) => p.criterionId!));
+  const made = answering.flatMap((n) =>
+    n.acceptance
+      .filter((c) => proved.has(c.id))
+      .map((c) => ({
+        criterionId: c.id,
+        at,
+        by: "the platform's pipeline",
+        source: "pipeline" as const,
+        said: detail || "the merged work did not build",
+      })),
+  );
+  if (!made.length) return space;
+  return { ...space, contradictions: [...(space.contradictions ?? []), ...made] };
+}
+
+export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
+  const delivered = new Set(space.deliveries.filter((d) => d.acceptedAt).map((d) => d.cutId));
+  const c = [...space.cuts].reverse().find((x) => x.signature && !x.withdrawnAt && !delivered.has(x.id));
+  return c ? { id: c.id, ...(c.tepId ? { tepId: c.tepId } : {}) } : undefined;
+}
+
+/**
+ * Record why documentation is not needed for the cut about to be signed.
+ * The reason is trimmed and kept on the session until signCutGesture mints
+ * the cut and puts it there. A reason that is empty or only whitespace says
+ * nothing, so it is refused and nothing is recorded — otherwise the
+ * documentation rule could be waved through with a blank field.
+ */
+export function exemptDocsGesture(s: TandemSession, reason: string): GestureResult {
+  const trimmed = reason.trim();
+  if (!trimmed) return { ok: false, reason: "a documentation exemption needs a reason" };
+  s.docsExemptionReason = trimmed;
+  s.changed("Documentation exemption recorded — it travels onto the cut you sign.");
+  return { ok: true };
+}
+
+export function signCutGesture(s: TandemSession): GestureResult {
+    const reason = s.docsExemptionReason;
+    const cut = {
+      id: `cut-${s.author}-${s.space.cuts.length + 1}`,
+      changeIds: [...s.cutNodeIds],
+      ...(s.cutSpecId ? { specId: s.cutSpecId } : {}),
+      ...(reason ? { docsExemption: { reason, at: s.deps.now() } } : {}),
+    };
+    const r = signCut(s.space, cut, s.deps.now(), s.author, s.deps.nextTepNumber?.());
+    if (!r.ok) return r;
+    s.space = { ...s.space, cuts: [...s.space.cuts, r.cut] };
+    // The human's click IS the mint (this message only arrives from the
+    // panel): a content-bound token in the machine-local store — the same
+    // no-expiry, edit-re-arms discipline the engine's gates verify.
+    s.mintTepApproval(r.cut.tepId!, tepContentHash(s.space, r.cut));
+    s.cutNodeIds.clear();
+    s.docsExemptionReason = undefined;
+    s.changed(`${r.cut.tepId} minted — the run is starting.`);
+    void s.startRun(r.cut.id);
+    return { ok: true };
+  }
+
+/** Whether the repository says where it lives, in its own file. A declared
+ *  address beats a URL assembled from a directory name, so the older
+ *  derivation stands down when there is one. */
+function declaresWhereItLives(gitRoot: string): boolean {
+  const read = thinkubeDeclaration(gitRoot);
+  return !!(read && "declared" in read && read.declared.deploy?.at);
+}
+
+/**
+ * Drive the deployed thing once per ask, and file what comes back.
+ *
+ * Findings land on the writing page as sentences that can be kept, and on
+ * the delivery for weighing. What the look exercised stops standing there as
+ * though someone still owed an answer.
+ */
+async function lookAndFile(s: TandemSession, url: string, delivery?: Delivery): Promise<void> {
+  const d = delivery ?? s.space.deliveries[s.space.deliveries.length - 1];
+  if (!d) return;
+  const { findings, driven } = await lookAfterDeploy({
+    url,
+    space: s.space,
+    delivery: d,
+    deps: s.deps.round,
+    log: (l) => s.changed(l),
+  });
+  if (!findings.length && !driven.length) return;
+  const said = asFindings(findings).map((saw) => ({ saw }));
+  s.space = {
+    ...s.space,
+    draft: draftWithFindings(s.space.draft ?? "", findings),
+    deliveries: s.space.deliveries.map((x) =>
+      x.id === d.id
+        ? exercised(said.length ? { ...x, findings: [...(x.findings ?? []), ...said] } : x, driven)
+        : x,
+    ),
+  };
+  s.persist();
+  s.changed(
+    said.length
+      ? `the look found ${said.length} thing${said.length === 1 ? "" : "s"} — they are on the writing page, as sentences you can keep`
+      : "the look exercised what no check could reach, and found nothing to say",
+  );
+}
+
+/**
+ * What happens once the work is merged: it is made live, then it is looked at.
+ *
+ * The repository says how, in its `thinkube.yaml`. A playbook run from the
+ * core repo, a call into control, a script beside the code — this function
+ * knows none of them, and the tool nobody has chosen yet needs no change
+ * here. A repository that declares nothing is deployed as it always was, by
+ * the merge or by hand.
+ *
+ * Never awaited by the accept, which returns immediately; everything it
+ * learns arrives through the space.
+ */
+async function afterMerge(s: TandemSession, gitRoot: string): Promise<void> {
+  const read = thinkubeDeclaration(gitRoot);
+  const deploy = read && "declared" in read ? read.declared.deploy : undefined;
+  if (!deploy) return;
+
+  const went = await makeLive({
+    repoRoot: gitRoot,
+    deploy,
+    log: (l) => s.changed(l),
+  });
+  if (!went.live) {
+    // A deploy that failed is a fact about the world, not an unkept promise:
+    // the work was already accepted and merged. It is said where a person
+    // reads it and nothing is withheld, because there is nothing left to
+    // withhold.
+    s.changed(`it did not go live — ${went.detail?.split("\n")[0] ?? "the deploy failed"}`);
+    return;
+  }
+  if (!went.at) return;
+  await lookAndFile(s, went.at);
+}
+
+export async function executeRun(
+  s: TandemSession,
+  cutId: string,
+  opts: { fresh?: boolean } = {},
+): Promise<DispatchOutcome | undefined> {
+    const cut = s.space.cuts.find((c) => c.id === cutId);
+    if (!cut || s.running) return undefined;
+    const approval = cut.tepId ? s.tepApproval(cut.tepId) : { approved: false, reason: "unsigned" };
+    // An approval binds the CONTENT the person approved. When the machine
+    // changes what a signature covers, that content moves without anybody
+    // touching the work, and the token mismatches for a reason the person
+    // did not cause and cannot see. The signature already has the rule that
+    // says so; the token has no room for one, so the cut's own rule answers
+    // for it. Older rule, content-mismatch: attributable to the change, and
+    // the run proceeds saying the drift was not checked. Same rule: a real
+    // mismatch, and the refusal stands.
+    const staleRule = (cut.signature?.rule ?? 1) !== SIGNATURE_RULE;
+    if (!approval.approved && !(staleRule && approval.reason === "content-mismatch")) {
+      s.runNote = `The build could not start: ${approval.reason} — re-sign the cut.`;
+      s.changed(s.runNote);
+      return undefined;
+    }
+    if (!approval.approved)
+      s.changed(
+        `${cut.tepId} was approved before the machine changed what a signature covers — running it, with the drift since then unchecked.`,
+      );
+    // The old note dies the moment a new press starts — a corpse is never news.
+    s.runNote = undefined;
+    s.running = true;
+    s.driving = true;
+    s.changed("Starting — refreshing the branch…");
+    // The run is written down AS IT HAPPENS, not only when it is over.
+    // A record kept until the end is a record nobody can read while they
+    // need it — the surface holds the only copy, so a crash takes the
+    // whole account with it, and nothing outside the window can say what
+    // a worker is doing. Throttled: a run reports constantly, and this is
+    // a file.
+    let lastWrite = 0;
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    // How this run ended, once it has. Written with every save, so a
+    // surface that did not start the run still learns what happened to it
+    // — a refusal, a withholding, a stop — instead of watching a record
+    // that says "running" forever.
+    const startedAt = s.deps.now();
+    let endedAs: "refused" | "withheld" | "delivered" | "halted" | undefined;
+    const keep = (): void => {
+      if (!s.runState) return;
+      saveRun(
+        s.deps.storeDir,
+        {
+          cutId,
+          tepId: cut.tepId,
+          at: s.deps.now(),
+          owner: { pid: process.pid, at: startedAt },
+          state: s.running ? "running" : (endedAs ?? "halted"),
+          ...(s.runNote ? { note: s.runNote } : {}),
+        },
+        s.runState,
+      );
+      lastWrite = Date.now();
+    };
+    /** The run ends, and says so where anyone can read it. */
+    const settle = (state: NonNullable<typeof endedAs>, note?: string): void => {
+      s.running = false;
+      endedAs = state;
+      s.runNote = note;
+      keep();
+      // And how it ended is written beside the LEDGER, not only inside the
+      // space: a defect row says what surfaced, never what became of it,
+      // and the record that could answer dies with the space it lives in.
+      // Keyed by the run id the rows already carry, so a row can be asked
+      // long after its space is gone.
+      const view = s.runState?.view();
+      if (view?.runId)
+        saveRunOutcome(s.deps.storeDir, {
+          run: view.runId,
+          cutId,
+          ...(cut.tepId ? { tepId: cut.tepId } : {}),
+          ...(ledgerRoot(s.deps.storeDir).space ? { space: ledgerRoot(s.deps.storeDir).space! } : {}),
+          at: s.deps.now(),
+          state,
+          slices: slicesOf(view.units),
+        });
+      s.changed(note);
+    };
+    // What the LAST run of this cut finished, read HERE — the next line
+    // creates the state whose first save overwrites that record, and there
+    // is one record per cut.
+    const finishedBefore = slicesFinished(s.deps.storeDir, cutId);
+    let lastBeat = Date.now();
+    s.runState = new RunState(() => {
+      lastBeat = Date.now();
+      s.deps.onChanged?.();
+      if (Date.now() - lastWrite >= 2000) keep();
+      else if (!pending)
+        pending = setTimeout(() => {
+          pending = undefined;
+          keep();
+        }, 2000);
+    });
+    // The heartbeat: every exec is bounded (makeExec), so the longest
+    // legitimate silence is the suite's own bound — beyond it, the run
+    // declares itself dead at its last named step instead of going quiet.
+    // Written before the first step, so a surface that is not driving sees
+    // the run within a second of the press. A resume can spend minutes in
+    // its first round, and a record that appears only when a unit moves
+    // left every other window reading "signed and has not run".
+    keep();
+    const handed = new Set<string>();
+    const pulse = setInterval(() => {
+      const st = s.runState;
+      if (!st) return;
+      // A stop asked for by somebody who is not driving. Stopping used to
+      // be a method call on an object in one process's memory, so the
+      // person could only stop a run their own window had started — a run
+      // driven from anywhere else could not be reached at all. The request
+      // is written where the owner reads it, and the owner ends itself.
+      if (stopWasRequested(s.deps.storeDir, cutId, startedAt)) {
+        st.log("⛔ stopped: a stop was asked for from outside this run");
+        st.halt();
+        settle("halted", "The build was stopped.");
+        clearInterval(pulse);
+        return;
+      }
+      // Answers written by whoever is watching: each reaches its worker
+      // once. A parked worker used to be answerable only from the window
+      // that started it; the record carries the answer across processes.
+      for (const a of answersRequested(s.deps.storeDir, cutId, startedAt)) {
+        const key = `${a.unit}@${a.at}`;
+        if (handed.has(key)) continue;
+        handed.add(key);
+        if (st.answer(a.unit, a.text)) st.log(`${a.unit}: answered from outside this run`);
+      }
+      const verdict = silentVerdict({
+        running: s.running,
+        lastBeatMs: lastBeat,
+        nowMs: Date.now(),
+        limitMs: 25 * 60 * 1000,
+        lastLine: st.logs.at(-1),
+        busyUnits: [...st.units.values()].filter((u) => u.state === "running").map((u) => ({ id: u.id, text: u.activity?.text })),
+      });
+      if (!verdict) return;
+      st.log(`⛔ ${verdict}`);
+      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "silent-stall", type: "machine", impact: "run stopped by its heartbeat", detail: verdict });
+      st.halt();
+      settle("halted", `The build stopped: ${verdict}`);
+    }, PULSE_MS);
+    s.changed(`Building ${cut.tepId ?? cutId}…`);
+    try {
+      // The repository reading rides into every worker's brief. Cached
+      // under the repo stamp, so after a derivation this costs nothing;
+      // a run must never refuse over brief enrichment, hence fail-soft.
+      const known = await s.knowledge().catch(() => undefined);
+      const digest = known?.digest;
+      // A promise-level need that exists only because a test home imports
+      // another promise's code belongs to the maintain slice, not the plan:
+      // dropped before planning, so it forces no ring into one slice.
+      if (known) {
+        const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id)).map((n) => ({ ...n, needs: [...n.needs] }));
+        const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p)).catch(() => []);
+        if (dropped.length) {
+          const byId = new Map(members.map((n) => [n.id, n]));
+          s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
+          s.runState?.log(`plan: ${dropped.length} need(s) explained only by a test-home import moved to the maintain slice`);
+        }
+      }
+      const plan = planScopes(s.space, cut);
+      if (!plan.ok) {
+        settle("refused", `The build could not start: ${plan.reason}.`);
+        s.changed(s.runNote);
+        return undefined;
+      }
+      const anchorRefusal = s.deps.anchorless ? refuseAnchorless(plan, s.space) : undefined;
+      if (anchorRefusal) {
+        settle("refused", anchorRefusal);
+        s.changed(anchorRefusal);
+        return undefined;
+      }
+      // The check-setup facts: the machine's own reading of the repo,
+      // unless the human explicitly overrode the build step in settings.
+      const prepare = s.deps.prepareCommand || known?.prepare || undefined;
+      const provision = known?.provision || undefined;
+      const runOne = known?.runOne || undefined;
+      // The product build — proved at the door, red at the gate — from the
+      // repository's own facts first, the reading second.
+      const build = factsOf(s.deps.round.repoRoot)?.build || known?.build || undefined;
+      const suiteReds = known?.suiteReds;
+      const rememberSuiteReds = known?.rememberSuiteReds;
+      const resetup = known?.resetup;
+      const proveSetup = known?.proveSetup;
+      // The graph's importer listing: the run reads it to order each slice's
+      // test-home work after the production code those tests import.
+      const affected = known ? (p: string) => known.affected(p) : undefined;
+      let last;
+      last = await dispatchScopePlan({
+        plan,
+        cut,
+        space: () => s.space,
+        deps: opts.fresh ? { ...s.deps, freshStart: true } : s.deps,
+        runState: s.runState!,
+        spaceName: path.basename(s.deps.storeDir),
+        ...(finishedBefore.length ? { finishedBefore } : {}),
+        ...(digest ? { digest } : {}),
+        ...(prepare ? { prepare } : {}),
+        ...(build ? { build } : {}),
+        ...(provision ? { provision } : {}),
+        ...(runOne ? { runOne } : {}),
+        ...(suiteReds ? { suiteReds } : {}),
+        ...(rememberSuiteReds ? { rememberSuiteReds } : {}),
+        ...(resetup ? { resetup } : {}),
+        ...(proveSetup ? { proveSetup } : {}),
+        ...(affected ? { affected } : {}),
+        onDelivery: (delivery, note) => {
+          // One delivery per cut, replaced by the newest run. A cut run four
+          // times used to leave four rows on the page, three of them stale
+          // and none of them marked as such, and a person had to read the
+          // branch names to find which one was now true.
+          const kept = s.space.deliveries.filter(
+            (d) => d.cutId !== delivery.cutId || d.acceptedAt || d.id === delivery.id,
+          );
+          const at = kept.findIndex((d) => d.id === delivery.id);
+          s.space = {
+            ...s.space,
+            deliveries: at >= 0 ? kept.map((d, i) => (i === at ? delivery : d)) : [...kept, delivery],
+          };
+          s.changed(note);
+        },
+        // The check's forwarding address: each criterion records where its
+        // standing proof now lives in the repository's own suite.
+        onAnchors: (anchors) => {
+          const byId = new Map(anchors.map((a) => [a.criterionId, a]));
+          s.space = {
+            ...s.space,
+            nodes: s.space.nodes.map((n) =>
+              n.acceptance.some((a) => byId.has(a.id))
+                ? {
+                    ...n,
+                    acceptance: n.acceptance.map((a) => {
+                      const hit = byId.get(a.id);
+                      return hit
+                        ? {
+                            ...a,
+                            proof: {
+                              path: hit.path,
+                              ...(hit.test ? { test: hit.test } : {}),
+                              stamp: hit.stamp,
+                            },
+                          }
+                        : a;
+                    }),
+                  }
+                : n,
+            ),
+          };
+        },
+        changed: (m) => s.changed(m),
+      });
+      if (last?.delivery?.withheld) settle("withheld", `The delivery was withheld: ${last.delivery.withheld}`);
+      else if (last?.refusals.length && !last.delivery)
+        settle("refused", `The build stopped: ${last.refusals.join(" · ")}`);
+      else if (last?.delivery) settle("delivered", undefined);
+      return last;
+    } catch (err) {
+      // A crash is a stop with a cause — on the run's log, in the ledger,
+      // and on the note the human reads; never a silent "nothing delivered".
+      const why = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      s.runState?.log(`⛔ the run crashed: ${why.split("\n")[0]}`);
+      appendDefect(s.deps.storeDir, { spec: cut.tepId ?? cutId, activity: "run", trigger: "crash", type: "machine", impact: "run stopped", detail: why.slice(0, 1500) });
+      s.runNote = `The build stopped unexpectedly: ${why.split("\n")[0].slice(0, 300)}`;
+      s.changed(s.runNote);
+      return undefined;
+    } finally {
+      clearInterval(pulse);
+      s.running = false;
+      s.driving = false;
+      if (pending) clearTimeout(pending);
+      // And once more at the end, so the last thing that happened is in
+      // the record whatever the throttle was doing when it happened.
+      keep();
+    }
+  }
+
+/**
+ * The one notice for signed work that has not delivered: what it says, and
+ * which ways back in ride with it. Every page that can show this fact reads
+ * it from here instead of wording it again — moving between pages never
+ * re-tells you the same thing in different words.
+ *
+ * Nothing while a run is in flight (there is nothing idle to report), and
+ * nothing when there is no signed, undelivered work at all. A refusal note
+ * on the session becomes this notice's sentence verbatim — it is not a
+ * second notice beside it.
+ */
+export function signedIdleNotice(view: {
+  unrun?: { id: string; tepId?: string };
+  running: boolean;
+  runNote?: string;
+}): { heading: string; sentence: string; canRerun: boolean; canThinkAgain: boolean } | undefined {
+  if (view.running || !view.unrun) return undefined;
+  return {
+    heading: view.runNote ? "Nothing is running." : "This work is signed and has not run.",
+    sentence:
+      view.runNote ??
+      "This work is signed and nothing was delivered from it. Its last run ended without a delivery — if the window reloaded, the run ended with it.",
+    canRerun: true,
+    canThinkAgain: true,
+  };
+}
+
+/**
+ * Say no to a delivery: it ends nothing, and the way back in stays open.
+ *
+ * The hand-over put the work in the project so the platform could build
+ * it, so saying no takes it back out: the merge is reverted and pushed,
+ * and the platform builds the project as it was. Nothing is thrown away —
+ * the work is in the reverted merge, the delivery keeps its proofs as the
+ * record of what was tried, and the cut returns to signed, so the same
+ * signed promises can run again against what was learned by saying no.
+ *
+ * A rollback that cannot be made is said, and nothing is stamped: a
+ * delivery marked refused while its work is still live and building would
+ * be the report lying about the product.
+ */
+export async function rejectDeliveryGesture(s: TandemSession, deliveryId: string, at: string): Promise<{ ok: boolean; reason?: string }> {
+  const d = s.space.deliveries.find((x) => x.id === deliveryId);
+  if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
+  const repoRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+  const exec = (cmd: string, args: string[], cwd: string): Promise<{ code: number; out: string }> =>
+    new Promise((resolve) =>
+      execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) =>
+        resolve({
+          code: err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0,
+          out: `${stdout ?? ""}${stderr ?? ""}`,
+        }),
+      ),
+    );
+  const tepOf = (x: Delivery): string => s.space.cuts.find((c) => c.id === x.cutId)?.tepId ?? x.id;
+  // A delivery the run had to repair after merging made more than one
+  // merge. All of them come out, newest first.
+  const headsOf = (x: Delivery): string[] => x.mergedHeads ?? (x.mergedHead ? [x.mergedHead] : []);
+  // Everything this space put in the project, oldest first. Undoing one
+  // means undoing what was merged on top of it, newest first — otherwise
+  // the revert takes out a later cut's ground from under it.
+  const landed = s.space.deliveries
+    .filter((x) => x.mergedHead && !x.rejectedAt)
+    .sort((p, q) => (p.mergedAt ?? "").localeCompare(q.mergedAt ?? ""));
+  const from = landed.findIndex((x) => x.id === deliveryId);
+  if (d.mergedHead && from >= 0) {
+    // Only over this space's own commits. Somebody else's work on top is
+    // named and nothing is touched.
+    const foreign = await foreignSince({
+      repoRoot,
+      head: d.mergedHead,
+      ours: landed.flatMap(headsOf),
+      exec,
+    });
+    if (foreign.length)
+      return {
+        ok: false,
+        reason:
+          `commits that are not this space's sit on top of it: ${foreign
+            .map((c) => `${c.commit.slice(0, 8)} ${c.subject}`)
+            .slice(0, 3)
+            .join("; ")} — taking this out would take those with it`,
+      };
+    const undo = landed.slice(from).reverse();
+    for (const x of undo)
+      for (const head of headsOf(x).slice().reverse()) {
+        const back = await revertDelivery({ repoRoot, head, tep: tepOf(x), exec });
+        if (!back.ok) return { ok: false, reason: back.why ?? "the work could not be taken back out" };
+      }
+    const out = new Set(undo.map((x) => x.id));
+    s.space = {
+      ...s.space,
+      deliveries: s.space.deliveries.map((x) =>
+        out.has(x.id) ? { ...x, rejectedAt: at, acceptedAt: undefined } : x,
+      ),
+    };
+    s.changed(
+      undo.length === 1
+        ? "The work was taken back out — the platform is building the project as it was, and the signed promises can run again."
+        : `${undo.length} deliveries were taken back out, newest first — the platform is building the project as it was.`,
+    );
+    return { ok: true };
+  }
+  if (d.acceptedAt) return { ok: false, reason: "it was already accepted" };
+  s.space = {
+    ...s.space,
+    deliveries: s.space.deliveries.map((x) => (x.id === deliveryId ? { ...x, rejectedAt: at } : x)),
+  };
+  s.changed("The delivery was refused — the work stays on its branch, and the signed promises can run again.");
+  return { ok: true };
+}
+
+export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string): Promise<{ ok: boolean; reason?: string }> {
+    const d = s.space.deliveries.find((x) => x.id === deliveryId);
+    if (!d) return { ok: false, reason: `no delivery '${deliveryId}'` };
+    const r = acceptDelivery(d, s.deps.now(), s.deps.docsGateMode ?? "blocking", s.space.deliveries);
+    if (!r.ok) return r;
+    const cut = s.space.cuts.find((c) => c.id === d.cutId);
+    const tepId = cut?.tepId;
+    const landRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+    try {
+      await acceptOrder({
+        // On a development platform the hand-over already put the work in
+        // the project, so the platform could build it: keeping it is a
+        // decision, not a merge. A delivery from before that — or one
+        // whose merge never happened — still lands here.
+        merge: async () =>
+          d.mergedAt
+            ? { merged: true as const }
+            : landDelivery({
+            repoRoot: landRoot,
+            branch: d.branch,
+            tep: tepId ?? d.id,
+            exec: (cmd, args, cwd) =>
+              new Promise((resolve) =>
+                execFile(cmd, args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) =>
+                  resolve({
+                    code: err ? (typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : 1) : 0,
+                    out: `${stdout ?? ""}${stderr ?? ""}`,
+                  }),
+                ),
+              ),
+          }),
+        stamp: async () => {
+          s.space = {
+            ...s.space,
+            deliveries: s.space.deliveries.map((x) =>
+              x.id === deliveryId ? r.delivery : x,
+            ),
+          };
+        },
+        retire: async () => {
+          if (tepId && s.deps.retire) await s.deps.retire(tepId);
+        },
+      });
+    } catch (err) {
+      return {
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
+    s.changed("Accepted and merged.");
+    // The merge's push fired the platform pipeline for a gitops app; the
+    // promises marked settled-elsewhere are answered THERE. Watch it and
+    // stamp the answers home — the person sees promises close, not a
+    // delivery frozen at "pending" forever. Started, never awaited: the
+    // accept returns; the watch reports through the space.
+    const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+    const down = downstreamOf(gitRoot);
+    // How this repository is made live, in its own words. One question with
+    // a different answer per target, and nothing here knows any of them:
+    // a playbook run from the core repo, a call into control, a script
+    // beside the code. A repository that declares nothing is deployed by the
+    // merge, or by hand as it always was.
+    void afterMerge(s, gitRoot);
+    // A playbook component proves itself on the live cluster, and Tandem
+    // can run that itself — the one downstream it executes rather than
+    // watches. Started, never awaited, like the pipeline watch.
+    if (down === "ansible" || down === "ansible-component")
+      void validateComponentsAfterAccept({
+        repoRoot: gitRoot,
+        landed: [
+          ...new Set(
+            s.space.nodes
+              .filter((n) => (cut?.changeIds ?? []).includes(n.id))
+              .flatMap((n) => (n.grounding?.touchpoints ?? []).map((t) => t.path)),
+          ),
+        ],
+        delivery: r.delivery,
+        update: (d, note) => {
+          s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === d.id ? d : x)) };
+          s.persist();
+          s.changed(note);
+        },
+        log: (l) => s.changed(l),
+      });
+    // Once the pipeline has actually put the work in front of people, drive
+    // it once per ask and file what a person would notice. It runs after the
+    // merge, on work already accepted, so nothing it says can withhold
+    // anything — which is what makes saying it cheap.
+    if (down === "gitops-app")
+      void watchGitopsAfterAccept({
+        gitRoot,
+        app: path.basename(gitRoot),
+        delivery: r.delivery,
+        acceptedAt: s.deps.now(),
+        update: (d, note) => {
+          s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === d.id ? d : x)) };
+          s.persist();
+          s.changed(note);
+        },
+        log: (l) => s.changed(l),
+        // Only when the repository does not say where it lives. A declared
+        // address is the repository's own answer and beats a URL assembled
+        // from a directory name.
+        ...(declaresWhereItLives(gitRoot) ? {} : { then: (url: string) => lookAndFile(s, url, r.delivery) }),
+      });
+    return { ok: true };
+  }

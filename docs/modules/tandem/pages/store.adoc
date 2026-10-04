@@ -1,0 +1,21 @@
+= The store
+:page-type: reference
+
+.TL;DR
+Everything Tandem records about your work lives in the store, a git repository of its own, never in your code. It pushes itself to your GitHub account as `<you>/thinkube-tandem-store`, which is its backup: restore it on a new machine and every space, delivery and record comes back.
+
+== What is in it
+
+* *Your projects:* which code repository each project belongs to.
+* *Your thinking spaces:* your sentences exactly as you typed them, and each space's history, snapshot by snapshot.
+* *Your signed work:* each piece of work, by its number (`TEP-<author>-<n>`, as the *Cuts* row shows it), its run's log, the delivery with its proofs, and the reading of your code made for each sentence.
+* *The defect ledger:* one file per month, `defects/<YYYY-MM>.jsonl`, shared by every space, so deleting a space never deletes the record of what went wrong in it. xref:defect-ledger.adoc[The defect ledger: ODC for work done with an AI] says why it is kept.
+* *Runs started from the command line:* the records of runs started by a command typed in a terminal, rather than by a button on a page.
+
+The store is at `~/thinkube-tandem-store` in Thinkube IDE. A second machine writes to the same store through its own clone and the shared remote.
+
+== What guards it
+
+* *Autosync.* The store commits and pushes itself whenever it has changed; the pushed remote is the backup.
+* *Secret scan.* Every write is scanned for secret-shaped content, such as tokens, keys and private key blocks; a hit refuses the write and names the pattern.
+* *Your words, verbatim.* Your sentences are stored as typed and never edited by the machine.

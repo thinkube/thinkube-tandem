@@ -1,0 +1,23 @@
+# Copyright Alejandro Martínez Corriá and the Thinkube contributors
+# SPDX-License-Identifier: Apache-2.0
+
+site:
+  title: Tandem Methodology (preview)
+  start_page: thinkube-docs:tandem:index.adoc
+content:
+  sources:
+    - url: ./..
+      branches: HEAD
+      start_path: docs
+ui:
+  bundle:
+    url: https://gitlab.com/antora/antora-ui-default/-/jobs/artifacts/HEAD/raw/build/ui-bundle.zip?job=bundle-stable
+    snapshot: true
+asciidoc:
+  extensions:
+    - ./lib/d2-block.js
+output:
+  dir: docs/build/site
+runtime:
+  log:
+    failure_level: warn

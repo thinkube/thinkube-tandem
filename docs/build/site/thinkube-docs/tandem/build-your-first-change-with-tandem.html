@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Build your first application change with Tandem :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="build-your-first-change-with-tandem.html">Build your first application change with Tandem</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/build-your-first-change-with-tandem.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">Build your first application change with Tandem</h1>
+<div class="sect1">
+<h2 id="_overview"><a class="anchor" href="#_overview"></a>Overview</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_basic_idea"><a class="anchor" href="#_basic_idea"></a>Basic idea</h3>
+<div class="paragraph">
+<p>You say what you want in the words you would use with a person. Tandem turns the words into promises, proves each promise with a check written before the code, builds the change, deploys it and tells you, sentence by sentence, what happened.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Reading records nothing.</strong> Tandem shows how it understood each sentence before anything is kept, so a misreading costs one press.</p>
+</li>
+<li>
+<p><strong>Your words are the record.</strong> Once kept, your sentences are never edited by the machine; everything derived from them can be made again.</p>
+</li>
+<li>
+<p><strong>Signing freezes what runs.</strong> The run builds exactly the promises you signed.</p>
+</li>
+<li>
+<p><strong>The report answers your sentences.</strong> One word per sentence, with the checks that proved it; no diff to read.</p>
+</li>
+<li>
+<p><strong>The decisions are yours.</strong> Keeping, signing and accepting are presses only you make. Claude Code can write the sentences, and Tandem&#8217;s tools refuse the rest to it.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_youll_accomplish"><a class="anchor" href="#_what_youll_accomplish"></a>What you&#8217;ll accomplish</h3>
+<div class="paragraph">
+<p>You make a todo app from the web app template, write nine sentences about it, and build the first of the things Tandem groups them into, until it runs at the app&#8217;s address.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_what_to_know_before_starting"><a class="anchor" href="#_what_to_know_before_starting"></a>What to know before starting</h3>
+<div class="paragraph">
+<p><strong>Required</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Thinkube IDE open, with the Tandem icon in the activity bar.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><strong>Optional</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="from-sentence-to-promise.html" class="xref page">How a sentence becomes a promise</a>: one sentence followed all the way to its checks.</p>
+</li>
+<li>
+<p><a href="words-on-the-page.html" class="xref page">The words on the page</a>: every label and state word.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_supported_hardware"><a class="anchor" href="#_supported_hardware"></a>Supported hardware</h3>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 40%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Node</th>
+<th class="tableblock halign-left valign-top">Architecture</th>
+<th class="tableblock halign-left valign-top">GPU</th>
+<th class="tableblock halign-left valign-top">On the reference walk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tkamd1</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">amd64</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Thinkube IDE, where Tandem and its workers run</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tkamd2</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">amd64</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">2 × RTX 3090, 24 GB each</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">—</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">tkspark</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">arm64</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">GB10, 121.7 GB unified</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">—</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Tandem&#8217;s model rounds call Claude; the app is built and deployed by the platform like any other.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_prerequisites"><a class="anchor" href="#_prerequisites"></a>Prerequisites</h3>
+<div class="paragraph">
+<p><strong>Platform</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Thinkube running, with Thinkube IDE open. Ask Claude: <em>"what&#8217;s running?"</em></p>
+</li>
+<li>
+<p>A repository Tandem knows. The walk made one: <em>"make an app called todo from the web app template"</em>. For a repository you already have, run <strong>Tandem: Activate Repository</strong>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><strong>Components</strong></p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>None beyond the base platform.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_time_risk"><a class="anchor" href="#_time_risk"></a>Time &amp; risk</h3>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Estimated time:</strong> 1 h for the first thing. On the reference walk, writing, reading, keeping and grouping the nine sentences took 10 min, and each thing took 34 to 63 min from <strong>Build the first</strong> to delivered. In one of them the closing checks spent 31 min, 20 of them on one flaky frontend test.</p>
+</li>
+<li>
+<p><strong>Risk level:</strong> Low. Work is built on a branch and merged only when it is delivered; <strong>Take it back out</strong> reverts a delivery&#8217;s merges.</p>
+</li>
+<li>
+<p><strong>Rollback:</strong> On the report, press <strong>Take it back out</strong>.</p>
+</li>
+<li>
+<p><strong>Last updated:</strong> 2026-09-17. Written from the walk of 2026-09-13 on a fresh todo app, Tandem 2.0.334 to 2.0.343.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_instructions"><a class="anchor" href="#_instructions"></a>Instructions</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_step_1_make_the_app_and_open_a_space"><a class="anchor" href="#_step_1_make_the_app_and_open_a_space"></a>Step 1. Make the app and open a space</h3>
+<div class="paragraph">
+<p>Every thinking space is one page, and you only ever look at that page.</p>
+</div>
+<div class="paragraph">
+<p>Ask Claude:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>› make an app called todo from the web app template</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Claude calls <code>new_app</code>, which creates the repository and activates it for Tandem.</p>
+</div>
+<div class="paragraph">
+<p>Then click the Tandem icon. Under <strong>Projects</strong>, your repository lists its thinking spaces; choose <strong>New thinking space…</strong>. The space opens in its own editor tab. Across the top is the strip: one line saying where you are and one button, the next thing you can do.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_2_write_your_sentences"><a class="anchor" href="#_step_2_write_your_sentences"></a>Step 2. Write your sentences</h3>
+<div class="paragraph">
+<p>Type what you want, one line per thing, in the words a person would use. Writing costs nothing: the line under the box says <strong>one line is one ask · Enter starts another · Ctrl+Enter reads · nothing is recorded by reading</strong>.</p>
+</div>
+<div class="paragraph">
+<p>Or ask Claude: <em>"put these lines in the box of a new thinking space"</em>, followed by the lines. Claude calls <code>save_draft</code>.</p>
+</div>
+<div class="paragraph">
+<p>The nine lines of the walk:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-text hljs" data-lang="text">My tasks come back in a sensible order — what is due soonest first, and high
+priority above low — instead of whatever order the database felt like.
+A task that is past its due date is obvious at a glance, not grey small print.
+Finished tasks stop crowding the ones I still have to do.
+I can see how many tasks I have without counting cards.
+I can look at just the high priority ones when I want to.
+When I open the new-task box the cursor is already in the title, so I can just type.
+I can add a task with the keyboard alone — type a title, press Enter, done.
+If I try to save a task with no title it tells me, instead of doing nothing.
+Deleting a task asks me first, because one mis-click should not lose work.</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The strip then says <strong>9 lines written, not read</strong>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_3_read_these_9"><a class="anchor" href="#_step_3_read_these_9"></a>Step 3. Read these 9</h3>
+<div class="paragraph">
+<p>Press <strong>Read these 9</strong>. Every sentence comes back with the two parts the machine read in it: the subject highlighted, the claim underlined. <strong>What I read in your words</strong> lists the subjects, <strong>my tasks</strong>, <strong>the new-task box</strong>, <strong>deleting a task</strong>, with how many claims each carries.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-01-read.png" alt="The space after Read these 9: each sentence marked with what it is about and what must become true of it" width="under three subjects" height="and Keep these 9 on the strip">
+</div>
+</div>
+<div class="paragraph">
+<p>A sentence that never names its subject shows the subject in brackets and <strong>names nothing</strong>. If the reading is wrong, change the words and press <strong>Read it again</strong>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_4_keep_these_9"><a class="anchor" href="#_step_4_keep_these_9"></a>Step 4. Keep these 9</h3>
+<div class="paragraph">
+<p>Press <strong>Keep these 9</strong>. The page <strong>your sentences</strong> opens with the nine sentences, each with a pencil to say it differently and a plus to amend it.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-02-keep.png" alt="The kept sentences" width="each with a pencil" height="and Group into things to build on the strip">
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_5_group_into_things_to_build"><a class="anchor" href="#_step_5_group_into_things_to_build"></a>Step 5. Group into things to build</h3>
+<div class="paragraph">
+<p>Press <strong>Group into things to build</strong>. Each thing gets a name, the sentences it carries, and a suggested order: <strong>first</strong>, <strong>then</strong>, <strong>later</strong>. Proposing decides nothing.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-03-group.png" alt="The sentences became three things: first" width="then" height="later">
+</div>
+</div>
+<div class="paragraph">
+<p>On the walk the nine sentences became three things:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 75%;">
+<col style="width: 25%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Thing</th>
+<th class="tableblock halign-left valign-top">Sentences</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">I can see at a glance what still needs doing</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">1–5</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">I can add a task without leaving the keyboard</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">6–8</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">I cannot lose a task to a mis-click</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">9</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_step_6_build_the_first"><a class="anchor" href="#_step_6_build_the_first"></a>Step 6. Build the first</h3>
+<div class="paragraph">
+<p>Press <strong>Build the first</strong>. The strip counts <strong>working out what to build — N of M subjects done</strong>. When the last subject is done, the page <strong>what it will do</strong> opens.</p>
+</div>
+<div class="paragraph">
+<p>Under <strong>What will be true when this is done</strong> it shows one promise for each claim, the files it lands in, and under each promise the lines that must become true, each with where it stands:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>checked when it is built</strong>: a check, written before the code by a worker that never sees the code, will prove it;</p>
+</li>
+<li>
+<p><strong>judged by a reviewer at delivery</strong>: a reviewer reads the finished work once;</p>
+</li>
+<li>
+<p><strong>only you can see this</strong>: only the running product can show it, and you confirm it.</p>
+</li>
+</ul>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-06-work-page.png" alt="The what-it-will-do page: promises" width="the files they land in" height="and each line with where it stands">
+</div>
+</div>
+<div class="paragraph">
+<p>Every thing also carries the promise <strong>The documentation says what "&lt;the thing&gt;" does, in the words of the person using it.</strong> It lands a page in the project&#8217;s <code>docs/</code> folder. Press <strong>Not needed</strong> on it, with your reason, when no page applies.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_7_sign_build_these_n"><a class="anchor" href="#_step_7_sign_build_these_n"></a>Step 7. Sign: Build these N</h3>
+<div class="paragraph">
+<p>At the bottom of the work page, <strong>Pressing Build these N</strong> says what the press does: it signs this work and locks the sentences behind it, records the machine&#8217;s own answers to the open questions, starts the workers, and pushes a branch. Nothing is merged until the delivery.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-07-sign.png" alt="The work page of a thing with one sentence: two promises" width="their lines" height="and under Pressing Build these 2 what the button does">
+</div>
+</div>
+<div class="paragraph">
+<p>Press <strong>Build these N</strong>. The strip says <strong>building — &lt;the thing&#8217;s name&gt;</strong>, the run page opens, and <strong>Stop</strong> is the only other button.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_8_watch_it_build"><a class="anchor" href="#_step_8_watch_it_build"></a>Step 8. Watch it build</h3>
+<div class="paragraph">
+<p>The page <strong>the run</strong> shows one card per piece of work, titled with the promise it keeps, with a state word: <strong>ready</strong>, <strong>running</strong>, <strong>needs you</strong>, <strong>passed</strong>, <strong>failed</strong>, <strong>never ran</strong>. The header counts <strong>N of M workers done · N of M judged on the running product</strong>.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-09-run.png" alt="The run page: cards with their state words and log counts" width="5 of 10 workers done">
+</div>
+</div>
+<div class="paragraph">
+<p><strong>needs you</strong> means a worker stopped on a question only you can answer, about what you want. The page offers a box and <strong>Send</strong>. The run is a process of its own: closing or reloading the window does not end it.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_9_read_the_report"><a class="anchor" href="#_step_9_read_the_report"></a>Step 9. Read the report</h3>
+<div class="paragraph">
+<p>When the run ends, the strip says where it ended, such as <strong>built, deployed and running at &lt;address&gt;</strong>. The report opens with one paragraph in plain words, then <strong>What you asked for, and what happened</strong>: each sentence with a word, and under it the checks that proved it.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-13-report.png" alt="The report of the first thing: 23 checks passed" width="five sentences done with the check behind each" height="what the work noticed">
+</div>
+</div>
+<div class="paragraph">
+<p>On the walk the first thing ended with 23 checks passed, and the four reviewers on the running product judged 14 lines. Further down, <strong>What the work noticed, and did not do</strong> lists what the reviewers saw and did not settle.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_10_decide"><a class="anchor" href="#_step_10_decide"></a>Step 10. Decide</h3>
+<div class="paragraph">
+<p>The buttons at the end are yours:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Go on to the next</strong> closes this thing and moves to what is left to build.</p>
+</li>
+<li>
+<p><strong>Take it back out</strong> reverts this delivery&#8217;s merges and pushes.</p>
+</li>
+<li>
+<p><strong>Run it again</strong> starts the signed work again; nothing you wrote changes.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Press <strong>Go on to the next</strong>. The strip offers <strong>Build the first</strong> for the next thing, and the path from Step 6 repeats. When the last thing is built, the strip says <strong>9 sentences · everything is built</strong> and every sentence reads <strong>built and accepted — it is in the project</strong>.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="_images/tandem-14-everything-built.png" alt="The space with everything built: three accepted things" width="nine sentences each built and accepted" height="and the strip saying so">
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_step_11_next_steps"><a class="anchor" href="#_step_11_next_steps"></a>Step 11. Next steps</h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="turn-what-the-reviewers-noticed-into-the-next-change.html" class="xref page">Build the improvements Tandem&#8217;s reviewers suggest</a>: the reviewers' findings as the next sentences.</p>
+</li>
+<li>
+<p><a href="the-report.html" class="xref page">Reading the report and deciding</a>: every section and button of the report.</p>
+</li>
+<li>
+<p><a href="the-run.html" class="xref page">While it builds</a>: what happens in each phase of a run.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_troubleshooting"><a class="anchor" href="#_troubleshooting"></a>Troubleshooting</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 25%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Symptom</th>
+<th class="tableblock halign-left valign-top">Cause</th>
+<th class="tableblock halign-left valign-top">Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">After Claude made the app, <strong>Projects</strong> still says <strong>no repositories yet</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The tree reads the repositories when the window loads</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Reload the window; the new repository appears with its spaces.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">In a freshly opened window, the first click on a space in <strong>Projects</strong> opens nothing</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The extension is still starting</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Click again after a few seconds.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

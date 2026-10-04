@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>The defect ledger, reference :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="defects.html">The defect ledger, reference</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/defects.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">The defect ledger, reference</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<div class="title">TL;DR</div>
+<p>Every defect a run catches is one row in <code>defects/&lt;YYYY-MM&gt;.jsonl</code> at the store&#8217;s root. A row is written the moment the defect is found and never edited. <strong>Tandem: Show Defects</strong> renders the month as a table with the fate of every row. <a href="defect-ledger.html" class="xref page">The defect ledger</a> is what the rows mean and why they are kept.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_file"><a class="anchor" href="#_the_file"></a>The file</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>One file per month at the store&#8217;s root, shared by every space; each row names the space it came from. A row is appended at the moment a run catches something: a worker writing outside its declared files, a check that never went green, a check that could not run at all, a question the run had to answer for a worker, a deferral found in the delivered code, a finding carried to the report.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_a_row"><a class="anchor" href="#_a_row"></a>A row</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Field</th>
+<th class="tableblock halign-left valign-top">Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>ts</code>, <code>version</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">When the row was written, and the Tandem version that wrote it.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>space</code>, <code>spec</code>, <code>run</code>, <code>slice</code>, <code>unit</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Where it happened: the thinking space, the signed work (<code>TEP-&lt;author&gt;-&lt;n&gt;</code>), the run, the piece of work and the worker.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>activity</code>, <code>trigger</code>, <code>type</code>, <code>stage</code>, <code>impact</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The classification; the values are listed on <a href="defect-ledger.html#_the_axes" class="xref page">The axes</a>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>detail</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The evidence, in the words of whatever caught it.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>refs</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Related identifiers: a commit, a check, a file.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_fate_of_a_row"><a class="anchor" href="#_the_fate_of_a_row"></a>The fate of a row</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A row says what surfaced, not what became of it. When a run ends it writes how it ended, and how each piece of work ended, beside the ledger under the run&#8217;s id. Reading a row&#8217;s fate then follows from the rows themselves:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>an impact that says it was repaired, such as <strong>the author repaired its own work</strong> or <strong>closed what no other actor could</strong>, reads <strong>healed</strong>;</p>
+</li>
+<li>
+<p>an impact that says nobody could, such as <strong>the closer could not finish it either</strong>, reads <strong>reached the person</strong>;</p>
+</li>
+<li>
+<p>otherwise the ending of the piece of work it was found in answers, and where there is none, the run&#8217;s own ending;</p>
+</li>
+<li>
+<p>a run whose ending was never written reads <strong>not known</strong>.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p><strong>Tandem: Show Defects</strong> prints the fate beside every row and totals the month: <strong>N found · N healed by the run · N reached the person · N not known</strong>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_tools_own_defects"><a class="anchor" href="#_the_tools_own_defects"></a>The tool&#8217;s own defects</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>A run cannot catch a defect in the machinery that runs it, so a repair to Tandem itself is recorded from the commit that made it. A line in the commit message names what was wrong:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-none hljs">Defect: the platform's verdict was compared in one case, so a pipeline
+that passed was read as a failure</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Every deploy, and every start of the extension, harvests the lines it has not harvested yet and writes one row per repair: <code>activity: tool development</code>, <code>trigger: self-repair</code>, <code>type: machine</code>, with the commit in <code>refs</code>. A commit that says nothing records nothing.</p>
+</div>
+<div class="paragraph">
+<p><code>type</code> is a closed set the code cannot stray from: <code>code</code>, <code>test</code>, <code>contract</code>, <code>gate</code>, <code>machine</code>, <code>infrastructure</code>, <code>environment</code>, <code>decision</code>. The machine&#8217;s own failures, a check that could not be graded, a stall, a crash, a lock nobody released, are typed <code>machine</code> wherever they are caught.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limits"><a class="anchor" href="#_limits"></a>Limits</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><code>activity</code>, <code>trigger</code> and <code>impact</code> are free strings chosen by the site that caught the defect; a monthly reading counts spellings as well as kinds.</p>
+</li>
+<li>
+<p>Rows from runs that ended before endings were written read <strong>not known</strong>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

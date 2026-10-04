@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>The defect ledger: ODC for work done with an AI :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="defect-ledger.html">The defect ledger: ODC for work done with an AI</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/defect-ledger.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">The defect ledger: ODC for work done with an AI</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p><em>Every defect a run catches is classified along a few independent axes and kept forever, so that the method learns from the population of its defects rather than from the story of each one. The idea is IBM&#8217;s Orthogonal Defect Classification; what is new is measuring how many defects the machine healed before a person ever saw them.</em></p>
+</div>
+<div class="paragraph">
+<div class="title">TL;DR</div>
+<p>Run <strong>Tandem: Show Defects</strong>. Every row is one defect one of your runs caught: what was being done, what surfaced it, whose fault it was, what it cost, and what became of it, healed by the machine, reached you, or not known. Read the totals once a month. A kind of row that keeps coming back is a defect in the method, and the fix belongs in the method, not in one more check.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_decision"><a class="anchor" href="#_the_decision"></a>The decision</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Orthogonal Defect Classification was published by Chillarege and colleagues at IBM in 1992, out of a plain observation: nobody has time to root-cause every defect, but every defect can be classified in a few seconds along attributes that do not depend on each other, the type of the defect, the activity in which it was found, the trigger that made it surface, the impact it had. Classified that way, the distribution of a few hundred defects says where a process leaks, without anyone having to study any one of them. A rise in one type at one stage is a signature, and the signature names the repair.</p>
+</div>
+<div class="paragraph">
+<p>Tandem applies that to work done by a machine. Every point where a run catches something, a worker writing outside its footprint, a check that never went green, a gate that could not grade, a supervisor answering a question the brief should have answered, a self-declared deferral found in the delivered code, a finding carried to the person, appends one row to the ledger. The row is written at the moment of finding and never edited. It is written beside the store, not inside the space, so deleting a space never deletes the record of what went wrong in it.</p>
+</div>
+<div class="paragraph">
+<p>Two things ODC never had to say are added. First, a <strong>fate</strong>: whether the machine repaired the defect by itself, whether it reached the person, or whether nobody wrote the answer down. For a process where the machine does most of the work, the number that matters is not how many defects there were but how many never needed a person. Second, the tool&#8217;s own defects: a repair to Tandem itself is a commit, and a <code>Defect:</code> line in the commit message becomes a row at the next deploy, so the population the method most needs to watch, its own failures, is in the same ledger as everything else.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_axes"><a class="anchor" href="#_the_axes"></a>The axes</h2>
+<div class="sectionbody">
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 60%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">ODC attribute</th>
+<th class="tableblock halign-left valign-top">Field in a row</th>
+<th class="tableblock halign-left valign-top">What it holds in Tandem</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Activity</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>activity</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">What the run was doing when the defect surfaced: <code>preflight</code>, <code>check authoring</code>, <code>unit execution</code>, <code>worker question</code>, <code>verify-oracle supervision</code>, <code>closing gate</code>, <code>closing</code>, <code>run</code>, <code>refresh</code>, <code>diagnosis</code>, <code>challenge</code>, <code>check repair</code>, <code>gate repair</code>, <code>clearance</code>, <code>tool development</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Trigger</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>trigger</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">What surfaced it: <code>probe-audit</code>, <code>containment</code>, <code>gate-verifier</code>, <code>supervisor</code>, <code>oracle-ruling</code>, <code>author-resume</code>, <code>closer</code>, <code>stub-scan</code>, <code>gate-ac</code>, <code>gate-infra</code>, <code>suite</code>, <code>watchdog</code>, <code>crash</code>, <code>window-reload</code>, <code>self-repair</code>, and the preflight refusals such as <code>plan-check-homes</code> and <code>signature-drift</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Defect type</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>type</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Whose fault it was, as the judge saw it: <code>code</code>, <code>test</code>, <code>contract</code> (the brief lacked a fact), <code>gate</code>, <code>machine</code> (Tandem&#8217;s own machinery, wherever the failure was caught), <code>infrastructure</code>, <code>environment</code>, <code>decision</code>. A closed set: the code cannot write another word here.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Qualifier</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>qualifier</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>missing</code>, written for a deferral the honesty scan found in delivered code.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Stage</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>stage</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Where in the pipeline it belongs: <code>author</code>, <code>brief</code>, <code>check</code>, <code>clearance</code>, <code>altitude</code>.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Impact</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>impact</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The cost, as one sentence the catching site chose: <code>run refused</code>, <code>round lost</code>, <code>unit undelivered</code>, <code>the author repaired its own work</code>, <code>closed what no other actor could</code>, <code>delivery withheld</code>, and so on.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Fate</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">computed when read</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>healed</code>, <code>reached the person</code>, or <code>not known</code>. Read from the impact sentence when it already says so; otherwise from the run&#8217;s ending record, per slice.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>space</code>, <code>spec</code>, <code>run</code>, <code>slice</code>, <code>unit</code>, <code>refs</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Where it happened: the thinking space, the signed work, the run, the slice and unit, and related identifiers such as a commit or a criterion.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>detail</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The evidence, in the catching site&#8217;s words, clipped at 1,200 characters.</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>One row, as written on the reference cluster:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlightjs highlight"><code class="language-json hljs" data-lang="json">{"ts":"2026-09-02T08:44:54.004Z","version":"2.0.244",
+ "space":"todo-fccc72/test/cmxela","spec":"TEP-cmxela-2","run":"TEP-cmxela-2@mtjuonka",
+ "activity":"preflight","trigger":"plan-check-homes","type":"gate","impact":"run refused",
+ "detail":"these checks are born where this repository runs no test of its own, so nothing
+  would compile or run them — refused before dispatch: SL-3: probes/todo-fccc72__SL-3_AC-1.test.mjs …
+  Its tests live under backend, frontend."}</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The run was refused before any worker started, because the plan put the checks where nothing could run them. That is a <code>gate</code> defect found at <code>preflight</code>, and its cost was a refused run rather than a wasted one.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_a_month_says"><a class="anchor" href="#_what_a_month_says"></a>What a month says</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The ledger for September 2026 on the reference cluster holds 225 rows. By type and by trigger:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 20%;">
+<col style="width: 20%;">
+<col style="width: 40%;">
+<col style="width: 20%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Type</th>
+<th class="tableblock halign-left valign-top">Rows</th>
+<th class="tableblock halign-left valign-top">Trigger</th>
+<th class="tableblock halign-left valign-top">Rows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">contract</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">83</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">supervisor</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">87</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">code</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">72</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">gate-ac</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">28</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">test</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">36</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">author-resume</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">28</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">gate</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">17</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">probe-audit</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">22</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none recorded</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">14</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">closer</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">21</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">machine</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">3</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stub-scan</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">10</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Read as ODC reads it. The largest population is <code>contract</code> defects surfaced by the <code>supervisor</code>: the brief handed to a worker lacked a fact the checks required, and the supervisor supplied it mid-run. Of those 87 rows, 31 read as healed, the worker got its answer or the question flowed on as contract, and 32 read as <strong>round lost</strong>, a disclosure that cost a round of work. That says where the method leaks: the step that writes briefs. The <code>author-resume</code> and <code>closer</code> rows are the second story: 28 times the coder resumed to repair its own red and could not; 17 times the closer finished what no other actor could, and 4 times it could not either. The three <code>machine</code> rows understate the truth; see Limits.</p>
+</div>
+<div class="paragraph">
+<p>The fates for the month, from the rows alone:</p>
+</div>
+<table class="tableblock frame-all grid-all stretch">
+<colgroup>
+<col style="width: 66.6666%;">
+<col style="width: 33.3334%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">Fate</th>
+<th class="tableblock halign-left valign-top">Rows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">healed by the machine</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">53</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">reached the person</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">44</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">not known</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">128</p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>Most rows are <strong>not known</strong> because their runs ended before Tandem began writing run-ending records; from the first run that has one, every row&#8217;s fate resolves.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_it_saves_you"><a class="anchor" href="#_what_it_saves_you"></a>What it saves you</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>No post-mortems.</strong> You never reconstruct what went wrong in a run; the run wrote it down as it happened, typed.</p>
+</li>
+<li>
+<p><strong>A number for trust.</strong> "The machine healed 53 of this month&#8217;s defects before you saw them, and 44 reached you" is a sentence you can say and check.</p>
+</li>
+<li>
+<p><strong>A method that learns.</strong> A row that recurs across spaces is a process defect. The fix goes into Tandem, and the next month&#8217;s ledger shows whether it worked.</p>
+</li>
+<li>
+<p><strong>Nothing lost with a space.</strong> Delete the space; the rows stay.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_where_it_shows_up"><a class="anchor" href="#_where_it_shows_up"></a>Where it shows up</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Tandem: Show Defects</strong> in the command palette renders the ledger as a table, with the fate beside every row and the totals per month.</p>
+</li>
+<li>
+<p><a href="defects.html" class="xref page">The defect ledger, reference</a>: the file layout, the run-ending records, and the commit trailer that records a repair to the tool.</p>
+</li>
+<li>
+<p><a href="store.html" class="xref page">The store</a>: the ledger lives at the store&#8217;s root, in <code>defects/&lt;YYYY-MM&gt;.jsonl</code>.</p>
+</li>
+<li>
+<p><a href="the-run.html" class="xref page">The run</a>: the points where a run catches a defect are the points that write a row.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limits"><a class="anchor" href="#_limits"></a>Limits</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>The axes are held loosely: <code>activity</code>, <code>trigger</code>, <code>type</code> and <code>impact</code> are free strings chosen by each catching site, not a closed vocabulary, so a monthly reading counts spellings as well as kinds.</p>
+</li>
+<li>
+<p>Fate is computed from the impact sentence or the run&#8217;s ending record; a run that ended before ending records existed reads <code>not known</code>.</p>
+</li>
+<li>
+<p>The <code>machine</code> type undercounts: failures of Tandem&#8217;s own machinery were typed by where they were caught rather than by whose fault they were, so the column reads a handful where the true figure is far higher.</p>
+</li>
+<li>
+<p>Tool repairs enter the ledger only at deploy, and only when the commit message carries a <code>Defect:</code> line; a commit that says nothing records nothing.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

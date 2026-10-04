@@ -1,0 +1,91 @@
+= The defect ledger: ODC for work done with an AI
+:page-type: concept
+
+_Every defect a run catches is classified along a few independent axes and kept forever, so that the method learns from the population of its defects rather than from the story of each one. The idea is IBM's Orthogonal Defect Classification; what is new is measuring how many defects the machine healed before a person ever saw them._
+
+.TL;DR
+Run *Tandem: Show Defects*. Every row is one defect one of your runs caught: what was being done, what surfaced it, whose fault it was, what it cost, and what became of it, healed by the machine, reached you, or not known. Read the totals once a month. A kind of row that keeps coming back is a defect in the method, and the fix belongs in the method, not in one more check.
+
+== What Tandem records, and why
+
+Tandem records every defect its runs catch, to improve the process of building software with an AI. Each record is one row: what the run was doing, what surfaced the defect, whose fault it was, what it cost, the space and run it came from, and the evidence in the words of whatever caught it, which can quote your code and file paths. The rows are kept in your store, the git repository of your own where Tandem keeps everything it records (xref:store.adoc[The store]).
+
+== The decision
+
+Orthogonal Defect Classification (ODC) starts from a plain fact. Nobody has time to find the root cause of every defect. But anyone can classify a defect in a few seconds, along attributes that do not depend on each other: the type of the defect, the activity in which it was found, the trigger that made it appear, and the impact it had. Classified that way, a few hundred defects show where a process leaks. Nobody has to study any one of them. A rise in one type at one stage is a pattern, and the pattern names the repair.
+
+Tandem applies ODC to work done by a machine. A row is written each time a run catches a problem, for example a worker editing files it did not declare, or a check that never passes. The row is written when the problem is found and is never edited. It is written beside the store, outside the thinking space (the page where you write your sentences and follow their work), so deleting a space keeps the record of what went wrong in it.
+
+Tandem adds two things to ODC. First, a *fate*: the machine repaired the defect by itself, the defect reached the person, or nobody wrote the answer down. When the machine does most of the work, the number that matters is how many defects never needed a person. Second, the tool's own defects. A repair to Tandem itself is a commit. A `Defect:` line in the commit message becomes a row at the next deploy. So Tandem's own failures, the defects the method most needs to watch, are in the same ledger as everything else.
+
+== The axes
+
+Each row is classified by activity, trigger, defect type, qualifier, stage and impact, and read with its fate. xref:defects.adoc#_the_axes[The defect ledger, reference] lists the fields and their values.
+
+One row, as written on the reference cluster:
+
+[source,json]
+----
+{"ts":"2026-09-02T08:44:54.004Z","version":"2.0.244",
+ "space":"todo-fccc72/test/cmxela","spec":"TEP-cmxela-2","run":"TEP-cmxela-2@mtjuonka",
+ "activity":"preflight","trigger":"plan-check-homes","type":"gate","impact":"run refused",
+ "detail":"these checks are born where this repository runs no test of its own, so nothing
+  would compile or run them — refused before dispatch: SL-3: probes/todo-fccc72__SL-3_AC-1.test.mjs …
+  Its tests live under backend, frontend."}
+----
+
+The run was refused before any worker started, because the plan put the checks where nothing could run them. That is a `gate` defect found at `preflight`, and its cost was a refused run rather than a wasted one.
+
+== What a month says
+
+Thinkube itself is developed with Tandem, and its development has collected this data and learned from it. One month of that work, September 2026, wrote 225 rows. By type and by trigger:
+
+[cols="1,1,2,1",options="header"]
+|===
+| Type | Rows | Trigger | Rows
+
+| contract | 83 | supervisor | 87
+| code | 72 | gate-ac | 28
+| test | 36 | author-resume | 28
+| gate | 17 | probe-audit | 22
+| none recorded | 14 | closer | 21
+| machine | 3 | stub-scan | 10
+|===
+
+Read it the ODC way. The largest group is `contract` defects found by the `supervisor`. The brief (the instructions a worker is given) lacked a fact the checks needed, and the supervisor gave that fact during the run. Of those 87 rows, 31 read as healed: the worker got its answer, or the question was carried on as a contract defect. 32 read as *round lost*: giving the missing fact cost one round of work. So the method leaks at the step that writes briefs. The `author-resume` and `closer` rows show a second pattern. 28 times, the coder went back to repair its own failing check and could not. 17 times, the closer finished what no other worker could, and 4 times it could not either. In this month some failures of Tandem's own machinery were recorded under other types, so the three `machine` rows count too few.
+
+The fates for the month, from the rows alone:
+
+[cols="2,1",options="header"]
+|===
+| Fate | Rows
+
+| healed by the machine | 53
+| reached the person | 44
+| not known | 128
+|===
+
+A row reads *not known* when its run wrote no ending record.
+
+== What it saves you
+
+* *No post-mortems.* You never reconstruct what went wrong in a run; the run wrote it down as it happened, typed.
+* *A number for trust.* "The machine healed 53 of this month's defects before you saw them, and 44 reached you" is a sentence you can say and check.
+* *A method that learns.* A row that recurs across spaces is a process defect. The fix goes into Tandem, and the next month's ledger shows whether it worked.
+* *Nothing lost with a space.* Delete the space; the rows stay.
+
+== Where it shows up
+
+* *Tandem: Show Defects* in the command palette renders the ledger as a table, with the fate beside every row and the totals per month.
+* xref:defects.adoc[The defect ledger, reference]: the file layout, the run-ending records, and the commit trailer that records a repair to the tool.
+* xref:store.adoc[The store]: the ledger lives at the store's root, in `defects/<YYYY-MM>.jsonl`.
+* xref:index.adoc[Thinkube Tandem]: the points where a run catches a defect are the points that write a row.
+
+== Limits
+
+* `activity`, `trigger` and `impact` are strings chosen by each catching site, not a closed vocabulary, so a monthly reading counts spellings as well as kinds. `type` is a closed set.
+* Fate is computed from the impact sentence or the run's ending record. A run with no ending record reads `not known`.
+* Failures of Tandem's own machinery are typed `machine`.
+* Tool repairs enter the ledger only at deploy, and only when the commit message carries a `Defect:` line. A commit without that line records nothing.
+
+Orthogonal Defect Classification was published by Chillarege and colleagues at IBM in 1992.

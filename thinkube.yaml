@@ -1,0 +1,30 @@
+# Copyright Alejandro Martínez Corriá and the Thinkube contributors
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: thinkube.io/v1
+kind: ThinkubeDeployment
+
+# What this repository is, and how it is made live.
+#
+# Tandem itself is not deployed by the platform: it is a VS Code extension,
+# packaged and installed into code-server by the script beside this file.
+# Declared here, it is the same one question every other target answers —
+# how is this made live — with this repository's own answer.
+
+spec:
+  deployment:
+    type: none
+
+  parts:
+    - name: extension
+      root: .
+      test:
+        enabled: true
+        command: "npm test"
+        one: "node --test \"$(echo <file> | sed 's#^src/#out-test/#; s#\\.ts$#.js#')\""
+
+  deploy:
+    run: bash scripts/deploy.sh
+
+  docs:
+    root: docs

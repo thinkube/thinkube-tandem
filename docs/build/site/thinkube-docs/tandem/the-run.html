@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>While it builds :: Tandem Methodology (preview)</title>
+    <meta name="generator" content="Antora 3.1.15">
+    <link rel="stylesheet" href="../../_/css/site.css">
+  </head>
+  <body class="article">
+<header class="header">
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="../..">Tandem Methodology (preview)</a>
+      <button class="navbar-burger" aria-controls="topbar-nav" aria-expanded="false" aria-label="Toggle main menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+    <div id="topbar-nav" class="navbar-menu">
+      <div class="navbar-end">
+        <a class="navbar-item" href="#">Home</a>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Products</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Product A</a>
+            <a class="navbar-item" href="#">Product B</a>
+            <a class="navbar-item" href="#">Product C</a>
+          </div>
+        </div>
+        <div class="navbar-item has-dropdown is-hoverable">
+          <a class="navbar-link" href="#">Services</a>
+          <div class="navbar-dropdown">
+            <a class="navbar-item" href="#">Service A</a>
+            <a class="navbar-item" href="#">Service B</a>
+            <a class="navbar-item" href="#">Service C</a>
+          </div>
+        </div>
+        <div class="navbar-item">
+          <span class="control">
+            <a class="button is-primary" href="#">Download</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </nav>
+</header>
+<div class="body">
+<div class="nav-container" data-component="thinkube-docs" data-version="">
+  <aside class="nav">
+    <div class="panels">
+<div class="nav-panel-explore is-active" data-panel="explore">
+  <div class="context">
+    <span class="title">Thinkube</span>
+    <span class="version"></span>
+  </div>
+  <ul class="components">
+  </ul>
+</div>
+    </div>
+  </aside>
+</div>
+<main class="article">
+<div class="toolbar" role="navigation">
+<button class="nav-toggle"></button>
+  <a href="index.html" class="home-link"></a>
+<nav class="breadcrumbs" aria-label="breadcrumbs">
+  <ul>
+    <li><a href="../index.html">Thinkube</a></li>
+    <li><a href="the-run.html">While it builds</a></li>
+  </ul>
+</nav>
+<div class="edit-this-page"><a href="file:///home/thinkube/thinkube-platform/extensions/thinkube-tandem/docs/modules/tandem/pages/the-run.adoc">Edit this Page</a></div>
+</div>
+  <div class="content">
+<aside class="toc sidebar" data-title="Contents" data-levels="2">
+  <div class="toc-menu"></div>
+</aside>
+<article class="doc">
+<h1 class="page">While it builds</h1>
+<div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p><em>What the run page shows between your signature and the report, and why the machine works in that order.</em></p>
+</div>
+<div class="paragraph">
+<div class="title">TL;DR</div>
+<p>After <strong>Build these N</strong> the page <strong>the run</strong> shows one card per piece of work with a state word, and a header counting <strong>N of M workers done · N of M judged on the running product</strong>. You can watch, press <strong>Stop</strong>, or answer a card that <strong>needs you</strong>; otherwise the report arrives on its own when the run ends, with the work merged, deployed and judged on the running product.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_the_decision"><a class="anchor" href="#_the_decision"></a>The decision</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The machine building your thing is not trusted to grade its own work. That one decision fixes the order of everything you see on the run page.</p>
+</div>
+<div class="imageblock d2"><div class="content" role="img" aria-label="The run as its cards show it: preparing the tree, the check and code workers, audit and tests brought under, the closing gate, handing it over, taking it live, on the running product, the report"><svg style="max-width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" viewBox="0 0 572 1258" width="572" height="1258"><svg class="d2-3129959286 d2-svg" width="572" height="1258" viewBox="-5 -5 572 1258"><rect x="-5" y="-5" width="572" height="1258" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.d2-3129959286 .text-bold {
+	font-family: "d2-3129959286-font-bold";
+}
+@font-face {
+	font-family: d2-3129959286-font-bold;
+	src: url("data:application/font-woff;base64,d09GRgABAAAAAA1QAAoAAAAAFHwAAguFAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAAA9AAAAGAAAABgXxHXrmNtYXAAAAFUAAAAegAAAJ4CfALSZ2x5ZgAAAdAAAAbqAAAJQGaicOBoZWFkAAAIvAAAADYAAAA2G38e1GhoZWEAAAj0AAAAJAAAACQKfwXgaG10eAAACRgAAACDAAAAhDoQBJ5sb2NhAAAJnAAAAEQAAABEKOIrOG1heHAAAAngAAAAIAAAACAAOQD3bmFtZQAACgAAAAMvAAAIKgjwVkFwb3N0AAANMAAAACAAAAAg/9EAMgADAioCvAAFAAACigJYAAAASwKKAlgAAAFeADIBKQAAAgsHAwMEAwICBGAAAvcAAAADAAAAAAAAAABBREJPACAAIP//Au7/BgAAA9gBESAAAZ8AAAAAAfAClAAAACAAA3icXMy58QEBHEDhb4//abHWfQQyiQ60oQEdGInRhgpQgJpoQCb+GSJjXvYFD4lMgkJuj0opk5qamVtYWtvaRfBmK5unxTXucYtLnOMUxzi8Tp8lJkbGUpncl28/fv35V1Ooa2gqtVTaOrp6+gaGPAAAAP//AwAenRk/AAB4nGRVW2wbaRU+/3g80ziTxuPxeHzJ+Db2/HYuTuPxzOTixHHjJG3qNGmrpmk3bdg8wELadGlSmq2K9oEu4rLVChwhhASLEAiQ2pVWFRIsCogVbKm2PHXLvoB2EagP+4J3FSGEnBn0j5M02X2wz2g0//nO953vnB/cMAtALVEb4IIWaAcfiAAan+DTGsYKa2qmqUguEyOenaV81s9+irN0Nkt3xr8fu7m4iKYvURvbl5+bXlr6z+LQkPWj37xl3UGrbwEgCAFQAvUqsCSfoidEhX90H/3vPuW9dWu7DgBAQae9hd5DDQiBAiAlVb1gmKqqJBkWG4aWD4i8ghWGMfOGqTOM6A/8rjJ7u0Yp2dhoSu9dHlz8/LqHjk0eCqWFk8UYd650cr49gYPi83Jq5Zr1L61DuSYJ5zxdclBy8Mr2FhWgNsEPMQB3UsUKq/CayDpgAdHPMDhv6AUlyYqBABpPjMk0t1qj5UqyON9bXJxXjbnurD/DJeI6tXm3GpZHvlw9+1JpfaL69Z53fYeB8E7ZW2gTNSDsIBBKJLnEElqiP6DlDVNiGBQav1o+9pVKbrJjXInrpdKRYE4YTM9xw9dPn1kbjkqLcrU8Oi22fy4eaWqF7S3UoDZBgPiuVk5irGv7VFJ3YD5ZuDq0WMj2h5jauocOT1BB7BO6/IrRy337pVPXRzqC1V9uj/WFlXV/6F3f4bHJ4+NAObX/AzUgCLED1RNp2EQgoOVJ7S6tQFBQbPLa0bHLQ5MXe2nKet8z0acbfeqlH9zH3UmDG1k7fWqtVFquCOkWQ0ucD0fRYFbvJVwQBAHQGvWQROINc5cL2yxf1ESFv3D0aGp2LFbwRtrCXCR6/jz66hV3RJ8rcMxltzuhRletrwG4IGn3UCxqQC8MwZSjjKoXTN2pfScYWl7SRMWhwShJTATSiL38DOMiDd8RTWg+K0nV+eSTwUv9k0IkHgxnBy/p3YlfzbAthXlTjvmS2dmF5yu3pmSMZRnjbH4Up7VQgosMPw73dxczdFsmFsl7aV+lqziT4ZZbk/6BqZSnPSD4hsa0Uzn0sDOLs5lMttOqpUKS1+UKhjrkpjZl0mzHo6DteVPkFd4RneXLNbbjRP7U8Zoc78gEqc2750NdyxetRyhhZEKS9SbYNpgA8HfqMaUCScpCFL4FYNv2X+wifOC8j+28f3UPM0ptAkf6ofGaqbGCglmx/Br9wx+/8dvXXyxRm9bKnx5Zf/vD5E3yvb2FfNQmtDt667zG7xn7z9WhGt/iZhkfl+aeO0Ep2+9LPoSuuFlyDsAlowYkHBxJc7hJBxiye7FMZnuiTy8Liam+2RM1OZ4+Qv56UX001tOVSfbt0j5ivbkTdvVDDfDvx9iv37qHjk/vCYjqpWjPAf2ac+B4qh0in5kDBu9zDAqUrlYqV0ullUplpdSTy/Xkenp2Znh47czp68M3pkfLVTLKpKyyfYwKoAYIEAWQnlXn2FLFkig8Wz+EvnwcX3ihuGjEi2H3jGrMdXX6M7+mftEXVr65ena9FAnNfAel9paPwx29hhrgO6Avqz5jHqmqYocn2Bbydgz7Uf1cvs/tfpmms3nrQ0Ag2lvoddQA7PQVm2TiyUioOEfphWfJRH9AilKin3nc9wX1aLIUS0TlXDg6lPni2YFzsaPhQnhgQI0PZ1/g1NhCKCIJfEDwcKmB7PgcDs77AzgYOtyqDOTGLjY9z9tbaIVaA8lRW9cV3TQ1sgX2LUxYmKlU+Zs3bigyF/JIgsl9ae7hFeb27dUHnWmGXma4Zq6ivYX+i+rg/5Q3+Z01+ddTx2vReIcaqK23umJT3PJFVLA+0LNhGR2zvOPpbkBkDpCN6tAGoLk0KRAgjTJNzXX/5xujHsFDtwie8p2foPpH6WmMp9MfWd7dvUbVUR0Snzq3L4OCVZVsa5bduPXdI4yHodm2FvPl/pZ2lmZb2N5v3Ljbw7axNNvKdqP60/QxVZ1SnjrxWPqp5X1HmchkJpR3HDzOHkHbqA6R/f0yzQMlH6bWA4n2MOs7lM542N9vTLb6PPQhvqV4567UP/M2Q7+I3Ck5jP75JDmRViaVJ1bryNnOppY5ewQB3CN+krBh4GRScS7ppmer0f5BRNGUYhhqvrDw9kl/Od2VUXNT5dPrQPZN8zz6mMLkzkIVYMitCAiqaAk+pN4AN4CAscayK7J7wy2jpQevvPKgOcPwHqqDy/ExX66huuUFZN+jBuAM9RhaAfh9haRzuXQ6l6MGOhWlk/xI+8iue4Lq4D3gZWIHhknFsu1hj+CRpVp8+o+HmMsuGmfRx5ZgXDAJ72F7C/4N9wiOtA/ne6qmqaqmcTrO6HoG6/B/AAAA//8DAJpz4f4AAAABAAAAAguF8WJNlV8PPPUAAQPoAAAAANhdoIQAAAAA3WYvNv43/sQIbQPxAAEAAwACAAAAAAAAAAEAAAPY/u8AAAiY/jf+NwhtAAEAAAAAAAAAAAAAAAAAAAAheJwsyjGKwlAYhdHv3sAwYkCEGGJjIQFBg62CecXfW9hYuBp34E5sbN2ATSoX9ASxON3xgxMvcMfcE9ZOhN60Tqz8R6szjWuWPhCq2KnOg1tCC6K4EO4Jb74/dCP0ZKYrU+/pPaYs/mk8olTH9ueoioB8V50HdaQPAAAA//8DAKQTEtsAAAAALAAsAD4AdgCoANQBBgE6AWAByAHqAfYCAgIaAjYCaAKKArYC5gMGA0IDaAOKA6YD3gQOBC4EOgRKBFYEbASKBKAAAQAAACEAkAAMAGMABwABAAAAAAAAAAAAAAAAAAQAA3icnJTPbhtlFMV/TmzTCsECRVW6ib4FiyK1Y1MlVdusJqRWRkRx8LggJIQ0tie25fHMyDN2Gp6ANW/BW3TFQ/AciDW619euXRAFK4p1Zub+Od+5537AAX+yT6V6H/itnhqucFS/NrzHvfqF4X1a9T3DVR7VfjdcY1BbGK7zea1j+CPeVn8xfI/j6o+G73NYbRn+mKfVA8Of7Dv+MPwpx7xd4go852fDFQ7JDe9xwA+G93mA1axUeUDTcI3PODJc5wjoMqYkYUzKEMcNY4bMmRFTEBIzY8wNMQMcAT4Jpb5NiRQ5hv/4NiKkZEakFUeUOBJCEiIKRlbxJ83KuNaO0memSLr5lIyI6GnGhIgUR8aQjJSYidYpKcl5SYMGBX3lm1NS4FEwJsEjY8aQBm1aXNJlxJgCR0srCbOQjBtKbom0v7MIUaZPTEphrOakDJSnU36xZgdc4miTa+xm5cutCo9xfKvZwk1iHF/i6b/bYLbdd8UmYqF6ioY9EuV5qxMcqeLS1+cbxSUvcTvps83kwxoNlJ3MekyPuc5f5id5wiTFuUN8QnVQ6B7iONPngFAV+Y6ALhe0eU1Xn306dPC5okvAK81t08HxFW2uONeMQPHyW0sdc8X3OL4m0BipHZs+ork8vSE3dwt3cYacY0quWyAzlvOL8+OdJiw7lG25o1BX9HWPJFL2QFSRPYsYmitydcVUtVx5ozD9BuYI+VrqbN99l21Y2O6ttviOTHfYMTdOMrklow9N1XvPM7f65xExIKOnEX0ypjQoudOzXRMxJ8Fxrj6+0C0p8dc50udOXRIzVQYBqdaZketvZL4JjXt/y/fO7hLZvKnu6GR9ql26SOV0Y0avVb3Vt9BUjjcm0LCpZpYjE5bKy5OK9yXa2+IfqvsLvd0ynnBGRsLgbzfAUzyaHHPCKSPtIJVTFnY7NPWGaPKCUz39hFij5L58ozpJhRM8nnHCCS949p6OKybOuLg1l83ePuec0eb0P51iGd/mjFfrd//e9Vdl2tSzOJ6sn57vPMVH/8OtX/B4677s6C0gm7Owau+24oqIqXBxh5tauId4fwEAAP//AwD0t09RAAADAAAAAAAA/84AMgAAAAAAAAAAAAAAAAAAAAAAAAAA");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3129959286 .fill-N1{fill:#0A0F25;}
+		.d2-3129959286 .fill-N7{fill:#FFFFFF;}
+		.d2-3129959286 .fill-B1{fill:#0D32B2;}
+		.d2-3129959286 .fill-B6{fill:#F7F8FE;}
+		.d2-3129959286 .stroke-B1{stroke:#0D32B2;}
+		.d2-3129959286 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><g class="ZG9vcg=="><g class="shape" ><rect x="67" y="12" width="394" height="82" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="264" y="50.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="264" dy="0">preparing the tree</tspan><tspan x="264" dy="18.5">the project must build before anything is touched</tspan></text></g><g class="Y2hlY2s="><g class="shape" ><rect x="12" y="174" width="234" height="98" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="129" y="212.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="129" dy="0">check</tspan><tspan x="129" dy="17.666667">a worker writes the checks</tspan><tspan x="129" dy="17.666667">without seeing the code</tspan></text></g><g class="Y29kZQ=="><g class="shape" ><rect x="266" y="174" width="268" height="98" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="400" y="212.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="400" dy="0">code</tspan><tspan x="400" dy="17.666667">another worker writes the code</tspan><tspan x="400" dy="17.666667">without seeing the checks</tspan></text></g><g class="YXVkaXQ="><g class="shape" ><rect x="54" y="352" width="223" height="98" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="165.5" y="390.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="165.5" dy="0">audit</tspan><tspan x="165.5" dy="17.666667">every check of this piece,</tspan><tspan x="165.5" dy="17.666667">on the real state</tspan></text></g><g class="dGVzdHM="><g class="shape" ><rect x="339" y="352" width="211" height="98" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="444.5" y="390.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="444.5" dy="0">tests brought under</tspan><tspan x="444.5" dy="17.666667">the project&#39;s own tests,</tspan><tspan x="444.5" dy="17.666667">after the code lands</tspan></text></g><g class="Z2F0ZQ=="><g class="shape" ><rect x="193" y="530" width="223" height="98" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="304.5" y="568.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="304.5" dy="0">The closing gate</tspan><tspan x="304.5" dy="17.666667">every check again, clean;</tspan><tspan x="304.5" dy="17.666667">the project&#39;s own suite</tspan></text></g><g class="aGFuZA=="><g class="shape" ><rect x="213" y="698" width="184" height="82" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="305" y="736.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="305" dy="0">handing it over</tspan><tspan x="305" dy="18.5">merged and pushed</tspan></text></g><g class="bGl2ZQ=="><g class="shape" ><rect x="170" y="850" width="270" height="82" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="305" y="888.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="305" dy="0">taking it live</tspan><tspan x="305" dy="18.5">the platform builds and deploys</tspan></text></g><g class="cHJvZHVjdA=="><g class="shape" ><rect x="189" y="1002" width="231" height="98" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="304.5" y="1040.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px"><tspan x="304.5" dy="0">on the running product</tspan><tspan x="304.5" dy="17.666667">one reviewer per promise,</tspan><tspan x="304.5" dy="17.666667">in a browser</tspan></text></g><g class="cmVwb3J0"><g class="shape" ><rect x="246" y="1170" width="117" height="66" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="304.5" y="1208.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">the report</text></g><g class="KGRvb3IgLSZndDsgY2hlY2spWzBd"><marker id="mk-d2-3129959286-3488378134" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 129 96 L 129 170" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGRvb3IgLSZndDsgY29kZSlbMF0="><path d="M 400 96 L 400 170" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGNoZWNrIC0mZ3Q7IGF1ZGl0KVswXQ=="><path d="M 129 274 L 129 348" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGNvZGUgLSZndDsgYXVkaXQpWzBd"><path d="M 355.333008 274 L 355.333008 302 S 355.333008 312 345.333008 312 L 213.332993 312 S 203.332993 312 203.332993 322 L 203.332993 348" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGNvZGUgLSZndDsgdGVzdHMpWzBd"><path d="M 444.665985 274 L 444.665985 348" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGF1ZGl0IC0mZ3Q7IGdhdGUpWzBd"><path d="M 166.166 452 L 166.166 480 S 166.166 490 176.166 490 L 258.25 490 S 268.25 490 268.25 500 L 268.25 526" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KHRlc3RzIC0mZ3Q7IGdhdGUpWzBd"><path d="M 444.665985 452 L 444.665985 480 S 444.665985 490 434.665985 490 L 352.583008 490 S 342.583008 490 342.583008 500 L 342.583008 526" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGdhdGUgLSZndDsgaGFuZClbMF0="><path d="M 305.415985 630 L 305.415985 694" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGhhbmQgLSZndDsgbGl2ZSlbMF0="><path d="M 305.415985 782 L 305.415985 846" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KGxpdmUgLSZndDsgcHJvZHVjdClbMF0="><path d="M 305.415985 934 L 305.415985 998" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><g class="KHByb2R1Y3QgLSZndDsgcmVwb3J0KVswXQ=="><path d="M 305.415985 1102 L 305.415985 1166" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3129959286-3488378134)" mask="url(#d2-3129959286)" /></g><mask id="d2-3129959286" maskUnits="userSpaceOnUse" x="-5" y="-5" width="572" height="1258">
+<rect x="-5" y="-5" width="572" height="1258" fill="white"></rect>
+
+</mask></svg></svg>
+</div></div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>preparing the tree</strong> comes first because a project that does not build before the run touched anything could never ship what the run delivers. The door proves the project&#8217;s own build and finds its test commands.</p>
+</li>
+<li>
+<p>The <strong>check</strong> card and the <strong>code</strong> card for one promise are two workers that cannot see each other. The checks exist before the code, so the coder cannot write to the test, and the test cannot be bent to the code.</p>
+</li>
+<li>
+<p>Whether a piece is green is decided by an <strong>audit</strong> on the real state, not by the coder saying so. A piece that is not green goes back for a bounded repair with the evidence.</p>
+</li>
+<li>
+<p><strong>tests brought under</strong> is a third worker that brings the project&#8217;s existing tests under the new behaviour after the code lands, so nothing that used to pass is left broken.</p>
+</li>
+<li>
+<p><strong>The closing gate</strong> runs every check again from a clean tree, reads the delivered files for deferrals a worker confessed to, and runs the project&#8217;s own suite. Nothing merges past a red gate.</p>
+</li>
+<li>
+<p><strong>handing it over</strong> merges and pushes, and <strong>taking it live</strong> waits for the platform to build and answer at the address. This is a development platform, so finished work is not held back for approval: what comes back to you is the thing running, to keep or take back out.</p>
+</li>
+<li>
+<p><strong>on the running product</strong> is where promises about pages are judged: one reviewer per promise opens the product in a browser, does what each line describes, and saves a picture at the moment it decides.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_it_saves_you"><a class="anchor" href="#_what_it_saves_you"></a>What it saves you</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><strong>Nothing is claimed that was not proved.</strong> A check that could not run is reported as unjudged, never as a pass. A reviewer that never answered leaves the line unjudged.</p>
+</li>
+<li>
+<p><strong>Nothing outside the work is touched.</strong> A worker that writes outside the files it declared has those files reverted, and the run says so.</p>
+</li>
+<li>
+<p><strong>You are asked only about intent.</strong> A worker&#8217;s question goes to the machine first; only a choice among behaviours your sentences do not decide reaches you, as <strong>needs you</strong>, in your own words.</p>
+</li>
+<li>
+<p><strong>A red gate withholds, never hands over.</strong> If a promise cannot be kept after every repair, or the product does not build, the run ends <strong>withheld</strong>: the work stays on its branch and the report names what failed.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_where_it_shows_up"><a class="anchor" href="#_where_it_shows_up"></a>Where it shows up</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p><strong>The cards.</strong> Each card is titled with the promise it keeps and wears a state word: <strong>ready</strong> (waiting for what it needs), <strong>running</strong>, <strong>needs you</strong>, <strong>passed</strong>, <strong>failed</strong>, <strong>never ran</strong> (the run stopped or something it waited on failed; not a failure of its own). A card in the work being built now also carries the word <strong>cut</strong>. Click a card to read its log; the bands name the kinds of card: <strong>check</strong>, <strong>code</strong>, <strong>tests brought under</strong>, <strong>on the running product</strong>, <strong>audit</strong>, <strong>door</strong>, <strong>delivery</strong>, <strong>live</strong>.</p>
+</div>
+<div class="paragraph">
+<p><strong>The header.</strong> <strong>N of M workers done · N of M judged on the running product</strong>, then <strong>finished</strong> or <strong>finished, with failures</strong>.</p>
+</div>
+<div class="paragraph">
+<p><strong>Stop.</strong> <strong>■ Stop</strong> on the header aborts every live worker; the run drains and reports what it had. A run is a process of its own, so <strong>Stop</strong> reaches it from any window that has the space open.</p>
+</div>
+<div class="paragraph">
+<p><strong>Cuts.</strong> The row at the top lists every signed piece of work the space has run. Choose one and switch between <strong>Report</strong> and <strong>Run and logs</strong>: the cards, the log of every step, and the pictures the reviewers took stay readable after the run.</p>
+</div>
+<div class="paragraph">
+<p><strong>The status bar.</strong> While a space works: <strong>&lt;space&gt;: N/M units</strong>, with <strong>— needs an answer</strong> when a worker is waiting on you.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limits"><a class="anchor" href="#_limits"></a>Limits</h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>While a run is in flight, looking back at an earlier cut waits until it ends.</p>
+</li>
+<li>
+<p>Reviewers on the running product go one after another; a product they cannot sign in to leaves those lines unjudged, and nothing already proved is taken away.</p>
+</li>
+<li>
+<p>If the platform refuses to build the merged work, the run repairs what the platform&#8217;s own words name and pushes again, twice, then hands the answer to you with <strong>Ask Claude to fix it</strong>, <strong>Ask the platform again</strong> and <strong>Take it back out</strong>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</article>
+  </div>
+</main>
+</div>
+<footer class="footer">
+  <p>This page was built using the Antora default UI.</p>
+  <p>The source code for this UI is licensed under the terms of the MPL-2.0 license.</p>
+</footer>
+<script id="site-script" src="../../_/js/site.js" data-ui-root-path="../../_"></script>
+<script async src="../../_/js/vendor/highlight.js"></script>
+  </body>
+</html>

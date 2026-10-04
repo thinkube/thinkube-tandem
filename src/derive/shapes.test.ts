@@ -1,0 +1,125 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * The shape a contract fixes is shaped by what will judge it.
+ *
+ * A promise that introduces a function names it before it exists, so the
+ * grounding invents its signature and writes it into the contract — the
+ * tester writes checks to that shape and the coder builds to it, and one
+ * shape is the point. The shape was invented from the promise's sentence
+ * alone, while the criteria that would judge it sat unread on the same
+ * node. So a criterion naming six distinct states was met by a type
+ * holding five: the coder was bound to a contract no correct
+ * implementation could satisfy, its check failed for a reason no code
+ * could fix, and the impossibility arrived as an unkept promise.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { runGrounding } from "./ground";
+
+const NODES = JSON.stringify({
+  nodes: [
+    {
+      sentence: "a card's state gets a coloured frame that survives zooming out",
+      touchpoints: [{ path: "src/cardFace.ts", symbol: "stateFace", evidence: "the rule lives inside the card today" }],
+      acceptance: [
+        { text: "stateFace gives each state — ready, running, parked, done, failed, blocked — its own tone" },
+        { text: "stateFace returns a non-empty word for a state it does not recognise" },
+      ],
+    },
+  ],
+});
+
+test("the signature is shaped with the criteria that will judge it", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-shape-"));
+  const prompts: string[] = [];
+
+  await runGrounding(
+    { repoRoot: dir, model: "sonnet" } as never,
+    { id: "ask-1", text: "state should stay readable when I zoom out" } as never,
+    { nextIndex: 1 },
+    async (_deps, prompt) => {
+      prompts.push(prompt);
+      return prompts.length === 1 ? NODES : "1: stateFace(state: string): { word: string; tone: Tone }";
+    },
+  );
+
+  const shaping = prompts[1];
+  assert.ok(shaping, "a function named by a bare name is shaped before any worker starts");
+  assert.match(
+    shaping,
+    /must satisfy: stateFace gives each state — ready, running, parked, done, failed, blocked — its own tone/,
+    "the criterion that will judge this signature is in front of whoever shapes it",
+  );
+  assert.match(
+    shaping,
+    /must satisfy: stateFace returns a non-empty word/,
+    "every criterion of the promise, not the first",
+  );
+  assert.match(
+    shaping,
+    /narrower than its criteria cannot\s+be met by any correct implementation/,
+    "and what a shape too narrow for them costs is said plainly",
+  );
+});
+
+/**
+ * A criterion says what must be true, never how a check would look for it.
+ *
+ * Three criteria written as verification methods — "the handle appears
+ * literally in the source, reading the source files, not the built bundle",
+ * "the repository's existing check, run unchanged" — withheld a delivery
+ * whose other hundred and eighty-seven proofs were green. A criterion that
+ * names its own method freezes that method into what the person signed: no
+ * worker may then change how it is proved, and the delivery is refused for
+ * the criterion contradicting another rule of the run rather than for the
+ * work being wrong.
+ */
+test("the round that writes criteria is told to state the property, not the method", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-altitude-"));
+  const prompts: string[] = [];
+  await runGrounding(
+    { repoRoot: dir, model: "sonnet" } as never,
+    { id: "ask-1", text: "instructions must not send me to pages that do not exist" } as never,
+    { nextIndex: 1 },
+    async (_deps, prompt) => (prompts.push(prompt), NODES),
+  );
+  const asked = prompts[0];
+  assert.match(asked, /stating the PROPERTY the person wants to hold, never the way a check would look for it/);
+  assert.match(asked, /descended to the level of its own proof/, "and says what goes wrong when it does");
+});
+
+/**
+ * A criterion about what a person sees has a home to be proved in.
+ *
+ * The seams a probe could name were an exported function and a fake. A
+ * rendered page was not among them, so every criterion about a surface fell
+ * to a reviewer reading code or to the unverified list. Nineteen asks about
+ * a window became assertions about the text of source files — each of them
+ * true of a window in which every page was laid out at zero height, which is
+ * how that delivery went out green.
+ */
+test("the writer of criteria is told the rendered surface is a seam", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-seam-"));
+  const prompts: string[] = [];
+  await runGrounding(
+    { repoRoot: dir, model: "sonnet" } as never,
+    { id: "ask-1", text: "the tab row should stay in one place" } as never,
+    { nextIndex: 1 },
+    async (_deps, prompt) => (prompts.push(prompt), NODES),
+  );
+  const asked = prompts[0];
+  assert.match(asked, /RENDERED PAGE IS SUCH A SEAM/, "a page a person looks at can be measured, so it can be a probe");
+  assert.match(asked, /renderedSurface/, "and where it is proved is named, so the tester does not invent a home");
+  assert.match(
+    asked,
+    /Never an assessment, never "unverified"/,
+    "otherwise it falls to a reviewer reading code, which is what happened",
+  );
+});

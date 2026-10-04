@@ -1,0 +1,375 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * What the machine refuses before anyone is graded.
+ *
+ * Every fault here cost a whole run in the field, and every one of them is
+ * decidable the moment a check is written — before a coder starts, while
+ * the cheapest thing to change is one file nobody has built against yet.
+ *
+ * These are properties, not incidents: each states a kind of check that can
+ * never be evidence, and each is driven by the smallest check of that kind.
+ */
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import {execFileSync} from "node:child_process";
+import {auditProbe} from "./probeAudit";
+import {refusedBeforeDispatch} from "./refusals";
+import {repairByAuthors} from "./authorRepair";
+import {classMethodsIn, wrongAltitude} from "./altitude";
+import {rehouseChecks} from "./checkHomes";
+import {writeDeliveryRecord} from "./plan";
+import {acceptDelivery} from "../gates/sign";
+import type { Delivery } from "../core/schema";
+import * as os from "node:os";
+import {emptySpace} from "../core/schema";
+import {exportedIn} from "./altitude";
+
+/** A repository with one directory, so the import audit has ground truth. */
+function repo(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-audit-"));
+  fs.mkdirSync(path.join(dir, "src"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "src", "greet.mjs"), "export const greet = () => 'hello';\n");
+  return dir;
+}
+
+const PLANNED = ["src/greet.mjs"];
+
+/** The pre-flight as the run calls it, with the repository stood in for. */
+async function refusedBeforeDispatchIn(a: { slices: unknown[]; space: unknown }): Promise<string[]> {
+  const r = await refusedBeforeDispatch({
+    slices: a.slices as never,
+    space: a.space as never,
+    cut: { id: "cut-1", changeIds: ["n1"] },
+    repoRoot: "/nowhere",
+    exec: async () => ({ code: 0, out: "" }),
+    log: () => {},
+  });
+  return r.refusal ? r.refusal.refusal.split("\n") : [];
+}
+
+/**
+ * What the check audit refuses, and what it must not.
+ *
+ * One subject, five cases. The rule reads a check's own source and asks
+ * whether it drives the thing it claims to prove: a check that reads the
+ * source text instead of running it proves the file says something; one
+ * that imports nothing this cut builds proves nothing at all; one that
+ * replaces the platform proves the simulator works. The last two cases are
+ * the other half of the rule — an honest check and a check reading its own
+ * fixture must pass, or the rule refuses ordinary work.
+ */
+const AUDIT_CASES: {
+  case: string;
+  source: string;
+  kind?: "source-text" | "drives-nothing" | "simulator";
+  detail?: RegExp;
+}[] = [
+  {
+    case: "reads the source instead of driving it",
+    source:
+      `import {readFileSync} from "node:fs";\n` +
+      `import {test} from "node:test";\nimport assert from "node:assert/strict";\n` +
+      `import {greet} from "./greet.mjs";\n` +
+      `test("greet exists", () => assert.match(readFileSync("src/greet.mjs", "utf8"), /hello/));\n`,
+    kind: "source-text",
+    detail: /Drive the behaviour instead/,
+  },
+  {
+    case: "imports nothing this cut builds",
+    source:
+      `import {test} from "node:test";\nimport assert from "node:assert/strict";\n` +
+      `test("two is two", () => assert.equal(2, 2));\n`,
+    kind: "drives-nothing",
+  },
+  {
+    case: "simulates a platform the repository does not own",
+    source:
+      `import Module from "node:module";\nModule._load = () => ({ greet: () => "hello" });\n` +
+      `import {greet} from "./greet.mjs";\nimport {test} from "node:test";\ntest("greet", () => greet());\n`,
+    kind: "simulator",
+  },
+  {
+    case: "drives what the cut builds — refused nothing",
+    source:
+      `import {test} from "node:test";\nimport assert from "node:assert/strict";\n` +
+      `import {greet} from "./greet.mjs";\ntest("greet", () => assert.equal(greet(), "hello"));\n`,
+  },
+  {
+    // Reading data a test owns is how half the world's tests are written.
+    case: "reads its own fixture — not a source-text check",
+    source:
+      `import {readFileSync} from "node:fs";\n` +
+      `import {greet} from "./greet.mjs";\nimport {test} from "node:test";\n` +
+      `test("greet", () => greet(readFileSync("fixtures/names.txt", "utf8")));\n`,
+  },
+];
+
+test("the check audit refuses a check that does not drive its subject, and nothing else", () => {
+  for (const c of AUDIT_CASES) {
+    const faults = auditProbe("src/greet_AC-1.test.mjs", c.source, repo(), PLANNED);
+    if (!c.kind) {
+      assert.deepEqual(faults, [], `${c.case}: an honest check is refused nothing`);
+      continue;
+    }
+    const named = faults.filter((f) => f.kind === c.kind);
+    assert.equal(named.length, 1, `${c.case}: ${JSON.stringify(faults)}`);
+    if (c.detail) assert.match(named[0].detail, c.detail, c.case);
+  }
+});
+
+/**
+ * And what the machine refuses before it dispatches anybody — read from the
+ * plan, said in the person's own words, with no worker started.
+ */
+/**
+ * What the machine refuses before it dispatches anybody — read from the
+ * plan, said in the person's own words, with no worker started.
+ *
+ * One subject, three cases: a promise that reaches into two repositories
+ * cannot be delivered by one run; a promise whose only site its unit may
+ * not change asks a unit to keep something it cannot reach; and a promise
+ * that is neither must be refused nothing, or the rule refuses ordinary
+ * work.
+ */
+test("the pre-flight refuses only a promise no unit could keep", async () => {
+  {
+  const refusals = await refusedBeforeDispatchIn({
+    slices: [
+      {
+        handle: "SL-1",
+        status: "ready",
+        files: ["src/greet.mjs"],
+        workUnits: [{ footprint: ["src/greet.mjs"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      } as never,
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "greet the user everywhere",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "greet() returns hello" }],
+          grounding: {
+            touchpoints: [
+              { path: "src/greet.mjs", planned: true, scope: "web" },
+              { path: "src/greet.mjs", planned: true, scope: "api" },
+            ],
+            stamp: [],
+          },
+        },
+      ],
+    },
+  });
+  assert.equal(refusals.length, 1, JSON.stringify(refusals));
+  assert.match(refusals[0], /more than one repository/);
+  assert.match(refusals[0], /greet the user everywhere/, "the person's own words, not a file");
+  }
+  {
+  const refusals = await refusedBeforeDispatchIn({
+    slices: [
+      {
+        handle: "SL-7",
+        status: "ready",
+        files: ["src/panel.mjs"],
+        workUnits: [{ footprint: ["src/panel.mjs"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      } as never,
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "one editor tab per thinking space",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "opening a space twice reveals the same tab" }],
+          grounding: { touchpoints: [{ path: "src/extension.mjs", planned: false }], stamp: [] },
+        },
+      ],
+    },
+  });
+  assert.equal(refusals.length, 1, JSON.stringify(refusals));
+  assert.match(refusals[0], /may not change src\/extension\.mjs/);
+  }
+  {
+  const refusals = await refusedBeforeDispatchIn({
+    slices: [
+      {
+        handle: "SL-1",
+        status: "ready",
+        files: ["src/greet.mjs"],
+        workUnits: [{ footprint: ["src/greet.mjs"], execution: "serial", role: "code" }],
+        criterionIds: ["c1"],
+      } as never,
+    ],
+    space: {
+      ...emptySpace(),
+      nodes: [
+        {
+          id: "n1",
+          sentence: "greet the user",
+          serves: [],
+          needs: [],
+          acceptance: [{ id: "c1", text: "greet() returns hello" }],
+          grounding: { touchpoints: [{ path: "src/greet.mjs", planned: true }], stamp: [] },
+        },
+      ],
+    },
+  });
+  assert.deepEqual(refusals, []);
+  }
+});
+
+const METHODS = [
+  { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
+  { className: "SpacePanel", method: "show", file: "src/surfaces/panel.ts" },
+];
+
+/**
+ * How the plan behaves before and during a run.
+ *
+ * A thin end-to-end path runs first, so the shape is proved before the
+ * depth. A red criterion goes back as the next message in the session that
+ * wrote it, which is the only actor holding the context. And every refusal
+ * a person reads names the work, never the machinery.
+ */
+test("a criterion is refused when only a class method can check it, and not otherwise", () => {
+  const why = wrongAltitude({
+    criterion: "SpacePanel.reveal() sets the active tab",
+    methods: METHODS,
+    exported: () => false,
+  });
+  assert.ok(why, "it is refused");
+  assert.match(why!, /building SpacePanel and calling reveal/);
+  assert.match(why!, /Say what the product must DO/, "and it says what to write instead");
+
+  for (const text of [
+    "opening the same space twice reveals the one tab, never a second",
+    "greet() returns 'hello'",
+    "the delivery page shows one row per cut",
+  ])
+    assert.equal(
+      wrongAltitude({ criterion: text, methods: METHODS, exported: (s) => s === "greet" }),
+      undefined,
+      `refused an honest criterion: ${text}`,
+    );
+
+  // A library's public function IS the outer seam, even when a class of the
+  // same name has a method beside it.
+  assert.equal(
+    wrongAltitude({ criterion: "`show()` opens the panel", methods: METHODS, exported: (s) => s === "show" }),
+    undefined,
+  );
+});
+
+/**
+ * Reading what was already established.
+ *
+ * A check an earlier run wrote keeps its address; what an opened delivery
+ * recorded outlives every failed run after it; the class methods come from
+ * the code map the machine already builds. And a file that cannot be READ
+ * is named rather than answered for — a file that is simply not there
+ * hands out nothing, which is a fact about a promise's planned work.
+ */
+test("what an earlier run recorded survives, and what cannot be read is named", async () => {
+  {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-graph-"));
+  const graph = path.join(dir, "graph.json");
+  fs.writeFileSync(
+    graph,
+    JSON.stringify({
+      nodes: [
+        { id: "cls", label: "SpacePanel", source_file: "src/surfaces/panel.ts" },
+        { id: "m1", label: ".reveal()", source_file: "src/surfaces/panel.ts" },
+        { id: "m2", label: ".constructor()", source_file: "src/surfaces/panel.ts" },
+      ],
+      links: [
+        { relation: "method", source: "cls", target: "m1" },
+        { relation: "method", source: "cls", target: "m2" },
+        { relation: "imports", source: "cls", target: "m1" },
+      ],
+    }),
+  );
+  assert.deepEqual(classMethodsIn(graph), [
+    { className: "SpacePanel", method: "reveal", file: "src/surfaces/panel.ts" },
+  ]);
+  assert.deepEqual(classMethodsIn(path.join(dir, "absent.json")), [], "no map is never a refusal");
+  }
+  {
+  // A resumed run once judged 64 criteria red: every check existed on the
+  // branch at probes/, and the plan had been renamed to expect them beside
+  // their subjects — an address nobody would ever create, because the
+  // testers' slices were already standing.
+  const slices = [
+    {
+      handle: "SL-1",
+      workUnits: [
+        { role: "code", footprint: ["src/greet.mjs"] },
+        { role: "test", footprint: ["probes/x__SL-1_AC-1.test.mjs"] },
+      ],
+    },
+  ];
+  const moved = rehouseChecks(
+    slices as never,
+    ["src/greet.mjs", "src/greet.test.mjs"],
+    new Set(["probes/x__SL-1_AC-1.test.mjs"]),
+  );
+  assert.deepEqual(moved, [], "nothing moves");
+  assert.deepEqual(
+    (slices[0].workUnits[1] as { footprint: string[] }).footprint,
+    ["probes/x__SL-1_AC-1.test.mjs"],
+    "the plan still points at the check that exists",
+  );
+  }
+  {
+  // A withheld run once overwrote a good record's fifty-eight check
+  // sources with entries at the wrong addresses, and the restore that
+  // depends on the record had nothing left to restore from.
+  const store = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-record-"));
+  const base = { tep: "TEP-1", branch: "b", baseSha: "x", proofs: [], undelivered: [], verifs: [], acResults: [] };
+  await writeDeliveryRecord(store, {
+    ...base,
+    checks: [{ criterionId: "c1", path: "probes/a.test.mjs", source: "the real check" }],
+  } as never);
+  // The failed run writes its record without checks — and takes nothing.
+  await writeDeliveryRecord(store, base as never);
+  const kept = JSON.parse(fs.readFileSync(path.join(store, "deliveries", "TEP-1.json"), "utf8")) as {
+    checks?: { path: string; source: string }[];
+  };
+  assert.equal(kept.checks?.length, 1);
+  assert.equal(kept.checks?.[0].source, "the real check");
+  }
+  {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "exp-"));
+  const absent = exportedIn(root, ["src/planned.ts"]);
+  assert.deepEqual(absent.unreadable, [], "a file to be created is not a fault");
+  assert.equal(absent.exported("greet"), false);
+
+  // A directory where a file is expected: it exists, and reading it fails.
+  fs.mkdirSync(path.join(root, "src", "locked.ts"), { recursive: true });
+  const blocked = exportedIn(root, ["src/locked.ts"]);
+  assert.deepEqual(blocked.unreadable, ["src/locked.ts"], "the caller is told which file it could not see");
+  }
+});
+
+/**
+ * What reaches a person is about the work.
+ *
+ * Not a word list over arbitrary text — that would pass anything phrased
+ * carefully. These are the machine's OWN messages, produced by the real
+ * functions with real inputs, and read for the two things a person can do
+ * nothing with: the name of a tool, and the name of a part of the run.
+ */
+const INTERNALS =
+  /\b(oracle|probe|footprint|worktree|dag|frontier|knip|tsc|npx|Bash|Grep|Glob|NotebookEdit|eu-\d|#eu|mcp__|stdout|stderr|regex)\b/i;
+

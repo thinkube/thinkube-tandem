@@ -1,0 +1,375 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * The one next action: always in the same place, and it says what will
+ * happen when it is pressed.
+ *
+ * Every state of the surface answers the same three questions — what did I
+ * ask, what is happening, what do I press — and this is the answer to the
+ * third, decided once from the push rather than by whichever page happens
+ * to be showing. A page that offered its own buttons in its own words left
+ * the person to work out which of four pages held the thing to do next.
+ */
+import type { SpacePush, WebToHost } from "./surfaceContract";
+import type { SurfacePage } from "./surfaceLayout";
+import { asksOfText } from "../derive/asks";
+
+/** What pressing it does: a governed message to the host, or a move. */
+type NextMove =
+  | { kind: "post"; action: WebToHost }
+  | { kind: "tab"; tab: SurfacePage }
+  | { kind: "none" };
+
+export interface NextAction {
+  /** Where the space is, in the person's terms — beside the project name. */
+  where: string;
+  /** The button's text: what will happen. */
+  label: string;
+  /** Beside the button: the cost, the size, or why it cannot be pressed. */
+  hint: string;
+  enabled: boolean;
+  /** The machine is busy on this state's behalf: the strip shows it moving. */
+  busy?: boolean;
+  move: NextMove;
+}
+
+const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The sets in the order they should be built: the ones still to build
+ * first, largest first; what is built comes last, behind you.
+ */
+/**
+ * The order things are read in: what needs the person first.
+ *
+ * Signed work that never ran comes first — it is the one press the strip
+ * offers, and it read as finished at the bottom of the page. Then what is
+ * still to build, largest first, because a thing with nothing derived is
+ * not the thing to start with. Then what is running, what is delivered
+ * and waiting, and last what is accepted and needs nobody.
+ */
+const NEEDS_YOU: Record<string, number> = { "no longer holds": 0, "not run": 1, delivered: 4, building: 5, accepted: 6 };
+export function setsInOrder(push: SpacePush): NonNullable<SpacePush["specs"]> {
+  const rank = (sp: NonNullable<SpacePush["specs"]>[number]): number =>
+    sp.fate ? (NEEDS_YOU[sp.fate] ?? 3) : sp.promises > 0 ? 2 : 3;
+  return [...(push.specs ?? [])].sort((a, b) => {
+    const r = rank(a) - rank(b);
+    if (r !== 0) return r;
+    return b.promises - a.promises;
+  });
+}
+
+/** A thing whose work has landed or is landing: not offered again. */
+export function isClosed(sp: NonNullable<SpacePush["specs"]>[number]): boolean {
+  return sp.fate === "accepted" || sp.fate === "delivered" || sp.fate === "building";
+}
+
+/** A thing the world refused: work again, and what it says on itself. */
+export function refusedLine(sp: NonNullable<SpacePush["specs"]>[number]): string | undefined {
+  if (sp.fate !== "no longer holds" || !sp.refused) return undefined;
+  const { promises, by, said } = sp.refused;
+  return `${promises} promise${promises === 1 ? "" : "s"} no longer hold${promises === 1 ? "s" : ""} — said by ${by}: ${said}`;
+}
+
+export function nextAction(
+  push: SpacePush,
+  a: {
+    /** The reading of the draft is behind the words in the box. */
+    behind: boolean;
+    /** Whether the phase allows a governed action right now. */
+    allowed: (action: string) => boolean;
+  },
+): NextAction {
+  const sentences = push.sentences.length;
+  // A set whose work has landed is no longer the thing in hand, so the
+  // press below is about what is left to build.
+  const inHand = (push.specs ?? []).find((sp) => sp.chosen);
+  const chosen = inHand && (inHand.fate === "accepted" || inHand.fate === "delivered") ? undefined : inHand;
+
+  if (push.running)
+    return {
+      where: `building — ${chosen?.name ?? "the work you signed"}`,
+      label: "Stop",
+      hint: "stops the workers · nothing is decided",
+      enabled: a.allowed("stop-run"),
+      move: { kind: "post", action: { action: "stop-run" } },
+    };
+
+  const grounding = push.grounding ?? [];
+  // A step that is not the working-out is worded as itself: a reading
+  // costs a round and records nothing; a grouping proposes and decides
+  // nothing. Only the working-out ends with the work page opening.
+  if (push.activity?.kind === "reading")
+    return {
+      where: `reading — ${push.activity.label}`,
+      label: "Reading…",
+      hint: "costs one round · records nothing",
+      enabled: false,
+      busy: true,
+      move: { kind: "none" },
+    };
+  if (push.activity?.kind === "grouping")
+    return {
+      where: `grouping — ${push.activity.label}`,
+      label: "Grouping…",
+      hint: "proposing decides nothing · you pick the thing to build",
+      enabled: false,
+      busy: true,
+      move: { kind: "none" },
+    };
+  if (push.activity?.kind === "checking")
+    return {
+      where: `${push.activity.label} — ${push.activity.current} of ${push.activity.total}`,
+      label: "Writing…",
+      hint: "costs one round",
+      enabled: false,
+      busy: true,
+      move: { kind: "none" },
+    };
+  if (push.activity || grounding.length) {
+    // The same count the page shows: the thing in hand's subjects, of
+    // which what the cost still holds is not done.
+    const inHand = push.specs?.find((sp) => sp.id === push.workingOut) ?? push.specs?.find((sp) => sp.chosen);
+    const total = inHand ? inHand.subjects : push.subjects.length;
+    const done = Math.max(0, total - push.cost.subjects);
+    const progress = push.activity
+      ? `${push.activity.label} — ${push.activity.current} of ${push.activity.total}`
+      : `${done} of ${plural(total, "subject")} worked out — ${grounding
+          .map((g) => g.label)
+          .filter((l, i, all) => all.indexOf(l) === i)
+          .join(" · ")}`;
+    return {
+      where: `working out what to build — ${progress}`,
+      label: "Working it out…",
+      hint: "you stay here until every subject is done — then the work page opens by itself",
+      enabled: false,
+      busy: true,
+      move: { kind: "none" },
+    };
+  }
+
+  if (push.pendingModel) {
+    const n = push.pendingModel.fresh.length;
+    return a.behind
+      ? {
+          where: `${plural(sentences + n, "sentence")} · the reading is behind the words`,
+          label: "Read it again",
+          hint: "you changed the words since they were read",
+          enabled: a.allowed("read-draft"),
+          move: { kind: "post", action: { action: "read-draft" } },
+        }
+      : n
+        ? {
+            where: `${plural(n, "sentence")} read, not kept`,
+            label: `Keep these ${n}`,
+            hint: "recorded word for word · costs nothing · nothing is built yet",
+            enabled: true,
+            move: { kind: "post", action: { action: "keep-draft" } },
+          }
+        : {
+            // A reading of sentences already kept: nothing new is recorded
+            // by keeping it; the reading itself is what is taken or not.
+            where: "your sentences, read again",
+            label: "Keep this reading",
+            hint: "replaces the earlier reading · costs nothing · nothing is built yet",
+            enabled: true,
+            move: { kind: "post", action: { action: "keep-draft" } },
+          };
+  }
+
+  // Delivered: the page is what came back, and the one press is the
+  // decision — or the way back in when the gate would refuse it.
+  const delivered = push.deliveries.find((d) => !d.accepted);
+  if (delivered) {
+    const stuck = delivered.withheld ?? delivered.blocked;
+    if (stuck)
+      return {
+        where: `delivered — ${delivered.withheld ? "withheld" : "cannot be accepted"}`,
+        label: "Run it again",
+        hint: stuck,
+        enabled: !!delivered.rerun && a.allowed("rerun"),
+        move: { kind: "post", action: { action: "rerun" } },
+      };
+    // The work is in the project and the platform will not build it.
+    // Keeping it is not the move: the project is broken until this is
+    // taken back out or fixed by hand, so the press that undoes it leads.
+    if (delivered.merged && delivered.afterMerge?.outcome === "broke")
+      return {
+        where: "in the project — the platform will not build it",
+        label: "Take it back out",
+        hint: `${delivered.afterMerge.detail ?? "it did not build"} · nothing else can be built here until the project builds · Ask Claude to fix it is on the page`,
+        enabled: a.allowed("reject-delivery"),
+        move: { kind: "post", action: { action: "reject-delivery", deliveryId: delivered.id } },
+      };
+    // Work that is coded, checked, merged, built and running needs no
+    // decision: the press moves on, and says so.
+    // Promises that did not hold are repaired, never moved past.
+    const broke = (delivered.proofs ?? []).filter((p) => p.verdict === "red").length;
+    if (delivered.merged && broke)
+      return {
+        where: `${delivered.liveAt ? `running at ${delivered.liveAt}, and ` : ""}${plural(broke, "check")} did not hold`,
+        label: "Build it again",
+        hint: "the work is in the project; this repairs what did not hold · Take it back out is on the page",
+        enabled: !!delivered.rerun && a.allowed("rerun"),
+        move: { kind: "post", action: { action: "rerun" } },
+      };
+    if (delivered.merged)
+      return {
+        where: delivered.liveAt
+          ? `built, deployed and running at ${delivered.liveAt}`
+          : "coded, checked and merged into the project",
+        label: "Go on to the next",
+        hint: "closes this one and moves to what is left to build · Take it back out is on the page",
+        enabled: a.allowed("accept-delivery"),
+        move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },
+      };
+    return {
+      where: "delivered — waiting for your decision",
+      label: "Accept it",
+      hint: "merges the work into your branch and pushes it · Not this and Run again are on the page",
+      enabled: a.allowed("accept-delivery"),
+      move: { kind: "post", action: { action: "accept-delivery", deliveryId: delivered.id } },
+    };
+  }
+
+  // Signed work that never ran — refused at the door, or the window closed
+  // on it — comes before anything else to build: the one press is to run
+  // it again, whatever else is on the page.
+  if (push.signedIdle && push.unrun)
+    return {
+      where: push.signedIdle.heading,
+      label: "Run it again",
+      hint: push.signedIdle.sentence,
+      enabled: push.signedIdle.canRerun && a.allowed("rerun"),
+      move: { kind: "post", action: { action: "rerun" } },
+    };
+
+  const written = asksOfText(push.draft ?? "").length;
+  // Lines in the box wait their turn: while things remain to build, the
+  // press stays on the build, and the box is named in that press's hint.
+  const anythingToBuild = (push.specs ?? []).some((sp) => !isClosed(sp) && sp.fate !== "not run");
+  if (written && sentences && !anythingToBuild)
+    return {
+      where: `${plural(written, "new line")} written, not read`,
+      label: `Read these ${written}`,
+      hint: "costs one round · records nothing",
+      enabled: a.allowed("read-draft"),
+      move: { kind: "post", action: { action: "read-draft" } },
+    };
+  if (sentences === 0) {
+    return written
+      ? {
+          where: `${plural(written, "line")} written, none read`,
+          label: `Read these ${written}`,
+          hint: "costs one round · records nothing",
+          enabled: a.allowed("read-draft"),
+          move: { kind: "post", action: { action: "read-draft" } },
+        }
+      : {
+          where: "nothing written yet",
+          label: "Read it",
+          hint: "write a line, then read",
+          enabled: false,
+          move: { kind: "none" },
+        };
+  }
+
+  if (push.subjects.length === 0)
+    return {
+      where: `${plural(sentences, "sentence")} written, none read`,
+      label: `Read these ${sentences}`,
+      hint: "costs one round · records nothing",
+      enabled: true,
+      move: { kind: "post", action: { action: "retry-model" } },
+    };
+
+  const sets = setsInOrder(push);
+  if (sets.length === 0)
+    return {
+      where: `${plural(sentences, "sentence")} · not grouped yet`,
+      label: "Group into things to build",
+      hint: "so each one can be built and looked at on its own",
+      enabled: a.allowed("group-into-sets"),
+      move: { kind: "post", action: { action: "group-into-sets" } },
+    };
+
+  const toBuild = sets.filter((sp) => !isClosed(sp) && sp.fate !== "not run");
+  // Work the world refused comes before anything else: code in the
+  // project does not do what a person asked, and they said so.
+  const refused = sets.find((sp) => sp.fate === "no longer holds");
+  if (refused && !chosen)
+    return {
+      where: `${refused.name} — no longer holds`,
+      label: "Build the first",
+      hint: refusedLine(refused)!,
+      enabled: a.allowed("choose-set"),
+      move: { kind: "post", action: { action: "choose-set", specId: refused.id } },
+    };
+  if (!chosen) {
+    const first = toBuild[0];
+    const loose = push.ungrouped ?? [];
+    // Sentences no set carries are not built, and are not nothing: they
+    // are grouped next, the way the first ones were.
+    if (!first && loose.length)
+      return {
+        where: `${plural(sentences, "sentence")} · ${plural(loose.length, "sentence")} in no thing to build`,
+        label: "Group the rest",
+        hint: `${loose.length === 1 ? "sentence" : "sentences"} ${loose.join(", ")} · the things already built stay as they are`,
+        enabled: a.allowed("group-into-sets"),
+        move: { kind: "post", action: { action: "group-into-sets" } },
+      };
+    if (!first)
+      return {
+        where: `${plural(sentences, "sentence")} · everything is built`,
+        label: "Everything is built",
+        hint: "write a new line to ask for more",
+        enabled: false,
+        move: { kind: "none" },
+      };
+    const carries = first.asks?.length ?? first.subjects;
+    return {
+      where: `${plural(sentences, "sentence")} · ${plural(toBuild.length, "thing")} to build`,
+      label: "Build the first",
+      hint: `${carries} of your sentences · nothing is written until you sign${
+        written ? ` · ${plural(written, "line")} in the box wait to be read` : ""
+      }`,
+      enabled: a.allowed("choose-set"),
+      move: { kind: "post", action: { action: "choose-set", specId: first.id } },
+    };
+  }
+
+  // The thing in hand still has subjects nothing was derived from: choosing
+  // it again works out exactly those, and the price is theirs alone.
+  if (push.cost.subjects > 0)
+    return {
+      where: `${chosen.name} — not worked out yet`,
+      label: "Work it out",
+      hint: `${plural(push.cost.subjects, "subject")} to think about — about ${plural(push.cost.rounds, "round")}`,
+      enabled: a.allowed("choose-set"),
+      move: { kind: "post", action: { action: "choose-set", specId: chosen.id } },
+    };
+
+  if (push.signedIdle)
+    return {
+      where: `${chosen.name} — ${push.signedIdle.heading}`,
+      label: "See the run",
+      hint: push.signedIdle.sentence,
+      enabled: true,
+      move: { kind: "tab", tab: "flow" },
+    };
+
+  const promises = push.ready.promises;
+  const docs = push.documentation.state === "landed" || push.documentation.state === "exempt";
+  return {
+    where: `${chosen.name} — ${plural(promises, "promise")}, not started`,
+    label: `Build these ${promises}`,
+    hint: docs
+      ? `signs ${plural(push.ready.asks, "sentence")} read-only and starts the workers — this is what spends`
+      : "say why no documentation is needed — the line for it is on the page",
+    enabled: docs && promises > 0 && a.allowed("build"),
+    move: { kind: "post", action: { action: "build", specId: chosen.id } },
+  };
+}
