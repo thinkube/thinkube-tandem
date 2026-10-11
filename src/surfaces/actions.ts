@@ -193,6 +193,9 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
   "new-product": { label: "New product", command: "thinkube-tandem.newProduct" },
   "new-project": { label: "New project", command: "thinkube-tandem.newProject" },
   "open-space": { label: "Open space", command: "thinkube-tandem.openSpace" },
+  // An empty space shapes nothing: what is built is still decided by the
+  // asks a person keeps and the cut a person signs inside it.
+  "new-space": { label: "New thinking space", command: "thinkube-tandem.newThinkingSpace" },
   "activate-project": { label: "Activate", command: "thinkube-tandem.activateProject" },
   "set-product": { label: "Move to product", command: "thinkube-tandem.setProduct" },
   "set-context-scope": { label: "Set what it may read", command: "thinkube-tandem.setContextScope" },

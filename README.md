@@ -64,7 +64,9 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `new_product` | Makes a product. It only names it; nothing is created anywhere else. |
 | `list_templates` | The starting points the platform offers for a new application, from thinkube-control's catalog. |
 | `new_app` | Makes an application from a template: the platform creates the repository with its CI, it is cloned into `~/apps`, and it is filed under a product. `replace` deploys over an app the platform already knows. |
+| `enable_repo` | Enables a repository that exists on disk, filed under a product the store knows. |
 | `list_spaces` | Every enabled project and the thinking spaces under each. |
+| `new_space` | Makes a thinking space in an enabled repository, and returns the name the other tools use for it. Spaces of a work project (work across several repositories) are not reachable through the server. |
 | `read_space` | A space's asks, how many promises were derived, its phase, open questions, and whether a signed cut is waiting. |
 | `read_run` | The current or last run: every unit and its state, and the run's note. |
 | `look_at` | Opens a deployed address and reports what a person would notice: a blank page, nothing to press, a page with no height, errors the page threw. Findings only. |

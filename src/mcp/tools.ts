@@ -16,9 +16,12 @@ import { theLook } from "../run/theLook";
 import type { EnabledProject } from "../core/identity";
 import { phaseOf, allowedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
+import * as fs from "node:fs";
 import * as path from "node:path";
-import { knownSpaces, storeRootOf } from "./attach";
-import { createProduct, listProducts } from "../core/identity";
+import { knownSpaces, projectAt, storeRootOf } from "./attach";
+import { createProduct, listProducts, mintCard } from "../core/identity";
+import { createThinkingSpace } from "../core/spaces";
+import { execFileSync } from "node:child_process";
 import { allCards } from "../core/cards";
 import { catalogOf, controlReachedBy, createAppFromTemplate } from "../hostui/templateCore";
 import { requestStop } from "../run/record";
@@ -239,6 +242,66 @@ export function toolTable(): ToolDef[] {
               (p.spaces.length ? p.spaces.map((s) => `    · ${s}`).join("\n") : "    (no spaces yet)"),
           )
           .join("\n") || "the store knows no enabled project",
+    },
+    {
+      name: "new_space",
+      action: "new-space",
+      spaceless: true,
+      description:
+        "Make a thinking space in an enabled repository: an empty, independent stream of thinking. The other tools then name it by the slug this returns.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "the repository's directory, as list_spaces reports it after 'at'" },
+          name: { type: "string", description: "what the space is about, in a few words" },
+        },
+        required: ["repo", "name"],
+      },
+      run: (c) => {
+        const root = storeRootOf();
+        const repo = str(c, "repo");
+        const project = repo ? projectAt(path.resolve(repo), root) : undefined;
+        if (!project) return `${repo || "(no repo)"} is not an enabled repository — enable_repo enables one`;
+        const made = createThinkingSpace(root, project.card.id, str(c, "name"));
+        return made.ok
+          ? `space "${made.slug}" made under ${project.card.label} — name it "${made.slug}" in the other tools`
+          : made.reason;
+      },
+    },
+    {
+      name: "enable_repo",
+      action: "new-project",
+      spaceless: true,
+      description:
+        "Enable a repository that already exists on disk, filed under a product, so thinking spaces can be made in it. Nothing is created outside the store.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "the repository's directory" },
+          product: { type: "string", description: "the product it is filed under, as list_products reports it" },
+          label: { type: "string", description: "the name it is shown by" },
+        },
+        required: ["repo", "product", "label"],
+      },
+      run: (c) => {
+        const root = storeRootOf();
+        const dir = path.resolve(str(c, "repo"));
+        if (!fs.existsSync(path.join(dir, ".git"))) return `${dir} is not a git repository`;
+        const product = str(c, "product");
+        const known = listProducts(root, allCards(root).map((card) => ({ card })) as never);
+        if (!known.includes(product))
+          return `no product "${product}" — the store has: ${known.join(", ") || "none"}; new_product makes one`;
+        let remote: string | undefined;
+        try {
+          remote = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+        } catch {
+          // A repository without an origin is enabled without one, as the editor does.
+        }
+        const minted = mintCard(dir, { label: str(c, "label"), product, ...(remote ? { remote } : {}) }, root);
+        return minted.ok
+          ? `${minted.card.label} enabled under ${product} — new_space makes a thinking space in it`
+          : minted.reason;
+      },
     },
     {
       name: "read_space",

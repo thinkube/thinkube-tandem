@@ -42,7 +42,7 @@ export function storeRootOf(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** The project a directory belongs to, by its card in the store. */
-function projectAt(repoRoot: string, storeRoot: string): EnabledProject | undefined {
+export function projectAt(repoRoot: string, storeRoot: string): EnabledProject | undefined {
   return discoverProjects(repoRoot, storeRoot, 0)[0] ?? discoverProjects(repoRoot, storeRoot, 2)[0];
 }
 

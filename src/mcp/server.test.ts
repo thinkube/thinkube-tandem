@@ -191,3 +191,39 @@ test("drafting through the server writes a record the store can be read back fro
     assert.ok(fs.readdirSync(records).length > 0, "at least one record on disk");
   }
 });
+
+test("a thinking space made through the server is one the other tools can name", { timeout: 30_000 }, async () => {
+  const { w, c } = await running();
+  const made = (await c.call("tools/call", {
+    name: "new_space",
+    arguments: { repo: w.repo, name: "Phase 0 database" },
+  })) as { result?: { isError?: boolean; content?: { text: string }[] } };
+  assert.notEqual(made.result?.isError, true, made.result?.content?.[0].text);
+  assert.ok(fs.existsSync(path.join(w.store, "spaces", "thing-1", "phase-0-database")), "the space is on disk");
+  const read = (await c.call("tools/call", { name: "read_space", arguments: { space: "phase-0-database" } })) as {
+    result?: { content?: { text: string }[] };
+  };
+  assert.match(read.result?.content?.[0].text ?? "", /space: Thing/);
+  const again = (await c.call("tools/call", {
+    name: "new_space",
+    arguments: { repo: w.repo, name: "Phase 0 database" },
+  })) as { result?: { content?: { text: string }[] } };
+  assert.match(again.result?.content?.[0].text ?? "", /already exists/);
+});
+
+test("a repository is enabled under a product the store knows, and only under one", { timeout: 30_000 }, async () => {
+  const { c } = await running();
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-other-"));
+  execFileSync("git", ["-C", repo, "init", "-q"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repo, "remote", "add", "origin", "git@github.com:t/other.git"], { stdio: "ignore" });
+  const text = async (name: string, args: Record<string, unknown>) =>
+    (((await c.call("tools/call", { name, arguments: args })) as { result?: { content?: { text: string }[] } })
+      .result?.content?.[0].text ?? "");
+  assert.match(await text("enable_repo", { repo, product: "Nothing", label: "Other" }), /no product "Nothing"/);
+  await text("new_product", { name: "Widgets" });
+  assert.match(await text("enable_repo", { repo, product: "Widgets", label: "Other" }), /Other enabled under Widgets/);
+  assert.match(await text("list_products", {}), /Widgets\n\s+· Other/);
+  assert.match(await text("new_space", { repo, name: "first" }), /space "first" made under Other/);
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-plain-"));
+  assert.match(await text("enable_repo", { repo: plain, product: "Widgets", label: "Plain" }), /not a git repository/);
+});
