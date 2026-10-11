@@ -71,10 +71,14 @@ test("every repair is harvested once, and the next deploy starts where it stoppe
   const third = harvestSelfDefects({ repoRoot: "/nowhere", storeDir: store, git: gitOf(commits, "c3") });
   assert.equal(third.recorded, 1, "only what is new");
 
+  // The ledger files a row under the month it is written, which is the day
+  // the suite runs, so every month file is read.
+  const ledger = path.join(store, "defects");
   const written = fs
-    .readFileSync(path.join(store, "defects", "2026-09.jsonl"), "utf8")
-    .trim()
-    .split("\n")
+    .readdirSync(ledger)
+    .filter((f) => f.endsWith(".jsonl"))
+    .sort()
+    .flatMap((f) => fs.readFileSync(path.join(ledger, f), "utf8").trim().split("\n"))
     .map((l) => JSON.parse(l));
   assert.deepEqual(written.map((r) => r.refs[0]), ["c1", "c3"]);
   assert.ok(written.every((r) => r.type === "machine" && r.activity === "tool development"));
