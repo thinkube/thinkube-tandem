@@ -88,12 +88,6 @@ export interface RepositoryFacts {
   parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
   /** When the door proved these, so a reader can tell how old they are. */
   provenAt?: string;
-  /**
-   * The commit last deployed by the repository's own declared deploy and
-   * seen answering at its health path. A deploy of that commit is not run
-   * again; any other commit is deployed before it is judged live.
-   */
-  deployedAt?: string;
 }
 
 const FILE = path.join(".tandem", "setup.json");
@@ -119,7 +113,6 @@ export function factsOf(repoRoot: string): RepositoryFacts | undefined {
       ...(typeof parsed.downstream === "string" ? { downstream: parsed.downstream } : {}),
       ...(parsed.parts && typeof parsed.parts === "object" ? { parts: parsed.parts } : {}),
       ...(parsed.provenAt ? { provenAt: parsed.provenAt } : {}),
-      ...(typeof parsed.deployedAt === "string" && parsed.deployedAt ? { deployedAt: parsed.deployedAt } : {}),
     };
   } catch {
     return undefined;
@@ -133,13 +126,10 @@ export function factsOf(repoRoot: string): RepositoryFacts | undefined {
 export function rememberFacts(repoRoot: string, facts: RepositoryFacts, at: string): void {
   try {
     const dir = path.join(repoRoot, ".tandem");
-    // The deployed commit is kept whatever the setup facts say: it is a
-    // fact about the deploy, not about how the tree is set up.
-    const deployedAt = facts.deployedAt ?? deployedCommitOf(repoRoot);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, "setup.json"),
-      `${JSON.stringify({ ...facts, provenAt: at, ...(deployedAt ? { deployedAt } : {}) }, null, 2)}\n`,
+      `${JSON.stringify({ ...facts, provenAt: at }, null, 2)}\n`,
     );
   } catch {
     /* the run does not depend on remembering */
@@ -193,30 +183,6 @@ function factsAfterRun(
         ? { builds: known.builds }
         : {}),
   };
-}
-
-/**
- * The commit last deployed and seen answering here, read from the file
- * itself: a repository whose setup was never proved can still have been
- * deployed, and `factsOf` answers only for one whose setup was.
- */
-export function deployedCommitOf(repoRoot: string): string | undefined {
-  const at = path.join(repoRoot, FILE);
-  if (!fs.existsSync(at)) return undefined;
-  const parsed = JSON.parse(fs.readFileSync(at, "utf8")) as { deployedAt?: unknown };
-  return typeof parsed.deployedAt === "string" && parsed.deployedAt ? parsed.deployedAt : undefined;
-}
-
-/**
- * Record the commit a deploy put live, beside the setup facts and without
- * touching them. A file that cannot be read or written throws: a deploy
- * that is not remembered runs again, and the caller says why.
- */
-export function rememberDeployed(repoRoot: string, commit: string): void {
-  const at = path.join(repoRoot, FILE);
-  const had = fs.existsSync(at) ? (JSON.parse(fs.readFileSync(at, "utf8")) as Record<string, unknown>) : {};
-  fs.mkdirSync(path.dirname(at), { recursive: true });
-  fs.writeFileSync(at, `${JSON.stringify({ ...had, deployedAt: commit }, null, 2)}\n`);
 }
 
 /** Is there anything here worth writing down? */

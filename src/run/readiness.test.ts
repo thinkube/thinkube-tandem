@@ -60,16 +60,23 @@ function template(o: { yaml?: string; secrets?: string[]; facts?: Record<string,
   return root;
 }
 
-/** git, answered: HEAD, the tracked files, origin's tags; everything else succeeds. */
+/** git, answered: HEAD (which a deploy may move), the common directory,
+ *  the tracked files, origin's tags; everything else succeeds. */
 function git(o: { files?: string[]; tags?: string } = {}) {
   const calls: string[] = [];
+  const state = { head: HEAD, common: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-git-")) };
   return {
     calls,
+    state,
     exec: async (cmd: string, args: string[]) => {
       calls.push(`${cmd} ${args.slice(2).join(" ")}`);
       if (cmd !== "git") return { code: 0, out: "" };
       const sub = args[2];
-      if (sub === "rev-parse") return { code: 0, out: args[3] === "HEAD" ? `${HEAD}\n` : "" };
+      if (sub === "rev-parse")
+        return {
+          code: 0,
+          out: args[3] === "HEAD" ? `${state.head}\n` : args[3] === "--git-common-dir" ? `${state.common}\n` : "",
+        };
       if (sub === "ls-files") return { code: 0, out: (o.files ?? FILES).join("\n") };
       if (sub === "ls-remote")
         return o.tags === undefined ? { code: 128, out: "fatal: could not read from remote repository" } : { code: 0, out: o.tags };
@@ -106,12 +113,15 @@ function web(o: { secrets?: string[]; health?: number } = {}) {
 
 const control = () => ({ base: "https://control.example.com", token: "tok" });
 
-function deployer(fail?: string) {
+/** The declared deploy: recorded, failing with the given words, or moving
+ *  HEAD to a release commit as a template's deploy does. */
+function deployer(fail?: string, release?: { state: { head: string }; to: string }) {
   const ran: { command: string; env?: Record<string, string> }[] = [];
   return {
     ran,
     invoke: async (command: string, _cwd: string, env?: Record<string, string>) => {
       ran.push({ command, ...(env ? { env } : {}) });
+      if (!fail && release) release.state.head = release.to;
       return fail ? { code: 1, out: fail } : { code: 0, out: "deployed" };
     },
   };
@@ -143,7 +153,8 @@ test("a template whose setup holds, whose checks land in its tests, declared, ta
   assert.deepEqual(live.ran.map((x) => x.command), ["./deploy.sh"]);
   assert.deepEqual(live.ran[0].env, { THINKUBE_CONTROL_URL: "https://control.example.com", THINKUBE_API_TOKEN: "tok" }, "the deploy is told how to reach control");
   assert.ok(w.asked.includes("https://svc.example.com/health"), "the deployed health path was asked");
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".tandem", "setup.json"), "utf8")).deployedAt, HEAD, "the deployed commit is recorded beside the setup facts");
+  assert.equal(fs.readFileSync(path.join(g.state.common, "tandem", "deployed"), "utf8").trim(), HEAD, "the deployed commit is recorded in git's common directory");
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".tandem", "setup.json"), "utf8")).deployedAt, undefined, "and nothing is written into the tracked tree");
   assert.equal(lastReadiness(root), r, "the answer is kept for whoever reads it next");
 
   // The same tree asked again: neither the setup nor the deploy runs again.
@@ -272,13 +283,16 @@ test("a deploy that fails is not ready in its own words; one already recorded fo
   assert.equal(item(r, "deploy works").ready, false);
   assert.match(item(r, "deploy works").say, /release v0\.1\.0 not found in the catalog/);
 
-  const deployed = template({ facts: { provision: "", prepare: "", runOne: "./run_tests.sh <file>", deployedAt: HEAD } });
+  const deployed = template({ facts: { provision: "", prepare: "", runOne: "./run_tests.sh <file>" } });
+  const recorded = git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` });
+  fs.mkdirSync(path.join(recorded.state.common, "tandem"));
+  fs.writeFileSync(path.join(recorded.state.common, "tandem", "deployed"), `${HEAD}\n`);
   const live = deployer();
   const w = web({ health: 503 });
   let waits = 0;
   const sick = await checkReadiness({
     repoRoot: deployed,
-    exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` }).exec,
+    exec: recorded.exec,
     boundedExec: door().boundedExec,
     invoke: live.invoke,
     http: w.http,
@@ -291,4 +305,26 @@ test("a deploy that fails is not ready in its own words; one already recorded fo
   assert.equal(item(sick, "deploy works").ready, false);
   assert.match(item(sick, "deploy works").say, /https:\/\/svc\.example\.com\/health did not answer 2xx within 5 minutes — last, it answered 503/);
   assert.ok(waits > 0, "the health path was asked again between waits");
+});
+
+test("the commit recorded is the one the deploy left, and asking again at that HEAD deploys nothing", async () => {
+  const RELEASE = "d".repeat(40);
+  const root = template();
+  const g = git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` });
+  const live = deployer(undefined, { state: g.state, to: RELEASE });
+  const ask = () =>
+    checkReadiness({ repoRoot: root, exec: g.exec, boundedExec: door().boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {} });
+  const first = await ask();
+  assert.equal(item(first, "deploy works").ready, true, item(first, "deploy works").say);
+  assert.match(item(first, "deploy works").say, /deployed dddddddd \(the deploy moved HEAD from aaaaaaaa\)/);
+  assert.equal(fs.readFileSync(path.join(g.state.common, "tandem", "deployed"), "utf8").trim(), RELEASE, "HEAD after the deploy is recorded, not before");
+  assert.equal(live.ran.length, 1);
+
+  // The release commit is a new HEAD, so the tree is asked again — and its
+  // deploy is not run again, because that commit is the one recorded.
+  const second = await ask();
+  assert.equal(second.head, RELEASE);
+  assert.equal(item(second, "deploy works").ready, true);
+  assert.match(item(second, "deploy works").say, /^already deployed dddddddd/);
+  assert.equal(live.ran.length, 1, "nothing was deployed again, so the version is not raised again");
 });

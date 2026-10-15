@@ -505,6 +505,7 @@ export async function settleTemplateAfterAccept(a: {
     v = await validationDeploy({
       repoRoot: a.repoRoot,
       head,
+      exec: a.exec,
       ...(a.invoke ? { invoke: a.invoke } : {}),
       ...(a.http ? { http: a.http } : {}),
       ...(a.control ? { control: a.control } : {}),

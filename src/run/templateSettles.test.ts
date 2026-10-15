@@ -56,10 +56,16 @@ const accepted = (): Delivery =>
     ],
   }) as never;
 
-const exec = async (_cmd: string, args: string[]) =>
-  args[2] === "rev-parse" ? { code: 0, out: `${HEAD}\n` } : { code: 0, out: "" };
+const RELEASE = "e".repeat(40);
 
 async function settle(root: string, o: { deployFails?: string } = {}) {
+  // git: HEAD, which the deploy moves to the release commit it makes, and
+  // the common directory where the deployed commit is recorded.
+  const state = { head: HEAD, common: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-settle-git-")) };
+  const exec = async (_cmd: string, args: string[]) =>
+    args[2] === "rev-parse"
+      ? { code: 0, out: `${args[3] === "--git-common-dir" ? state.common : state.head}\n` }
+      : { code: 0, out: "" };
   const updates: { d: Delivery; note: string }[] = [];
   const ran: { command: string; env?: Record<string, string> }[] = [];
   const went = await settleTemplateAfterAccept({
@@ -68,6 +74,7 @@ async function settle(root: string, o: { deployFails?: string } = {}) {
     exec,
     invoke: async (command, _cwd, env) => {
       ran.push({ command, ...(env ? { env } : {}) });
+      if (!o.deployFails) state.head = RELEASE;
       return o.deployFails ? { code: 1, out: o.deployFails } : { code: 0, out: "deployed" };
     },
     http: async () => new Response("ok", { status: 200 }),
@@ -77,12 +84,12 @@ async function settle(root: string, o: { deployFails?: string } = {}) {
     log: () => {},
     now: () => "2026-10-15T11:00:00.000Z",
   });
-  return { went, updates, ran, d: updates.at(-1)!.d };
+  return { went, updates, ran, state, d: updates.at(-1)!.d };
 }
 
 test("pending turns green when the deploy goes live and its health path answers", async () => {
   const root = repo();
-  const { went, d, ran, updates } = await settle(root);
+  const { went, d, ran, updates, state } = await settle(root);
   assert.deepEqual(went, { live: true, at: "https://svc.example.com" });
   assert.equal(ran[0].command, "./deploy.sh");
   assert.equal(ran[0].env?.THINKUBE_CONTROL_URL, "https://control.example.com");
@@ -93,7 +100,12 @@ test("pending turns green when the deploy goes live and its health path answers"
   assert.equal(d.proofs[0].verdict, "green", "a proof settled in the run is left as it was");
   assert.deepEqual(d.afterMerge, { at: "2026-10-15T11:00:00.000Z", outcome: "held", said: "a validation deployment through thinkube-control" });
   assert.match(updates.at(-1)!.note, /promises settled after the merge are answered/);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".tandem", "setup.json"), "utf8")).deployedAt, HEAD, "the merged commit is recorded as deployed");
+  assert.equal(
+    fs.readFileSync(path.join(state.common, "tandem", "deployed"), "utf8").trim(),
+    RELEASE,
+    "the commit the deploy left is recorded as deployed, in git's common directory",
+  );
+  assert.equal(fs.existsSync(path.join(root, ".tandem")), false, "nothing is written into the tracked tree");
 });
 
 test("pending turns red, in the deploy's own words, when the deploy fails", async () => {

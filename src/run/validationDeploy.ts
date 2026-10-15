@@ -17,12 +17,20 @@
  * A commit already recorded as deployed is not deployed again: the deploy
  * takes minutes, and asking twice about the same tree must not pay twice.
  * Its health is still asked, because a thing deployed once may be gone.
+ *
+ * The commit recorded is HEAD as it stands AFTER the deploy: a template's
+ * deploy commits and tags a release, so the commit it leaves is the one
+ * the next question finds. The record lives in the repository's git common
+ * directory — per repository, shared by its worktrees, never committed —
+ * because a record in the tracked tree either moves HEAD when committed or
+ * leaves the checkout dirty.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { controlReachedBy, type ControlAuth, type Http } from "../hostui/templateCore";
-import { deployedCommitOf, rememberDeployed } from "./facts";
 import { makeLive, type Invoke } from "./makeLive";
-import type { Exec } from "./oracle";
+import { defaultExec, type Exec } from "./oracle";
 import { waitOrStop } from "./waiting";
 
 /** How often the health path is asked, and how many times, before the
@@ -54,10 +62,34 @@ export async function headOf(repoRoot: string, exec: Exec): Promise<string> {
   return head;
 }
 
+/** Where the deployed commit is recorded: `<git common dir>/tandem/deployed`. */
+async function recordOf(repoRoot: string, exec: Exec): Promise<string> {
+  const r = await exec("git", ["-C", repoRoot, "rev-parse", "--git-common-dir"], repoRoot);
+  const dir = r.out.trim().split("\n")[0]?.trim() ?? "";
+  if (r.code !== 0 || !dir)
+    throw new Error(`git could not name the common directory of ${repoRoot}: ${r.out.trim().slice(0, 300)}`);
+  return path.join(path.resolve(repoRoot, dir), "tandem", "deployed");
+}
+
+/** The commit last deployed here and seen answering, if one was. */
+async function deployedCommitOf(repoRoot: string, exec: Exec): Promise<string | undefined> {
+  const at = await recordOf(repoRoot, exec);
+  return fs.existsSync(at) ? fs.readFileSync(at, "utf8").trim() || undefined : undefined;
+}
+
+/** Record the commit a deploy left live. A record that cannot be written
+ *  throws: a deploy that is not remembered runs again, and the caller says why. */
+async function rememberDeployed(repoRoot: string, commit: string, exec: Exec): Promise<void> {
+  const at = await recordOf(repoRoot, exec);
+  fs.mkdirSync(path.dirname(at), { recursive: true });
+  fs.writeFileSync(at, `${commit}\n`);
+}
+
 export type Validated =
   /** It went live and its health path answered. `deployed` is false when
-   *  this commit was already recorded as deployed and nothing was run. */
-  | { ok: true; at: string; url: string; deployed: boolean }
+   *  this commit was already recorded as deployed and nothing was run.
+   *  `head` is the commit live now, the one recorded as deployed. */
+  | { ok: true; at: string; url: string; deployed: boolean; head: string }
   /** It was not tried: the repository does not declare what is needed. */
   | { ok: false; stage: "declaration"; why: string }
   /** It was tried and did not go live, in the deploy's or the probe's words. */
@@ -67,6 +99,8 @@ export async function validationDeploy(a: {
   repoRoot: string;
   /** The commit being judged. */
   head: string;
+  /** git: the common directory, and HEAD after the deploy. */
+  exec?: Exec;
   invoke?: Invoke;
   http?: Http;
   control?: ReachControl;
@@ -92,7 +126,8 @@ export async function validationDeploy(a: {
     };
   const url = `${deploy.at.replace(/\/+$/, "")}${health.startsWith("/") ? health : `/${health}`}`;
 
-  const already = deployedCommitOf(a.repoRoot) === a.head;
+  const exec = a.exec ?? defaultExec;
+  const already = (await deployedCommitOf(a.repoRoot, exec)) === a.head;
   if (already) a.log?.(`${a.head.slice(0, 8)} is already deployed — asking ${url} only`);
   else {
     const env = controlEnvOf(a.control);
@@ -106,6 +141,9 @@ export async function validationDeploy(a: {
     });
     if (!went.live) return { ok: false, stage: "deploy", why: went.detail ?? "the deploy did not succeed" };
   }
+  // What the deploy left: a release commit when it made one, the same
+  // commit when nothing was deployed.
+  const live = already ? a.head : await headOf(a.repoRoot, exec);
 
   const get = a.http ?? fetch;
   const wait = a.wait ?? ((ms: number) => waitOrStop(ms));
@@ -118,8 +156,8 @@ export async function validationDeploy(a: {
       last = `it could not be reached: ${e instanceof Error ? e.message : String(e)}`;
     }
     if (status !== undefined && status >= 200 && status < 300) {
-      rememberDeployed(a.repoRoot, a.head);
-      return { ok: true, at: deploy.at, url, deployed: !already };
+      await rememberDeployed(a.repoRoot, live, exec);
+      return { ok: true, at: deploy.at, url, deployed: !already, head: live };
     }
     if (status !== undefined) last = `it answered ${status}`;
     if (i < HEALTH_TRIES - 1) await wait(HEALTH_EVERY_MS);

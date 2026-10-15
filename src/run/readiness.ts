@@ -123,10 +123,10 @@ export async function checkReadiness(a: ReadinessArgs): Promise<Readiness> {
   const flying = asking.get(`${root}\0${key}`);
   if (flying) return flying;
   const asked = answer({ ...a, repoRoot: root, exec }, head).then((result) => {
-    // Keyed by what the files say AFTER the answer: a deploy that went live
-    // records its commit in setup.json, and that record must not make the
-    // next question miss.
-    answered.set(root, { key: keyOf(root, head), result });
+    // A deploy that commits a release moves HEAD, so a question about the
+    // new commit is a new question: its tree is answered again, and its
+    // deploy is not run again because that commit is recorded as deployed.
+    answered.set(root, { key, result });
     return result;
   });
   asking.set(`${root}\0${key}`, asked);
@@ -356,6 +356,7 @@ async function deployWorks(a: ReadinessArgs, head: string): Promise<Omit<Readine
   const v = await validationDeploy({
     repoRoot: a.repoRoot,
     head,
+    ...(a.exec ? { exec: a.exec } : {}),
     ...(a.invoke ? { invoke: a.invoke } : {}),
     ...(a.http ? { http: a.http } : {}),
     ...(a.control ? { control: a.control } : {}),
@@ -365,7 +366,10 @@ async function deployWorks(a: ReadinessArgs, head: string): Promise<Omit<Readine
   if (v.ok)
     return {
       ready: true,
-      say: `${v.deployed ? "deployed" : "already deployed"} ${head.slice(0, 8)}, and ${v.url} answered`,
+      say:
+        `${v.deployed ? "deployed" : "already deployed"} ${v.head.slice(0, 8)}` +
+        (v.head !== head ? ` (the deploy moved HEAD from ${head.slice(0, 8)})` : "") +
+        `, and ${v.url} answered`,
     };
   return {
     ready: false,
