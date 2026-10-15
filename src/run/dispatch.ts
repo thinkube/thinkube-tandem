@@ -66,7 +66,9 @@ import { runLogSink } from "./runLog";
 import { watchForStall } from "./watchdog";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
-import { clearanceStanza, coderStanza, testerStanza } from "./brief";
+import { clearanceStanza, coderStanza, fixturesStanza, testerStanza } from "./brief";
+import { productionSeams, sharedFixtures } from "./seams";
+import { applyFixturePlan, commitSharedFixture, planSharedFixture, testerReading } from "./sharedFixture";
 import { sliceBookkeeping } from "./plan";
 import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
@@ -240,6 +242,29 @@ export async function dispatchTep(
     refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`), deps.finishedBefore ?? [],
   );
   const standingRunOf = new Map(refreshed.committedSlices.map((c) => [c.slice, c.runId] as const));
+  // The check behind an ordinal, from the space — never from the probe.
+  const criterionOf = criterionLookup(slices, space);
+  // One shared fixture for a seam several testers of this run will double,
+  // written by the first of them before the others start.
+  const fixturePlan = planSharedFixture({
+    testers: await Promise.all(
+      dag
+        .filter((u) => u.role === "test" && !standing.has(u.slice))
+        .map(async (u) => {
+          const slice = slices.find((s) => s.handle === u.slice)!;
+          const ids = (slice as { criterionIds?: string[] }).criterionIds ?? [];
+          const criteria = ids.flatMap((_, i) => criterionOf(u.slice, i + 1)?.text ?? []);
+          return { id: u.id, footprint: u.footprint, text: await testerReading(worktree, slice, criteria) };
+        }),
+    ),
+    seams: await productionSeams(worktree),
+    fixtures: await sharedFixtures(worktree),
+  });
+  if (fixturePlan) {
+    applyFixturePlan(dag, fixturePlan);
+    seedUnitViews(st, dag, slices);
+    log(`${tep}: ${fixturePlan.owner} writes the shared fixture ${fixturePlan.path} first — ${fixturePlan.waiters.join(", ")} wait for it`);
+  }
   for (const u of dag)
     if (standing.has(u.slice)) {
       done.add(u.id);
@@ -250,8 +275,6 @@ export async function dispatchTep(
 
   const briefBySlice = new Map<string, string>();
   const acting = new Map<string, { unit: string }>();
-  // The check behind an ordinal, from the space — never from the probe.
-  const criterionOf = criterionLookup(slices, space);
   const rulings: Ruling[] = [];
   const decisions: { unit: string; text: string }[] = [];
   const oracleArgs = buildOracleArgs({
@@ -358,12 +381,26 @@ export async function dispatchTep(
       owned: next.footprint.filter((f) => !isProbePath(f)),
     });
     if (role !== "test") briefBySlice.set(next.slice, withNames);
+    // A tester's fixtures and seams are read when it starts, so a shared
+    // fixture committed before it is among those listed.
+    const ownsFixture = fixturePlan?.owner === next.id ? fixturePlan : undefined;
+    const doubles =
+      role === "test"
+        ? fixturesStanza(
+            await sharedFixtures(tree),
+            await productionSeams(tree),
+            ownsFixture
+              ? { write: ownsFixture.path, seams: ownsFixture.seams, users: [ownsFixture.owner, ...ownsFixture.waiters] }
+              : undefined,
+          )
+        : "";
     // Each role's brief carries what it owns, read FRESH each attempt — a contract that crossed slices mid-run reaches its owner at its next attempt.
     const oracleStanza = () =>
       role === "test"
         ? testerStanza(built) +
+          doubles +
           (maintain ? coderStanza(!!oracle) : "") +
-          testHomesStanza(testHomesOf(next.footprint), testHomeWorkOf(next))
+          testHomesStanza(testHomesOf(next.footprint.filter((f) => f !== ownsFixture?.path)), testHomeWorkOf(next))
         : clearanceStanza(next) +
           coderStanza(!!oracle) +
           decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
@@ -428,7 +465,7 @@ export async function dispatchTep(
                     st.doing(next.id, "working");
                   }
                 },
-                challengeTool: challengeFor(next.slice),
+                challengeTool: challengeFor(next.slice, () => oracle.last()?.result),
               }
             : {}),
         },
@@ -611,6 +648,8 @@ export async function dispatchTep(
     // the run stopped.
     if (!ok && st.halted && !st.units.get(next.id)?.note)
       failWith(next.id, "the run stopped before this unit finished — its work was never judged");
+    if (ok && ownsFixture)
+      await commitSharedFixture({ worktree, tep, slice: next.slice, plan: ownsFixture, exec, log: (l) => log(l, next.id) });
     await finishUnit(next.id, next.slice, ok);
   };
   await pumpUnits({

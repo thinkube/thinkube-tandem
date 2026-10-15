@@ -44,7 +44,7 @@ test("a challenge to a Python check reaches the judge", async () => {
     },
     log: () => {},
     defect: () => {},
-  } as never)("SL-1");
+  } as never)("SL-1", () => ({ kind: "results", results: [{ ac: 2, pass: false, evidence: "AssertionError: no /health route" }] }));
   const reply = await challenge(2, "the route is registered under an included router");
   assert.match(reply, /^DENIED/, `the judge ruled; got: ${reply}`);
   assert.match(judged, /assert False/, "the judge saw the Python check's source");

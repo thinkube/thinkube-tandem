@@ -21,6 +21,7 @@ import { rtkRewrite } from "../engine/rtkRewrite";
 import { clearanceLesson, refusedToolUse, toolsRefusedTo, clusterReach } from "./toolsAllowed";
 export { clearanceLesson, refusedToolUse, toolsRefusedTo, FENCED_TOOLS } from "./toolsAllowed";
 import { describeTool } from "./toolsAllowed";
+import { CHALLENGE_TOOL_TEXT } from "./challengeBudget";
 
 export interface WorkerOutcome {
   ok: boolean;
@@ -337,7 +338,7 @@ export async function runUnitWorker(
               ? [
                   mod.tool(
                     "challenge",
-                    "Challenge ONE check you believe misreads its criterion or cannot be satisfied by any correct implementation. Argue in intent terms with your verify evidence — you will never see the check's source. An independent judge rules; granted, the check is re-authored from its criterion and the ruling is recorded on the delivery; denied, meet it. Do not grind a red check when you believe it is wrong — file this instead. Budget: 2 per slice.",
+                    CHALLENGE_TOOL_TEXT,
                     { check: z.number(), argument: z.string() },
                     async (args: Record<string, unknown>) => ({
                       content: [
