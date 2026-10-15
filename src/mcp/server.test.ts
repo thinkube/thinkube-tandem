@@ -104,6 +104,7 @@ async function serverFor(w: ReturnType<typeof world>) {
       env: {
         ...process.env,
         TANDEM_STORE: w.store,
+        TANDEM_AUTONOMOUS: "",
         GIT_AUTHOR_EMAIL: "tester@example.com",
         EMAIL: "tester@example.com",
       },
@@ -139,7 +140,7 @@ after(() => {
 // Generous, because this spawns a process and speaks a protocol to it
 // while the rest of the suite runs: a five-second budget was a stopwatch
 // on the machine, and it went red under load and green alone.
-test("the server lists its tools and none of them is a gate", { timeout: 30_000 }, async () => {
+test("the server lists its tools, the person's among them", { timeout: 30_000 }, async () => {
   const { c } = await running();
   {
     const res = (await c.call("tools/list", {})) as {
@@ -149,8 +150,8 @@ test("the server lists its tools and none of them is a gate", { timeout: 30_000 
     assert.ok(names.includes("read_space"), `expected read_space, got ${names.join(", ")}`);
     assert.ok(names.includes("save_draft"));
     assert.ok(names.includes("list_spaces"), "a server must be able to say what spaces exist");
-    for (const gate of ["build", "sign", "accept_delivery", "keep_draft"])
-      assert.equal(names.includes(gate), false, `${gate} must not be offered`);
+    for (const gate of ["build", "accept_delivery", "keep_draft", "choose_set", "answer_question"])
+      assert.ok(names.includes(gate), `${gate} must be offered; the boundary refuses it unless TANDEM_AUTONOMOUS=1`);
   }
 });
 
@@ -161,7 +162,7 @@ test("a tool the boundary does not know is refused through the protocol", { time
       result?: { isError?: boolean; content?: { text: string }[] };
     };
     assert.equal(res.result?.isError, true);
-    assert.match(res.result?.content?.[0].text ?? "", /no such tool|yours|not declared/);
+    assert.match(res.result?.content?.[0].text ?? "", /yours, not mine/);
   }
 });
 

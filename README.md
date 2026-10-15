@@ -37,8 +37,8 @@ for you, and the machine's data one gesture away.
   installed version. The server works on the same store as the editor, so
   the editor shows its changes. `src/surfaces/actions.ts` declares which
   actions are the person's alone, among them signing a cut and accepting a
-  delivery. The server refuses those, and refuses any action not declared
-  there.
+  delivery. The server refuses those unless `TANDEM_AUTONOMOUS=1` is set,
+  and always refuses an action not declared there.
 - **Explorer menu.** *Claude Code → Open Here* on a folder in the Explorer.
 
 ## How it reaches a user
@@ -80,6 +80,20 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `full_rerun` | Starts the signed work again from nothing: the earlier run's branch is discarded and kept under a `discarded/…` tag. Same refusals as `rerun`. |
 | `stop_run` | Asks the run to stop. The process that owns the run ends it at its next heartbeat. |
 | `answer_worker` | Answers a parked worker's question, by unit id. |
+
+The person's own actions are tools too. The server refuses them unless its
+environment has `TANDEM_AUTONOMOUS=1`; Claude Code passes its own
+environment to the server, so the variable goes in the `env` block of
+`~/.claude/settings.json`.
+
+| Tool | What it does |
+|---|---|
+| `keep_draft` | Turns the read draft into asks (Keep). |
+| `answer_question` | Decides an open question by id, with the given text or its recommendation. |
+| `choose_set` | Chooses the set to build next, by id, and works out its promises. |
+| `build` | Signs the chosen set's cut (Build) and starts its run. |
+| `accept_delivery` | Accepts a delivery, by id. |
+| `reject_delivery` | Rejects a delivery, by id. |
 
 ## Settings
 

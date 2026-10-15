@@ -25,7 +25,7 @@
  * is a locked door rather than an open one.
  */
 
-import { ACTIONS, machineMay as declaredMay } from "../surfaces/actions";
+import { ACTIONS, AUTONOMOUS_ENV, machineMay as declaredMay } from "../surfaces/actions";
 
 export type Verdict = { ok: true } | { ok: false; reason: string };
 
@@ -34,7 +34,7 @@ export type Verdict = { ok: true } | { ok: false; reason: string };
  * not — the action's own sentence, so a refusal explains rather than only
  * refuses.
  */
-export function machineMay(action: string): Verdict {
+export function machineMay(action: string, env: NodeJS.ProcessEnv = process.env): Verdict {
   const a = ACTIONS[action];
   if (!a) {
     return {
@@ -42,6 +42,6 @@ export function machineMay(action: string): Verdict {
       reason: `${action} is not declared in ${"actions.ts"} — refused until it is`,
     };
   }
-  const r = declaredMay(action);
-  return r.ok ? r : { ok: false, reason: `${action} is yours, not mine: ${r.reason}` };
+  const r = declaredMay(action, env);
+  return r.ok ? r : { ok: false, reason: `${action} is yours, not mine: ${r.reason} (${AUTONOMOUS_ENV}=1 allows it)` };
 }

@@ -14,7 +14,7 @@
 import type { TandemSession } from "../surfaces/session";
 import { theLook } from "../run/theLook";
 import type { EnabledProject } from "../core/identity";
-import { phaseOf, allowedNow } from "../surfaces/phase";
+import { phaseOf, allowedNow, refusedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -57,6 +57,18 @@ function str(c: ToolCall, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
+/** The refusal for an action the space's phase does not offer, as the
+ *  surface would not offer its button; undefined when it is live. */
+function notLive(c: ToolCall, action: string): string | undefined {
+  const why = refusedNow(action, phaseOf(c.session));
+  return why && `refused: ${why}`;
+}
+
+/** A gesture's outcome, then the space as it now stands. */
+function gestureReport(c: ToolCall, r: { ok: boolean; reason?: string }): string {
+  return r.ok ? spaceReport(c) : `refused: ${r.reason ?? "no reason given"}`;
+}
+
 /** The space as a person would want it summarised: what was asked, what
  *  the machine made of it, and where it stands. */
 function spaceReport(c: ToolCall): string {
@@ -69,7 +81,18 @@ function spaceReport(c: ToolCall): string {
     `you can act on: ${allowedNow(phase).join(", ") || "nothing"}`,
   ];
   const open = s.space.questions.filter((q) => !q.decided);
-  if (open.length) lines.push(`open questions (${open.length}): ${open.map((q) => q.text).join(" · ")}`);
+  if (open.length) {
+    lines.push(`open questions (${open.length}):`);
+    for (const q of open)
+      lines.push(`  ${q.id}: ${q.text}${q.recommendation ? ` — recommended: ${q.recommendation}` : ""}`);
+  }
+  const sets = s.space.specs ?? [];
+  if (sets.length) {
+    lines.push(`sets (${sets.length}):`);
+    for (const x of sets) lines.push(`  ${x.id}: ${x.name}`);
+  }
+  const last = s.space.deliveries[s.space.deliveries.length - 1];
+  if (last) lines.push(`last delivery: ${last.id}${last.acceptedAt ? ` — accepted ${last.acceptedAt}` : ""}`);
   if (cut) {
     const c2 = s.space.cuts.find((x) => x.id === cut.id);
     const duty = c2 ? docsDuty(s.space, c2) : undefined;
@@ -468,6 +491,79 @@ export function toolTable(): ToolDef[] {
         c.session.answerWorker(str(c, "unit"), str(c, "text"))
           ? `answered ${str(c, "unit")}`
           : `no worker is parked as ${str(c, "unit")}`,
+    },
+
+    // ── the person's actions: refused by the boundary unless the person
+    //    set TANDEM_AUTONOMOUS=1 in this server's environment ───────────
+    {
+      name: "keep_draft",
+      action: "keep-draft",
+      description:
+        "Turn the read draft into asks (the editor's Keep). Run read_asks first when the draft is new. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: IN_SPACE,
+      run: (c) => notLive(c, "keep-draft") ?? gestureReport(c, c.session.keepDraft()),
+    },
+    {
+      name: "answer_question",
+      action: "accept-question",
+      description:
+        "Decide an open question by id: the given text, or its recommendation when no text is given. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, question: { type: "string" }, text: { type: "string" } },
+        required: ["space", "question"],
+      },
+      run: async (c) =>
+        notLive(c, "accept-question") ??
+        gestureReport(c, await c.session.acceptQuestion(str(c, "question"), str(c, "text") || undefined)),
+    },
+    {
+      name: "choose_set",
+      action: "choose-set",
+      description:
+        "Choose the set to build next, by id (read_space lists them); its promises are worked out. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, set: { type: "string" } },
+        required: ["space", "set"],
+      },
+      run: async (c) => notLive(c, "choose-set") ?? gestureReport(c, await c.session.chooseSpec(str(c, "set"))),
+    },
+    {
+      name: "build",
+      action: "build",
+      description:
+        "Sign the chosen set's cut (the editor's Build) and start its run; returns at once, watch it with read_run. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, set: { type: "string" } },
+        required: ["space", "set"],
+      },
+      run: async (c) => notLive(c, "build") ?? gestureReport(c, await c.session.build(str(c, "set"))),
+    },
+    {
+      name: "accept_delivery",
+      action: "accept-delivery",
+      description: "Accept a delivery by id (read_space names the last one). Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, delivery: { type: "string" } },
+        required: ["space", "delivery"],
+      },
+      run: async (c) =>
+        notLive(c, "accept-delivery") ?? gestureReport(c, await c.session.acceptDelivery(str(c, "delivery"))),
+    },
+    {
+      name: "reject_delivery",
+      action: "reject-delivery",
+      description: "Reject a delivery by id. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, delivery: { type: "string" } },
+        required: ["space", "delivery"],
+      },
+      run: async (c) =>
+        notLive(c, "reject-delivery") ?? gestureReport(c, await c.session.rejectDelivery(str(c, "delivery"))),
     },
   ];
 }

@@ -28,19 +28,36 @@ import * as path from "node:path";
 test("the machine boundary allows what is declared and refuses everything else", () => {
   {
   for (const gate of ["build", "accept-delivery", "mint-approval", "keep-draft"]) {
-    const v = machineMay(gate);
+    const v = machineMay(gate, {});
     assert.equal(v.ok, false, `${gate} must be refused`);
     assert.match((v as { reason: string }).reason, /yours/);
   }
   }
   {
-  const v = machineMay("some-tool-added-next-month");
+  const v = machineMay("some-tool-added-next-month", {});
   assert.equal(v.ok, false);
   assert.match((v as { reason: string }).reason, /not declared/);
   }
   {
   for (const a of ["read-space", "read-run", "save-draft", "reground"])
-    assert.equal(machineMay(a).ok, true, `${a} should be allowed`);
+    assert.equal(machineMay(a, {}).ok, true, `${a} should be allowed`);
+  }
+});
+
+/**
+ * The person can hand their actions to the machine with one environment
+ * variable. Only the value `1` does it, and an action nobody declared stays
+ * refused with it set: the switch widens what is declared, never what is not.
+ */
+test("TANDEM_AUTONOMOUS=1 lets a machine take the person's declared actions", () => {
+  const on = { TANDEM_AUTONOMOUS: "1" };
+  for (const gate of ["build", "accept-delivery", "reject-delivery", "keep-draft", "choose-set", "accept-question"])
+    assert.equal(machineMay(gate, on).ok, true, `${gate} should be allowed with the switch on`);
+  assert.equal(machineMay("some-tool-added-next-month", on).ok, false);
+  for (const value of ["0", "true", "yes", ""]) {
+    const v = machineMay("build", { TANDEM_AUTONOMOUS: value });
+    assert.equal(v.ok, false, `TANDEM_AUTONOMOUS=${value} must not open the gate`);
+    assert.match((v as { reason: string }).reason, /TANDEM_AUTONOMOUS=1 allows it/);
   }
 });
 

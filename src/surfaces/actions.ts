@@ -222,9 +222,18 @@ export function liveIn(phase: Phase): string[] {
   return ACTION_NAMES.filter((a) => ACTIONS[a].when?.includes(phase));
 }
 
-/** Whether a machine may do this at all, and why not when it may not. */
-export function machineMay(action: string): { ok: true } | { ok: false; reason: string } {
+/** The environment variable with which the person lets a machine take
+ *  their actions too: `1` allows every declared action. */
+export const AUTONOMOUS_ENV = "TANDEM_AUTONOMOUS";
+
+/** Whether a machine may do this at all, and why not when it may not. An
+ *  undeclared action is refused whatever the environment says. */
+export function machineMay(
+  action: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; reason: string } {
   const a = ACTIONS[action];
   if (!a) return { ok: false, reason: `${action} is not declared — refused until it is` };
+  if (env[AUTONOMOUS_ENV] === "1") return { ok: true };
   return a.mine ? { ok: false, reason: a.mine } : { ok: true };
 }

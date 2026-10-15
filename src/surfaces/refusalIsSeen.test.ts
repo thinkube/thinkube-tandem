@@ -56,7 +56,7 @@ test("every action that shapes work declares when it is live", () => {
 
 test("what a machine may not do, it is refused with a sentence", () => {
   for (const [name, a] of Object.entries(ACTIONS)) {
-    const v = machineMay(name);
+    const v = machineMay(name, {});
     assert.equal(v.ok, !a.mine, `${name} disagrees with its own declaration`);
     if (!v.ok) assert.ok((v as { reason: string }).reason.length > 20, `${name} refuses without saying why`);
   }
