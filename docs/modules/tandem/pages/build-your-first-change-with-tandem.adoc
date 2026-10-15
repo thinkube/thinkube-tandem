@@ -143,7 +143,11 @@ At the bottom of the work page, *Pressing Build these N* says what the press doe
 
 image::tandem-07-sign.png[The work page of a thing with one sentence: two promises, their lines, and under Pressing Build these 2 what the button does]
 
-Before it signs, the press checks that the repository is ready. Its setup must hold on a clean copy of the last commit, and a check must land where the repository's own tests run. For a template, more is checked. It must declare how it deploys (`spec.deploy` with `run` and `at`). Its newest release tag on `origin` must name the version in `thinkube.yaml`. The secrets its `manifest.yaml` names must exist in Thinkube Control. Its deploy must go live and answer at its health path. When something is not ready, nothing is signed, and the refusal under the button says what to fix. The same commit is not checked or deployed twice.
+Before it signs, the press checks that the repository is ready. Its setup must hold on a clean copy of the last commit, and a check must land where the repository's own tests run. For a template, more is checked. It must declare how it deploys (`spec.deploy` with `run` and `at`). Its newest release tag on `origin` must name the version in `thinkube.yaml`. The secrets its `manifest.yaml` names must exist in Thinkube Control. Its deploy must go live and answer at its health path. When something is not ready, nothing is signed, and the refusal under the button says what to fix. The same commit is not checked or deployed twice: the answer is kept in the store, and *Readiness* above the button shows it for the commit you are on.
+
+Where checks land follows `thinkube.yaml`. Each container is a part of the repository with its own tests, and `test.one` says how one of its test files runs. A container built from the whole repository (`build: .`) gives the command for every file no other part holds. A check for a screen goes to the part whose tests are written in the screen's language, even when the screen's file sits inside another part.
+
+For a template, the build Tandem runs is only the build the repository declares. The image is built, and its tests run, only by the platform's deploy, so the deploy is what decides whether a template's work holds.
 
 Press *Build these N*. The strip says *building — <the thing's name>*, the run page opens, and *Stop* is the only other button.
 

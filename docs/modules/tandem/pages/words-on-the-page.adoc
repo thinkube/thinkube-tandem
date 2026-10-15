@@ -149,7 +149,7 @@ Under *What will be true when this is done*, each line under a promise says wher
 | Stopped with an error; its promise was not kept. The run goes on with the rest.
 
 | *never ran*
-| The run stopped, or something this waited on failed, so this was never started. Not a failure of its own.
+| This was never started. Not a failure of its own. Its note names the card it waited on that failed, and why that card failed; read that card first. With no failure behind it, the note says the run stopped.
 
 | *cut*
 | Also on a card: this card is part of the cut being built now. A cut is one signed piece of work.
@@ -157,7 +157,7 @@ Under *What will be true when this is done*, each line under a promise says wher
 
 The bands name the kinds of card: *check*, *code*, *tests brought under*, *on the running product*, *audit*, *door*, *delivery*, *live*. The first and last cards are *preparing the tree*, *The closing gate*, *handing it over*, *taking it live*. What each one means:
 
-* *check*: a worker writes the checks before the code, without seeing the code.
+* *check*: a worker writes the checks before the code, without seeing the code. When several check workers will fake the same part of your code, such as a database pool, the first one writes one shared fake for all of them, and the others wait for it. If that worker does not write the shared fake, its card fails and says so, and the cards that waited for it are *never ran*.
 * *code*: a worker writes the code, without seeing the checks.
 * *tests brought under*: after the code has landed, a worker updates the existing tests of that part of the project to the new behaviour. It writes tests only, never code, and the checks must stay green.
 * *on the running product*: a reviewer opens the running product in a browser and judges what it sees.
