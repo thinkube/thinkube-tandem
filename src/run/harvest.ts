@@ -29,7 +29,7 @@ import type { Delivery, Proof } from "../core/schema";
 import { controlReachedBy, type Http as ControlHttp } from "../hostui/templateCore";
 import type { Invoke } from "./makeLive";
 import type { Exec } from "./oracle";
-import { headOf, validationDeploy, type ReachControl } from "./validationDeploy";
+import { headOf, validationDeploy, type ReachControl, type Validated } from "./validationDeploy";
 
 /** The control API's base URL for a gitops app, from the repository's own
  *  remote: `git.<domain>` names the platform, `control.<domain>` runs the
@@ -469,18 +469,85 @@ function defaultFindPlaybook(repoRoot: string, dir: string): string | undefined 
 /** Who answers a template's promises settled after the merge. */
 const VALIDATION = "a validation deployment through thinkube-control";
 
+/** What a validation deployment answered, or why it could not be asked. */
+export type Validation = Validated | { ok: false; stage: "machine"; why: string };
+
+/** Whether that answer says anything about the work: it went live, or it
+ *  was tried and did not. Not tried, or the machine failing, says nothing. */
+function judgedBy(v: Validation): boolean {
+  return v.ok || v.stage === "deploy" || v.stage === "health";
+}
+
+/** The validation deployment for the commit HEAD names, run once. A
+ *  failure of the machine around it is an answer of its own, never thrown. */
+export async function validateTemplate(a: {
+  repoRoot: string;
+  exec: Exec;
+  log: (line: string) => void;
+  invoke?: Invoke;
+  http?: ControlHttp;
+  control?: ReachControl;
+  wait?: (ms: number) => Promise<unknown>;
+}): Promise<Validation> {
+  try {
+    const head = await headOf(a.repoRoot, a.exec);
+    a.log(`settling by ${VALIDATION}, for ${head.slice(0, 8)}`);
+    return await validationDeploy({
+      repoRoot: a.repoRoot,
+      head,
+      exec: a.exec,
+      ...(a.invoke ? { invoke: a.invoke } : {}),
+      ...(a.http ? { http: a.http } : {}),
+      ...(a.control ? { control: a.control } : {}),
+      ...(a.wait ? { wait: a.wait } : {}),
+      log: a.log,
+    });
+  } catch (e) {
+    return { ok: false, stage: "machine", why: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
- * A template's settlement, after its delivery is accepted.
+ * A validation deployment's answer, onto a template delivery.
  *
- * A template is proved by deploying it: its declared deploy is run for the
- * merged commit and its health path is asked. Went live and answered: every
- * proof settled after the merge turns green. Tried and did not go live:
- * they turn red, in the deploy's own words. Not tried, because the
- * repository does not declare how: they stay pending with the reason, and
- * the outcome is unjudged — nothing is known about the work from that.
- *
- * A red proof of an earlier settlement is settled again: a deploy that
- * failed for a fault since fixed says nothing about the work any more.
+ * Went live and answered: every proof settled after the merge turns green.
+ * Tried and did not go live: they turn red, in the deploy's own words. Not
+ * tried, because the repository does not declare how: they stay pending
+ * with the reason, and the outcome is unjudged — nothing is known about
+ * the work from that. A red proof of an earlier settlement is settled
+ * again: a deploy that failed for a fault since fixed says nothing about
+ * the work any more.
+ */
+export function stampByValidation(delivery: Delivery, v: Validation, at: string): Delivery {
+  const judged = judgedBy(v);
+  return {
+    ...delivery,
+    proofs: delivery.proofs.map((p) => {
+      if (!settling(p)) return p;
+      if (v.ok)
+        return { ...p, verdict: "green", ref: `settled by ${VALIDATION}: it went live at ${v.at} and ${v.url} answered`.slice(0, 300) };
+      if (judged) return { ...p, verdict: "red", ref: `settled by ${VALIDATION}: ${v.why}`.slice(0, 300) };
+      return { ...p, verdict: "pending", ref: `still pending — ${v.why}`.slice(0, 300) };
+    }),
+    afterMerge: {
+      at,
+      outcome: v.ok ? "held" : judged ? "broke" : "unjudged",
+      said: VALIDATION,
+      ...(v.ok ? {} : { detail: v.why.slice(0, 2000) }),
+    },
+  };
+}
+
+/** A proof a validation deployment answers. */
+function settling(p: Proof): boolean {
+  return !!p.settledBy && (p.verdict === "pending" || p.verdict === "red");
+}
+
+/**
+ * A template's settlement, after its delivery is accepted: the validation
+ * deployment run for the merged commit, its answer stamped on the delivery
+ * (see {@link stampByValidation}). A commit the run already deployed is
+ * recorded as deployed, so it is not deployed again here — only asked.
  *
  * Returns whether it went live, and where, for the look that follows.
  */
@@ -497,53 +564,14 @@ export async function settleTemplateAfterAccept(a: {
   now?: () => string;
 }): Promise<{ live: boolean; at?: string }> {
   const now = a.now ?? (() => new Date().toISOString());
-  const settling = (p: Proof): boolean => !!p.settledBy && (p.verdict === "pending" || p.verdict === "red");
-  let v: Awaited<ReturnType<typeof validationDeploy>> | { ok: false; stage: "machine"; why: string };
-  try {
-    const head = await headOf(a.repoRoot, a.exec);
-    a.log(`settling by ${VALIDATION}, for ${head.slice(0, 8)}`);
-    v = await validationDeploy({
-      repoRoot: a.repoRoot,
-      head,
-      exec: a.exec,
-      ...(a.invoke ? { invoke: a.invoke } : {}),
-      ...(a.http ? { http: a.http } : {}),
-      ...(a.control ? { control: a.control } : {}),
-      ...(a.wait ? { wait: a.wait } : {}),
-      log: a.log,
-    });
-  } catch (e) {
-    v = { ok: false, stage: "machine", why: e instanceof Error ? e.message : String(e) };
-  }
-  const judged = v.ok || v.stage === "deploy" || v.stage === "health";
-  const proofs: Proof[] = a.delivery.proofs.map((p) => {
-    if (!settling(p)) return p;
-    if (v.ok)
-      return {
-        ...p,
-        verdict: "green",
-        ref: `settled by ${VALIDATION}: it went live at ${v.at} and ${v.url} answered`.slice(0, 300),
-      };
-    if (judged) return { ...p, verdict: "red", ref: `settled by ${VALIDATION}: ${v.why}`.slice(0, 300) };
-    return { ...p, verdict: "pending", ref: `still pending — ${v.why}`.slice(0, 300) };
-  });
-  const outcome = v.ok ? "held" : judged ? "broke" : "unjudged";
-  const d: Delivery = {
-    ...a.delivery,
-    proofs,
-    afterMerge: {
-      at: now(),
-      outcome,
-      said: VALIDATION,
-      ...(v.ok ? {} : { detail: v.why.slice(0, 2000) }),
-    },
-  };
+  const v = await validateTemplate(a);
+  const d = stampByValidation(a.delivery, v, now());
   const answered = a.delivery.proofs.some(settling);
   a.update(
     d,
     v.ok
       ? `the merged template went live at ${v.at}` + (answered ? " — the promises settled after the merge are answered" : "")
-      : judged
+      : judgedBy(v)
         ? `the merged template did not go live: ${v.why.split("\n")[0]}`
         : `the merged template could not be deployed to judge it: ${v.why.split("\n")[0]} — nothing is known about the work from this`,
   );

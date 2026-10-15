@@ -19,13 +19,17 @@
  */
 import * as path from "node:path";
 import { waitUntilLive } from "./goLive";
+import { waitOrStop } from "./waiting";
 import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
-import { repairUntilLive } from "./tryAgain";
 import { repairAfterTheMerge } from "./repairLive";
 import { repairWhatDidNotHold, whatDidNotHold } from "./repairOnTheProduct";
 import { landDelivery } from "./land";
 import { deployedAddress, knock, pageRoots as pageRootsOf, readLive, whyItFailed } from "./live";
 import { stampPending } from "./harvest";
+import { goLiveAndJudge } from "./goingLive";
+import { templateGoesLive } from "./templateLive";
+import { downstreamOf } from "./survey";
+import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
@@ -708,16 +712,7 @@ export async function dispatchTep(
             return { ok: false, why: err instanceof Error ? err.message : String(err) };
           }
         },
-        waitUntilLive: () =>
-          waitUntilLive({
-            at,
-            app: path.basename(deps.repoRoot),
-            since: new Date().toISOString(),
-            read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
-            knock,
-            stop: st.stop.signal,
-            step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
-          }),
+        waitUntilLive: () => goLive(new Date().toISOString()),
         judgeAgain: async (promises) => {
           outcome = await judge((p) => promises.includes(p));
           return outcome;
@@ -736,7 +731,35 @@ export async function dispatchTep(
       );
       return outcome;
     };
-    const at = deployedAddress(deps.repoRoot);
+    // A template is made live by the deploy it declares; a push builds
+    // nothing for it. One that declares no way to deploy is not deployed
+    // by the platform, whatever address it names.
+    const template = downstreamOf(deps.repoRoot) === "template";
+    const declared = thinkubeDeclaration(deps.repoRoot);
+    const deploysItself = template && !!(declared && "declared" in declared && declared.declared.deploy?.run.length);
+    const at = template && !deploysItself ? undefined : deployedAddress(deps.repoRoot);
+    const byDeploy = deploysItself
+      ? templateGoesLive({
+          repoRoot: deps.repoRoot,
+          exec,
+          log: (l) => log(l, "live"),
+          wait: (ms) => waitOrStop(ms, st.stop.signal),
+        })
+      : undefined;
+    /** Make the work live: run the template's deploy, or wait for the
+     *  platform to build what was pushed. */
+    const goLive = (since: string) =>
+      byDeploy
+        ? byDeploy.goLive()
+        : waitUntilLive({
+            at: at!,
+            app: path.basename(deps.repoRoot),
+            since,
+            read: (from) => readLive(deps.repoRoot, path.basename(deps.repoRoot), from),
+            knock,
+            step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
+            stop: st.stop.signal,
+          });
     if (!at) {
       st.phase("live", "done", "this repository is not deployed by the platform");
       noProduct("this repository is not deployed by the platform, so nothing can be driven");
@@ -755,99 +778,54 @@ export async function dispatchTep(
         : outcome;
       if (answering) outcome = await judgeAndRepair(at, []);
     } else {
-      st.phase("live", "running", "waiting for the platform to notice the push");
-      let went = await waitUntilLive({
+      await goLiveAndJudge({
         at,
-        app: path.basename(deps.repoRoot),
-        since: producedAt,
-        read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
-        knock,
-        step: {
-          say: (l) => log(l, "live"),
-          doing: (l) => st.phase("live", "running", l),
+        delivery: d,
+        waiting: byDeploy ? "deploying it as the repository declares" : "waiting for the platform to notice the push",
+        goLive: () => goLive(producedAt),
+        whyItFailed: () =>
+          byDeploy ? byDeploy.whyItFailed() : whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
+        said: byDeploy ? "a validation deployment through thinkube-control" : "the platform",
+        // What the settling source answers, it has now answered. The run
+        // watched that build, or ran that deploy; leaving those criteria
+        // "pending" reported work as unreachable minutes after the machine
+        // that reaches it had said yes.
+        settle: async (x) =>
+          byDeploy
+            ? byDeploy.settle(x)
+            : stampPending(x, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt)),
+        repair: (found, attempt) =>
+          repairAfterTheMerge({
+            tep, attempt, worktree, deps, st, exec, boundedExec,
+            evidence: found.evidence, files: found.files,
+            log: (l) => log(l, "live"),
+          }),
+        buildsHere: async () => {
+          if (!deps.build) return { ok: true, output: "" };
+          const b = await boundedExec(deps.build, worktree);
+          return { ok: b.code === 0, output: b.output };
         },
-        stop: st.stop.signal,
+        land: async () => {
+          try {
+            const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
+            return l.pushed
+              ? { ok: true, moved: l.moved, ...(l.head ? { head: l.head } : {}) }
+              : { ok: false, ...(l.why ? { why: l.why } : {}) };
+          } catch (err) {
+            return { ok: false, why: err instanceof Error ? err.message : String(err) };
+          }
+        },
+        halted: () => st.halted,
+        say: (l) => log(l, "live"),
+        phase: (state, note) => st.phase("live", state, note),
+        noProduct,
+        record: (delivery) => {
+          outcome = { ...outcome, delivery };
+        },
+        judge: async (alsoMerged) => {
+          outcome = await judgeAndRepair(at, alsoMerged);
+        },
       });
-      // The platform refused it. That is a red like any other red, and
-      // this run has a closer: repair what the platform's words name,
-      // prove it builds here, push again. Twice, then stop and say so.
-      let tried = { attempts: 0, spent: false };
-      const alsoMerged: string[] = [];
-      // Nothing to repair when nothing was judged: the platform said
-      // nothing about the work, and a repair after no fault changes nothing.
-      if (!went.live && !went.unjudged && !st.halted) {
-        const again = await repairUntilLive({
-          whyItFailed: () => whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
-          repair: (found, attempt) =>
-            repairAfterTheMerge({
-              tep, attempt, worktree, deps, st, exec, boundedExec,
-              evidence: found.evidence, files: found.files,
-              log: (l) => log(l, "live"),
-            }),
-          buildsHere: async () => {
-            if (!deps.build) return { ok: true, output: "" };
-            const b = await boundedExec(deps.build, worktree);
-            return { ok: b.code === 0, output: b.output };
-          },
-          land: async () => {
-            try {
-              const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
-              // Every merge this delivery made is remembered: taking the
-              // work back out means reverting all of them, and a repair
-              // pushed after the first merge is one of them.
-              if (l.head && l.moved) alsoMerged.push(l.head);
-              return l.pushed ? { ok: true, moved: l.moved } : { ok: false, ...(l.why ? { why: l.why } : {}) };
-            } catch (err) {
-              return { ok: false, why: err instanceof Error ? err.message : String(err) };
-            }
-          },
-          waitUntilLive: () =>
-            waitUntilLive({
-              at,
-              app: path.basename(deps.repoRoot),
-              since: new Date().toISOString(),
-              read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
-              knock,
-              step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
-              stop: st.stop.signal,
-            }),
-          say: (l) => log(l, "live"),
-          doing: (l) => st.phase("live", "running", l),
-          halted: () => st.halted,
-        });
-        tried = { attempts: again.attempts, spent: again.spent };
-        went = again.live ? { live: true } : { live: false, ...(again.why ? { why: again.why } : {}) };
-      }
-      st.phase("live", went.live ? "done" : "failed", went.live ? `live at ${at}` : went.why ?? "it did not go live");
-      if (!went.live) noProduct(went.why ?? "the work never went live");
-      const heads = alsoMerged.length && d.mergedHead ? { mergedHeads: [d.mergedHead, ...alsoMerged] } : {};
-      // What the pipeline settles, the pipeline has now answered. The run
-      // watched that build; leaving those criteria "pending" reported work
-      // as unreachable minutes after the machine that reaches it had said
-      // yes.
-      const settledByThePipeline = went.live
-        ? stampPending(d, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt))
-        : d;
-      outcome = went.live
-        ? { ...outcome, delivery: { ...settledByThePipeline, ...heads, liveAt: at } }
-        : {
-            ...outcome,
-            delivery: {
-              ...d,
-              ...heads,
-              afterMerge: {
-                at: new Date().toISOString(),
-                outcome: went.unjudged ? "unjudged" : "broke",
-                said: "the platform",
-                ...(went.why ? { detail: went.why } : {}),
-                ...(tried.attempts ? { tried: tried.attempts } : {}),
-              },
-            },
-          };
-      // What only the running product can show is judged on the running
-      // product. Each criterion is its own reviewer, and each waits on the
-      // deployment — so the graph says what the person is waiting for.
-      if (went.live) outcome = await judgeAndRepair(at, alsoMerged);
     }
   }
   return outcome;

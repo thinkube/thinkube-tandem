@@ -26,6 +26,7 @@ import type { TreeShape } from "../gates/moduleSizes";
 import type { DispatchDeps } from "./deps";
 import type { DispatchOutcome } from "./dispatch";
 import { porcelainPaths } from "./worker";
+import { downstreamOf } from "./survey";
 
 export async function handOver(a: {
   tep: string;
@@ -110,7 +111,9 @@ export async function handOver(a: {
   }
   if (landed.pushed === false) log(`${tep}: merged into the project, but ${landed.why}`);
   else if (landed.moved === false) log(`${tep}: the project already has this work — nothing was merged, and nothing was pushed`);
-  else log(`${tep}: merged and pushed — the platform is building it`);
+  // Only an app's push starts a build; anything else is built, if at all,
+  // by what its own live phase runs.
+  else log(`${tep}: merged and pushed${downstreamOf(deps.repoRoot) === "gitops-app" ? " — the platform is building it" : ""}`);
   return {
     refusals: [],
     undelivered,
