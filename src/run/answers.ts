@@ -104,7 +104,10 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
           ...pulseOf(a, unit),
         },
         prompt,
-      ).catch(() => null);
+      ).catch((e) => {
+        a.log(`⛔ ${unit}: the supervisor round failed — ${e instanceof Error ? e.message : String(e)}`, unit);
+        return null;
+      });
       const first = (reply ?? "").trimStart();
       if (/^(CLEAR|WIDEN):/i.test(first) && a.clearance) {
         // The key, not a permit: the door may hold while another unit finishes
@@ -238,7 +241,10 @@ export function makeEndAnswerer(a: OracleFactoryArgs) {
           "──── THE UNIT'S BRIEF ────",
           (a.briefBySlice.get(slice) ?? "").slice(0, 16000),
         ].join("\n"),
-      ).catch(() => null);
+      ).catch((e) => {
+        a.log(`⛔ ${unit}: the supervisor round failed — ${e instanceof Error ? e.message : String(e)}`, unit);
+        return null;
+      });
       const first = (reply ?? "").trimStart();
       if (/^CONTRACT:/i.test(first)) {
         const text = first.replace(/^CONTRACT:\s*/i, "").split("\n")[0].trim().slice(0, 400);

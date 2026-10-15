@@ -453,16 +453,16 @@ export async function executeRun(
     s.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
       // The repository reading rides into every worker's brief. Cached
-      // under the repo stamp, so after a derivation this costs nothing;
-      // a run must never refuse over brief enrichment, hence fail-soft.
-      const known = await s.knowledge().catch(() => undefined);
+      // under the repo stamp, so after a derivation this costs nothing. A
+      // reading that fails stops the run with its own error.
+      const known = await s.knowledge();
       const digest = known?.digest;
       // A promise-level need that exists only because a test home imports
       // another promise's code belongs to the maintain slice, not the plan:
       // dropped before planning, so it forces no ring into one slice.
       if (known) {
         const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id)).map((n) => ({ ...n, needs: [...n.needs] }));
-        const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p)).catch(() => []);
+        const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p));
         if (dropped.length) {
           const byId = new Map(members.map((n) => [n.id, n]));
           s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
@@ -801,6 +801,6 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
         // address is the repository's own answer and beats a URL assembled
         // from a directory name.
         ...(declaresWhereItLives(gitRoot) ? {} : { then: (url: string) => lookAndFile(s, url, r.delivery) }),
-      });
+      }).catch((e) => s.changed(`${r.delivery.id}: watching the deployed work failed — ${e instanceof Error ? e.message : String(e)}`));
     return { ok: true };
   }

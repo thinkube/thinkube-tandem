@@ -127,6 +127,17 @@ export function makeChallenge(
     };
 }
 
+/** A file's text, or "" when it does not exist: a probe not written yet is
+ *  an empty one. Any other read failure is thrown. */
+async function textOrAbsent(file: string): Promise<string> {
+  try {
+    return await fs.readFile(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw e;
+  }
+}
+
 /** Rewrite one probe from its criterion, in the tester's tree, and keep it
  *  past the next snapshot. Used by a granted challenge, the repair loop and
  *  the supervisor's TEST-FAULT alike: the criterion is the spec, the reason
@@ -136,7 +147,7 @@ async function reauthorCheck(
   args: { slice: string; rel: string; criterion: string; because: string; error?: string },
 ): Promise<boolean> {
   const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
-  const before = await fs.readFile(path.join(a.testerWt, args.rel), "utf8").catch(() => "");
+  const before = await textOrAbsent(path.join(a.testerWt, args.rel));
   // The re-author starts where the tester started: told where it is, how
   // checks are written here, and which sibling probes run — not blind.
   const siblings = (a.sliceProbes.get(args.slice) ?? []).filter((p) => p !== args.rel).slice(0, 3);
@@ -168,7 +179,7 @@ async function reauthorCheck(
   );
   if (rewritten === null) return false;
   // A re-author that left the file as it was did nothing, whatever it said.
-  const after = await fs.readFile(path.join(a.testerWt, args.rel), "utf8").catch(() => "");
+  const after = await textOrAbsent(path.join(a.testerWt, args.rel));
   if (after === before) return false;
   await a.persistProbe?.(args.rel);
   return true;
@@ -270,7 +281,6 @@ export function makeReauthor(a: OracleFactoryArgs): (slice: string, ac: number, 
       criterion: criterion.text,
       because: `the oracle ran this check and ruled it DEFECTIVE: ${why}. Write it so a correct implementation CAN pass: if its tests share module state, make each test load the module fresh after installing its own fakes.`,
     });
-    if (ok) await a.persistProbe?.(rel).catch(() => {});
     return ok;
   };
 }
