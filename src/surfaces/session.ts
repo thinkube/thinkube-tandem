@@ -79,6 +79,9 @@ export class TandemSession {
    *  A watcher reads the record on every load; the driver never does,
    *  because its own state is ahead of the file. */
   driving = false;
+  /** Between asking for a run in its own process and that run's record
+   *  saying it runs: the record on disk is still the previous run's. */
+  starting = false;
   /** The cut being looked back at, when it is not the newest: its report,
    *  its run and its pictures are read from what that cut left on file. */
   lookingAtCut?: string;
@@ -678,8 +681,28 @@ export class TandemSession {
     // record must not read as signed work that never ran, with a button
     // that would start it a second time.
     this.running = true;
+    this.starting = true;
+    try {
+      return await this.startElsewhere(cutId, fresh);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  /**
+   * What a run in another process is doing, read from its record — for a
+   * holder of this session that is told of nothing, such as the MCP server,
+   * whose session would otherwise show a run that ended as still in flight.
+   */
+  readRunFromStore(): void {
+    if (this.driving || this.starting) return;
+    const seen = readRun(this.deps.storeDir, () => this.deps.onChanged?.());
+    if (seen) Object.assign(this, { runState: seen.state, running: seen.running, runNote: seen.note });
+  }
+
+  private async startElsewhere(cutId: string, fresh: boolean): Promise<{ ok: boolean; reason?: string }> {
     this.changed("Starting the run in its own process…");
-    const started = await this.deps.runElsewhere({ fresh });
+    const started = await this.deps.runElsewhere!({ fresh });
     if (!started.ok) {
       this.running = false;
       this.runNote = `The build could not start: ${started.reason ?? "no reason given"}`;

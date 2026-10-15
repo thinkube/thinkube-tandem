@@ -87,3 +87,22 @@ test("a stop or an answer from a watching session goes through the record", asyn
   assert.equal(record.answers?.length, 1);
   assert.ok(record.stopRequestedAt);
 });
+
+/**
+ * A session nobody tells about the store — the MCP server holds one per
+ * space — reads the record again before it answers. A run that ended in
+ * its own process is then not in flight, and its signed work can be
+ * started again.
+ */
+test("a held session sees a run that ended in its own process as ended", async () => {
+  const { s, dir } = sessionWith(async () => ({ ok: true }));
+  const owner = { pid: process.pid, at: new Date().toISOString() };
+  saveRun(dir, { cutId: "cut-1", at: new Date().toISOString(), owner, state: "running" }, new RunState(() => {}));
+  s.load();
+  assert.equal(s.running, true);
+  saveRun(dir, { cutId: "cut-1", at: new Date().toISOString(), owner, state: "refused", note: "The build stopped: the product build fails" }, new RunState(() => {}));
+  assert.equal(s.running, true, "nothing has read the record yet");
+  s.readRunFromStore();
+  assert.equal(s.running, false);
+  assert.match(s.runNote ?? "", /product build fails/);
+});
