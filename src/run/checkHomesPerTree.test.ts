@@ -69,3 +69,39 @@ test("a declared part with no test of its own yet is still a home, in that part"
   assert.deepEqual(s[1].workUnits[1].footprint, ["frontend/src/views/Home_AC-1.test.js"]);
   assert.deepEqual(unreachableCheckHomes(s, repo, ["backend", "frontend"]).where, []);
 });
+
+/**
+ * A service whose code lives under app/ and whose every test lives in a
+ * top-level tests/ keeps its checks in tests/: the code's own tree holds no
+ * test, and a check beside the module is one the runner never collects.
+ */
+test("a module in a tree without tests takes the repository's one test directory of its language", () => {
+  const repo = ["app/__init__.py", "app/main.py", "tests/conftest.py", "tests/test_health.py", "README.md"];
+  const s = [
+    {
+      handle: "SL-1",
+      workUnits: [
+        { role: "code", footprint: ["app/main.py"] },
+        { role: "test", footprint: ["probes/svc__SL-1_AC-1.test.mjs", "probes/svc__SL-1_AC-2.test.mjs"] },
+      ],
+    },
+  ];
+  rehouseChecks(s, repo);
+  assert.deepEqual(s[0].workUnits[1].footprint, ["tests/main_AC-1_test.py", "tests/main_AC-2_test.py"]);
+  assert.deepEqual(unreachableCheckHomes(s, repo).where, [], "the checks are where the repository runs its tests");
+});
+
+test("a test directory of another language is not borrowed", () => {
+  const repo = ["src/view.vue", "web/main.py", "tests/view.test.js"];
+  const s = [
+    {
+      handle: "SL-1",
+      workUnits: [
+        { role: "code", footprint: ["web/main.py"] },
+        { role: "test", footprint: ["probes/svc__SL-1_AC-1.test.mjs"] },
+      ],
+    },
+  ];
+  rehouseChecks(s, repo);
+  assert.deepEqual(s[0].workUnits[1].footprint, ["web/main_AC-1_test.py"]);
+});

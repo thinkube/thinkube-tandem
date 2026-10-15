@@ -95,6 +95,23 @@ function idiomOfLanguage(subject: string): TestIdiom | undefined {
 }
 
 /**
+ * The repository's one test directory, when it serves the subject's tree.
+ *
+ * A Python service keeps its code under `app/` and every test under a
+ * top-level `tests/`: the code's tree holds no test, and a check minted
+ * beside the module by the language's habit lands where this repository's
+ * runner never looks. A directory that holds EVERY test of the repository,
+ * in the subject's own language, is where its tests go. A test directory
+ * of another language is still never borrowed.
+ */
+function sharedTestDirFor(files: readonly string[], subject: string): TestIdiom | undefined {
+  const repo = inferTestIdiom(files);
+  if (!repo?.dir) return undefined;
+  const ext = (f: string): string => /\.([^./]+)$/.exec(f)?.[1]?.toLowerCase() ?? "";
+  return ext(repo.suffix) === ext(subject) ? repo : undefined;
+}
+
+/**
  * The path a check is born at: beside the module it drives, named for the
  * criterion it proves, in the repository's own idiom.
  *
@@ -204,7 +221,11 @@ export function rehouseChecks(
     // The tree's own idiom; failing that, the idiom the subject's language
     // wears everywhere — never another tree's, which minted Python checks
     // beside a Vue view.
-    const idiom = inferTestIdiom(repoFiles, treeOf(subject)) ?? idiomOfLanguage(subject) ?? inferTestIdiom(repoFiles);
+    const idiom =
+      inferTestIdiom(repoFiles, treeOf(subject)) ??
+      sharedTestDirFor(repoFiles, subject) ??
+      idiomOfLanguage(subject) ??
+      inferTestIdiom(repoFiles);
     if (!idiom) continue;
     for (const u of units) {
       if ((u.role ?? "code") !== "test") continue;
