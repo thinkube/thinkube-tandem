@@ -1,0 +1,379 @@
+/*
+ * Copyright Alejandro Martínez Corriá and the Thinkube contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * Whether a repository is ready for work to be signed against it.
+ *
+ * A run refuses or misbehaves for things that are true of the repository
+ * before anything is signed: a setup command that does not hold on a clean
+ * copy, checks minted where the suite never runs them, a template that
+ * declares no deploy, a release tag the platform will not accept, secrets
+ * the manifest names and control does not hold, a deploy that does not go
+ * live. Each of those costs a signed run to discover after the fact. Asked
+ * here, it costs one check, and the person reads what to fix before the
+ * press that cannot be undone.
+ *
+ * Each item answers `ready`, and `say` tells a person what is wrong and
+ * what to do. The answer is kept per HEAD commit and the content of the
+ * three files it reads (`thinkube.yaml`, `manifest.yaml`,
+ * `.tandem/setup.json`), so asking twice about the same tree runs neither
+ * the setup nor a deploy again.
+ */
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { parse as parseYaml } from "yaml";
+import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
+import { controlReachedBy, type Http } from "../hostui/templateCore";
+import { isCodePath, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
+import { haltableExecs } from "./execs";
+import { factsOf } from "./facts";
+import type { Invoke } from "./makeLive";
+import { defaultExec, runnerEnv, type Exec } from "./oracle";
+import { missing } from "./proved";
+import { openTheDoor, type BoundedExec } from "./setup";
+import { downstreamOf } from "./survey";
+import { headOf, validationDeploy, type ReachControl } from "./validationDeploy";
+import { canJudgeOne, declaredPartCommands } from "./whatWeKnow";
+
+interface ReadinessItem {
+  name: string;
+  ready: boolean;
+  /** What is wrong and what to do, for a person; what was found, when ready. */
+  say: string;
+}
+
+export interface Readiness {
+  repoRoot: string;
+  /** The commit the answer is about. */
+  head: string;
+  /** When it was answered. */
+  at: string;
+  items: ReadinessItem[];
+}
+
+interface ReadinessArgs {
+  repoRoot: string;
+  /** git, and the door's own listing. */
+  exec?: Exec;
+  /** The door's commands: install, build, one test. */
+  boundedExec?: BoundedExec;
+  /** The declared deploy's commands. */
+  invoke?: Invoke;
+  /** Control's secrets, and the deployed health path. */
+  http?: Http;
+  control?: ReachControl;
+  wait?: (ms: number) => Promise<unknown>;
+  log?: (line: string) => void;
+  now?: () => string;
+}
+
+const answered = new Map<string, { key: string; result: Readiness }>();
+const asking = new Map<string, Promise<Readiness>>();
+
+/** The files whose content decides the answer, beside the HEAD commit. */
+const READ = ["thinkube.yaml", "manifest.yaml", path.join(".tandem", "setup.json")];
+
+function keyOf(root: string, head: string): string {
+  const h = crypto.createHash("sha256").update(head);
+  for (const f of READ) {
+    const at = path.join(root, f);
+    h.update(`\0${f}\0`).update(fs.existsSync(at) ? fs.readFileSync(at) : "(absent)");
+  }
+  return h.digest("hex");
+}
+
+/** The last answer for this repository, when one was given in this process. */
+export function lastReadiness(repoRoot: string): Readiness | undefined {
+  return answered.get(path.resolve(repoRoot))?.result;
+}
+
+/** Why work cannot be signed against these repositories, or nothing when
+ *  every item of every one is ready. */
+export function readinessRefusal(all: readonly Readiness[]): string | undefined {
+  const blocked = all.filter((r) => r.items.some((i) => !i.ready));
+  if (!blocked.length) return undefined;
+  return (
+    "not ready to sign — " +
+    blocked
+      .map(
+        (r) =>
+          (all.length > 1 ? `${r.repoRoot}: ` : "") +
+          r.items
+            .filter((i) => !i.ready)
+            .map((i) => `${i.name}: ${i.say}`)
+            .join(" · "),
+      )
+      .join(" · ")
+  );
+}
+
+/** The readiness of one repository, from the cache when its HEAD and its
+ *  declarations are what they were when it was last answered. */
+export async function checkReadiness(a: ReadinessArgs): Promise<Readiness> {
+  const root = path.resolve(a.repoRoot);
+  const exec = a.exec ?? defaultExec;
+  const head = await headOf(root, exec);
+  const key = keyOf(root, head);
+  const held = answered.get(root);
+  if (held?.key === key) return held.result;
+  const flying = asking.get(`${root}\0${key}`);
+  if (flying) return flying;
+  const asked = answer({ ...a, repoRoot: root, exec }, head).then((result) => {
+    // Keyed by what the files say AFTER the answer: a deploy that went live
+    // records its commit in setup.json, and that record must not make the
+    // next question miss.
+    answered.set(root, { key: keyOf(root, head), result });
+    return result;
+  });
+  asking.set(`${root}\0${key}`, asked);
+  try {
+    return await asked;
+  } finally {
+    asking.delete(`${root}\0${key}`);
+  }
+}
+
+async function answer(a: ReadinessArgs & { exec: Exec }, head: string): Promise<Readiness> {
+  const root = a.repoRoot;
+  const template = downstreamOf(root) === "template";
+  const items: ReadinessItem[] = [];
+  items.push(await attempt("setup", () => setupHolds(a, head)));
+  items.push(await attempt("check homes", () => checksLandWhereTestsRun(root, a.exec)));
+  if (template) {
+    items.push(await attempt("deploy declared", async () => deployDeclared(root)));
+    items.push(await attempt("release", () => releaseTagged(root, a.exec)));
+  }
+  if (fs.existsSync(path.join(root, "manifest.yaml")))
+    items.push(await attempt("secrets", () => secretsHeld(root, a)));
+  if (template) {
+    const waitsOn = items.filter((i) => !i.ready && ["deploy declared", "release", "secrets"].includes(i.name));
+    items.push(
+      waitsOn.length
+        ? {
+            name: "deploy works",
+            ready: false,
+            say: `not tried while ${waitsOn.map((i) => i.name).join(", ")} ${waitsOn.length === 1 ? "is" : "are"} not ready — the platform would refuse the deploy for that alone`,
+          }
+        : await attempt("deploy works", () => deployWorks(a, head)),
+    );
+  }
+  return { repoRoot: root, head, at: (a.now ?? (() => new Date().toISOString()))(), items };
+}
+
+/** An item whose own check failed to run is not ready, in the failure's words. */
+async function attempt(name: string, check: () => Promise<Omit<ReadinessItem, "name">>): Promise<ReadinessItem> {
+  try {
+    return { name, ...(await check()) };
+  } catch (e) {
+    return { name, ready: false, say: `could not be checked: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+/**
+ * The repository's setup commands, run by the door on an untouched copy of
+ * HEAD, exactly as a run's first minute runs them — with what the
+ * repository declares and what an earlier run proved about it.
+ */
+async function setupHolds(a: ReadinessArgs & { exec: Exec }, head: string): Promise<Omit<ReadinessItem, "name">> {
+  const root = a.repoRoot;
+  const short = head.slice(0, 8);
+  const copy = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ready-"));
+  const added = await a.exec("git", ["-C", root, "worktree", "add", "--detach", copy, head], root);
+  if (added.code !== 0) {
+    fs.rmSync(copy, { recursive: true, force: true });
+    throw new Error(`a clean copy of ${short} could not be made: ${added.out.trim().slice(0, 300)}`);
+  }
+  let found: Omit<ReadinessItem, "name">;
+  try {
+    const known = factsOf(root);
+    const parts = declaredPartCommands(root);
+    const told = {
+      ...(known?.provision ? { provision: known.provision } : {}),
+      ...(known?.prepare ? { prepare: known.prepare } : {}),
+      ...(known?.build ? { build: known.build } : {}),
+      ...(known?.runOne ? { runOne: known.runOne } : {}),
+      ...(known?.suite ? { suite: known.suite } : {}),
+      // Parts that say how one of their tests runs need nothing wider, as
+      // in a run.
+      ...(Object.keys(parts).length ? { parts, runOne: "" } : {}),
+    };
+    const ready = await openTheDoor({
+      worktree: copy,
+      repoRoot: root,
+      tep: "readiness",
+      ...(known ? { known } : {}),
+      told,
+      exec: a.exec,
+      boundedExec: a.boundedExec ?? haltableExecs(() => false, runnerEnv()).boundedExec,
+      log: (l) => a.log?.(l),
+      defect: () => {
+        throw new Error("the readiness check never mends a tree, so it records no repair");
+      },
+      resumed: false,
+      halted: () => false,
+    });
+    found = ready.refusal
+      ? { ready: false, say: `on an untouched copy of ${short}, ${ready.refusal}` }
+      : !canJudgeOne(ready, told)
+        ? { ready: false, say: missing("runOne") }
+        : {
+            ready: true,
+            say:
+              `the setup holds on an untouched copy of ${short}` +
+              (ready.build ? `, and the product builds` : "") +
+              (ready.runOne ? `, and one test runs with: ${ready.runOne}` : ""),
+          };
+  } finally {
+    const removed = await a.exec("git", ["-C", root, "worktree", "remove", "--force", copy], root);
+    if (removed.code !== 0) a.log?.(`the trial copy at ${copy} could not be removed: ${removed.out.trim().slice(0, 300)}`);
+    if (fs.existsSync(copy) && !fs.readdirSync(copy).length) fs.rmdirSync(copy);
+  }
+  return found;
+}
+
+/** The file a check would be minted beside: code in the language most of
+ *  the repository's code is written in, nearest the root. */
+function representative(files: readonly string[]): string | undefined {
+  const code = files.filter(isCodePath);
+  const ext = (f: string): string => path.extname(f).toLowerCase();
+  const counted = new Map<string, number>();
+  for (const f of code) counted.set(ext(f), (counted.get(ext(f)) ?? 0) + 1);
+  const most = [...counted.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0]?.[0];
+  return code
+    .filter((f) => ext(f) === most)
+    .sort((x, y) => x.split("/").length - y.split("/").length || x.localeCompare(y))[0];
+}
+
+/**
+ * Where a check minted for this repository's code would land, and whether
+ * the repository's suite runs tests there — the same placement and the
+ * same refusal a run makes before dispatch.
+ */
+async function checksLandWhereTestsRun(root: string, exec: Exec): Promise<Omit<ReadinessItem, "name">> {
+  const listed = await exec("git", ["-C", root, "ls-files"], root);
+  if (listed.code !== 0) throw new Error(`git could not list the repository's files: ${listed.out.trim().slice(0, 300)}`);
+  const repoFiles = listed.out.split("\n").map((l) => l.trim()).filter(Boolean);
+  const declared = thinkubeDeclaration(root);
+  const partRoots = declared && "declared" in declared ? partsDeclared(declared.declared).map((p) => p.root) : [];
+  const subject = representative(repoFiles);
+  if (!subject) return { ready: true, say: "the repository holds no code file, so no check is minted beside code" };
+  const slices = [
+    {
+      handle: "readiness",
+      workUnits: [
+        { role: "code", footprint: [subject] },
+        { role: "test", footprint: ["probes/readiness__SL-1_AC-1.test.mjs"] },
+      ],
+    },
+  ];
+  rehouseChecks(slices, repoFiles, new Set(), partRoots);
+  const minted = slices[0].workUnits[1].footprint[0];
+  const stranded = unreachableCheckHomes(slices, repoFiles, partRoots);
+  if (stranded.where.length)
+    return {
+      ready: false,
+      say:
+        `a check for ${subject} would be minted at ${minted}, where this repository runs no test of its own — ` +
+        `its tests live under ${stranded.roots.join(", ")}. Keep a test of the repository's own in the tree that ` +
+        `holds its code, or declare that tree as a part in thinkube.yaml.`,
+    };
+  return {
+    ready: true,
+    say: stranded.roots.length
+      ? `a check for ${subject} is minted at ${minted}, where the repository runs its tests (${stranded.roots.join(", ")})`
+      : `the repository keeps no test yet; a check for ${subject} is minted at ${minted}, as its first`,
+  };
+}
+
+/** A template is proved by deploying it, so it must say how and where. */
+function deployDeclared(root: string): Omit<ReadinessItem, "name"> {
+  const read = thinkubeDeclaration(root);
+  if (!read) return { ready: false, say: "there is no thinkube.yaml — a template declares itself there" };
+  if ("unreadable" in read) return { ready: false, say: read.unreadable };
+  const d = read.declared.deploy;
+  const lacks = [...(d?.run.length ? [] : ["`run` (the commands that deploy it)"]), ...(d?.at ? [] : ["`at` (the address it answers at)"])];
+  return lacks.length
+    ? {
+        ready: false,
+        say: `thinkube.yaml spec.deploy does not declare ${lacks.join(" or ")} — declare both, so the work can be deployed and looked at after the merge`,
+      }
+    : { ready: true, say: `deployed by ${d!.run.join(" && ")}, seen at ${d!.at}` };
+}
+
+/** The platform deploys a template's released version, so the newest
+ *  release tag on origin must be the version the tree says it is. */
+async function releaseTagged(root: string, exec: Exec): Promise<Omit<ReadinessItem, "name">> {
+  const read = thinkubeDeclaration(root);
+  const version = read && "declared" in read ? read.declared.version : undefined;
+  if (!version) return { ready: false, say: "thinkube.yaml declares no metadata.version — declare the release this tree is" };
+  const r = await exec("git", ["-C", root, "ls-remote", "--tags", "--refs", "origin"], root);
+  if (r.code !== 0) throw new Error(`git could not read origin's tags: ${r.out.trim().slice(0, 300)}`);
+  const tags = [...r.out.matchAll(/refs\/tags\/v(\d+)\.(\d+)\.(\d+)$/gm)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
+  if (!tags.length)
+    return { ready: false, say: `origin has no vMAJOR.MINOR.PATCH tag — tag the release v${version} and push the tag` };
+  const [M, m, p] = tags.sort((x, y) => y[0] - x[0] || y[1] - x[1] || y[2] - x[2])[0];
+  const newest = `v${M}.${m}.${p}`;
+  return newest === `v${version}`
+    ? { ready: true, say: `origin's newest release tag is ${newest}, the version thinkube.yaml declares` }
+    : {
+        ready: false,
+        say: `origin's newest release tag is ${newest}, but thinkube.yaml metadata.version is ${version} — make them name the same release`,
+      };
+}
+
+/** Every secret the manifest declares, held by Thinkube Control. */
+async function secretsHeld(root: string, a: ReadinessArgs): Promise<Omit<ReadinessItem, "name">> {
+  const manifest = parseYaml(fs.readFileSync(path.join(root, "manifest.yaml"), "utf8")) as { secrets?: unknown } | null;
+  const declared = (Array.isArray(manifest?.secrets) ? manifest!.secrets : [])
+    .map((s: unknown) => (typeof s === "string" ? s : (s as { name?: unknown } | null)?.name))
+    .filter((n): n is string => typeof n === "string" && n.trim().length > 0);
+  if (!declared.length) return { ready: true, say: "manifest.yaml declares no secrets" };
+  const reach = (a.control ?? controlReachedBy)();
+  if ("reason" in reach)
+    return { ready: false, say: `thinkube-control cannot be asked whether ${declared.join(", ")} exist: ${reach.reason}` };
+  const res = await (a.http ?? fetch)(`${reach.base}/api/v1/secrets/`, {
+    headers: { Authorization: `Bearer ${reach.token}` },
+  });
+  if (!res.ok) return { ready: false, say: `thinkube-control answered ${res.status} when asked for its secrets` };
+  const body = (await res.json()) as unknown;
+  if (!Array.isArray(body)) return { ready: false, say: "thinkube-control's answer for its secrets is not a list" };
+  const held = new Set(body.map((s: unknown) => (s as { name?: unknown } | null)?.name).filter((n) => typeof n === "string"));
+  const lacking = declared.filter((n) => !held.has(n));
+  return lacking.length
+    ? {
+        ready: false,
+        say: `thinkube-control holds no secret named ${lacking.join(", ")}, which manifest.yaml declares — create ${lacking.length === 1 ? "it" : "them"} in Thinkube Control's Secrets`,
+      }
+    : { ready: true, say: `thinkube-control holds ${declared.join(", ")}` };
+}
+
+/** The declared deploy, run once for this commit, and seen answering. */
+async function deployWorks(a: ReadinessArgs, head: string): Promise<Omit<ReadinessItem, "name">> {
+  const v = await validationDeploy({
+    repoRoot: a.repoRoot,
+    head,
+    ...(a.invoke ? { invoke: a.invoke } : {}),
+    ...(a.http ? { http: a.http } : {}),
+    ...(a.control ? { control: a.control } : {}),
+    ...(a.wait ? { wait: a.wait } : {}),
+    ...(a.log ? { log: a.log } : {}),
+  });
+  if (v.ok)
+    return {
+      ready: true,
+      say: `${v.deployed ? "deployed" : "already deployed"} ${head.slice(0, 8)}, and ${v.url} answered`,
+    };
+  return {
+    ready: false,
+    say:
+      v.stage === "declaration"
+        ? `${v.why} — declare it in thinkube.yaml`
+        : v.stage === "deploy"
+          ? `the declared deploy failed — fix it and ask again:\n${v.why}`
+          : `the deploy ran, but ${v.why}`,
+  };
+}

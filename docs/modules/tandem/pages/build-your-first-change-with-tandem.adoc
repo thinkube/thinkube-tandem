@@ -143,6 +143,8 @@ At the bottom of the work page, *Pressing Build these N* says what the press doe
 
 image::tandem-07-sign.png[The work page of a thing with one sentence: two promises, their lines, and under Pressing Build these 2 what the button does]
 
+Before it signs, the press checks that the repository is ready. Its setup must hold on a clean copy of the last commit, and a check must land where the repository's own tests run. For a template, more is checked. It must declare how it deploys (`spec.deploy` with `run` and `at`). Its newest release tag on `origin` must name the version in `thinkube.yaml`. The secrets its `manifest.yaml` names must exist in Thinkube Control. Its deploy must go live and answer at its health path. When something is not ready, nothing is signed, and the refusal under the button says what to fix. The same commit is not checked or deployed twice.
+
 Press *Build these N*. The strip says *building — <the thing's name>*, the run page opens, and *Stop* is the only other button.
 
 === Step 8. Watch it build
@@ -197,6 +199,14 @@ image::tandem-14-everything-built.png[The space with everything built: three acc
 | *Build these N* says documentation is needed
 | Every thing carries a documentation promise, and neither its page nor *Not needed* is there
 | Press *Not needed* on the documentation promise with your reason, or let the page be built.
+
+| *Build these N* says *not ready to sign*
+| The repository fails a readiness item: its setup, where checks land, or, for a template, its deploy, release tag or secrets
+| Fix what each named item says, commit, and press again.
+
+| A template's delivery says its promises are *pending* after Accept
+| Those promises are settled by deploying the template, and that deploy did not run or did not answer
+| Fix the deploy, then press *Ask the platform again*. Its deploy runs, and each promise turns green or red.
 
 | A card says *needs you* and nothing moves
 | A worker stopped on a question only you can answer, about what you want

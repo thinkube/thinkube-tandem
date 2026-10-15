@@ -30,16 +30,21 @@
 import { execFile } from "node:child_process";
 import type { ThinkubeDeploy } from "../core/thinkubeYaml";
 
-/** How a command is run. Injectable so a drive never spawns a shell. */
+/** How a command is run. Injectable so a drive never spawns a shell.
+ *  `env` is laid over the process's own environment for that command. */
 export type Invoke = (
   command: string,
   cwd: string,
+  env?: Record<string, string>,
 ) => Promise<{ code: number | null; out: string }>;
 
-const spawn: Invoke = (command, cwd) =>
+const spawn: Invoke = (command, cwd, env) =>
   new Promise((resolve) =>
-    execFile("bash", ["-lc", command], { cwd, timeout: 900_000, maxBuffer: 8 << 20 }, (err, out, errOut) =>
-      resolve({ code: err ? ((err as { code?: number }).code ?? 1) : 0, out: `${out}${errOut}` }),
+    execFile(
+      "bash",
+      ["-lc", command],
+      { cwd, timeout: 900_000, maxBuffer: 8 << 20, ...(env ? { env: { ...process.env, ...env } } : {}) },
+      (err, out, errOut) => resolve({ code: err ? ((err as { code?: number }).code ?? 1) : 0, out: `${out}${errOut}` }),
     ),
   );
 
@@ -66,6 +71,10 @@ export async function makeLive(a: {
   repoRoot: string;
   deploy: ThinkubeDeploy;
   invoke?: Invoke;
+  /** What every declared command is given in its environment, such as
+   *  how to reach thinkube-control. The caller decides; nothing here
+   *  reads a credential. */
+  env?: Record<string, string>;
   log?: (line: string) => void;
 }): Promise<WentLive> {
   const at = a.deploy.at ? { at: a.deploy.at } : {};
@@ -75,7 +84,7 @@ export async function makeLive(a: {
   const run = a.invoke ?? spawn;
   for (const command of a.deploy.run) {
     a.log?.(`making it live: ${command}`);
-    const r = await run(command, where);
+    const r = await run(command, where, a.env);
     if (r.code !== 0)
       return {
         live: false,

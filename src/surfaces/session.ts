@@ -25,7 +25,7 @@ import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToke
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
-import { acceptDeliveryGesture, catchUpOnMergedWork, executeRun, exemptDocsGesture, GestureResult, rejectDeliveryGesture, signCutGesture, unrunCutOf } from "./runGate";
+import { acceptDeliveryGesture, catchUpOnMergedWork, executeRun, exemptDocsGesture, GestureResult, rejectDeliveryGesture, settleMergedTemplates, signCutGesture, unrunCutOf } from "./runGate";
 import { thinkAgainFlow } from "./thinkAgain";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
@@ -854,8 +854,11 @@ export class TandemSession {
    *  "Could not judge" is not an answer about the work. Neither is a
    *  refusal that has since been fixed — here or by anyone — and a card
    *  frozen at the moment a build failed goes on offering to undo work
-   *  whose only fault is already gone. Both are re-read on request. */
-  askPlatformAgain(): Promise<void> {
+   *  whose only fault is already gone. Both are re-read on request.
+   *
+   *  A template has no pipeline to read: its answer is a validation
+   *  deployment, run here for every accepted delivery still waiting on one. */
+  async askPlatformAgain(): Promise<void> {
     this.space = {
       ...this.space,
       deliveries: this.space.deliveries.map((d) =>
@@ -863,7 +866,8 @@ export class TandemSession {
       ),
     };
     this.persist();
-    return catchUpOnMergedWork(this);
+    await catchUpOnMergedWork(this);
+    await settleMergedTemplates(this);
   }
 
   /** A delivered promise, or one criterion of it, does not hold — kept in

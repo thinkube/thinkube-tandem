@@ -25,6 +25,7 @@ import { execFileSync } from "node:child_process";
 import { allCards } from "../core/cards";
 import { catalogOf, controlReachedBy, createAppFromTemplate } from "../hostui/templateCore";
 import { requestStop } from "../run/record";
+import { lastReadiness, type Readiness } from "../run/readiness";
 
 export interface ToolCall {
   session: TandemSession;
@@ -69,6 +70,19 @@ function gestureReport(c: ToolCall, r: { ok: boolean; reason?: string }): string
   return r.ok ? spaceReport(c) : `refused: ${r.reason ?? "no reason given"}`;
 }
 
+/** The repository the space builds into, where its readiness is asked. */
+function gitRootOf(c: ToolCall): string {
+  return c.session.deps.scope?.gitRoot ?? c.session.deps.round.repoRoot;
+}
+
+/** Each item of a readiness answer, on a line of its own. */
+function readinessLines(r: Readiness): string[] {
+  return [
+    `readiness of ${r.repoRoot} at ${r.head.slice(0, 8)} (${r.at}): ${r.items.every((i) => i.ready) ? "ready" : "NOT ready"}`,
+    ...r.items.map((i) => `  ${i.ready ? "ready    " : "NOT ready"} ${i.name} — ${i.say}`),
+  ];
+}
+
 /** The space as a person would want it summarised: what was asked, what
  *  the machine made of it, and where it stands. */
 function spaceReport(c: ToolCall): string {
@@ -105,6 +119,8 @@ function spaceReport(c: ToolCall): string {
       lines.push(`approval: ${a.approved ? "valid" : `refused — ${a.reason}`}`);
     }
   }
+  const ready = lastReadiness(gitRootOf(c));
+  if (ready) lines.push(...readinessLines(ready));
   lines.push("");
   lines.push("asks:");
   for (const a of s.space.asks) lines.push(`  · ${a.text}`);
@@ -134,6 +150,9 @@ function deliveryReport(c: ToolCall): string {
   return [
     `delivery for ${d.cutId}${d.withheld ? ` — WITHHELD: ${d.withheld}` : ""}`,
     d.acceptedAt ? `accepted ${d.acceptedAt}` : "awaiting your accept",
+    ...(d.afterMerge
+      ? [`after the merge: ${d.afterMerge.outcome}, said by ${d.afterMerge.said}${d.afterMerge.detail ? ` — ${d.afterMerge.detail}` : ""}`]
+      : []),
     `proofs (${proofs.length}):`,
     ...proofs,
     ...(d.findings?.length
@@ -333,6 +352,34 @@ export function toolTable(): ToolDef[] {
         "The thinking space: its asks, how many promises were derived, what phase it is in, open questions, and whether a signed cut is waiting.",
       inputSchema: IN_SPACE,
       run: spaceReport,
+    },
+    {
+      name: "check_readiness",
+      action: "check-readiness",
+      description:
+        "Whether the space's repository is ready for work to be signed against it: its setup holds on a clean copy, " +
+        "checks land where its suite runs tests, and for a template its deploy is declared, its release tag matches, " +
+        "its secrets exist in Thinkube Control and its deploy goes live. Runs the setup and, for a template, the " +
+        "declared deploy — minutes, not seconds; the same tree asked twice is answered from the first answer. Build " +
+        "refuses while any item is not ready.",
+      inputSchema: IN_SPACE,
+      run: async (c) => {
+        if (!c.session.deps.readiness) return "this session has no readiness check";
+        return (await c.session.deps.readiness()).flatMap(readinessLines).join("\n");
+      },
+    },
+    {
+      name: "ask_platform_again",
+      action: "ask-platform-again",
+      description:
+        "Ask again what became of accepted work after its merge: an app's pipeline is read again, and a template's " +
+        "promises settled after the merge are settled by a validation deployment — its declared deploy is run and " +
+        "its health path asked. An answer that did not hold is asked again too. Reports the latest delivery.",
+      inputSchema: IN_SPACE,
+      run: async (c) => {
+        await c.session.askPlatformAgain();
+        return deliveryReport(c);
+      },
     },
     {
       name: "read_run",

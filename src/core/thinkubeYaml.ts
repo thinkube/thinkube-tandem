@@ -32,6 +32,9 @@ interface ThinkubeContainer {
   /** The CI test hook: run `command` in `image`, before the build; `one`
    *  runs a single test file, `<file>` relative to the build directory. */
   test?: ThinkubeTest;
+  /** The path the running container answers a health probe at, such as
+   *  "/health" — where a deploy is seen to have gone live. */
+  health?: string;
 }
 
 /** A path of the deployed address, and the container that answers it. */
@@ -126,6 +129,9 @@ export interface ThinkubeDeclaration {
   verify?: ThinkubeVerify;
   /** Where documentation lands, as declared; absent means the default. */
   docsRoot?: string;
+  /** `metadata.version`: the release this tree says it is, which its
+   *  newest `v` tag must name. */
+  version?: string;
 }
 
 /** A path as the repository writes it, normalised: "./backend" is "backend", "." stays. */
@@ -179,6 +185,7 @@ export function thinkubeDeclaration(
   }
   try {
     const doc = parseYaml(raw) as {
+      metadata?: { version?: unknown };
       spec?: {
         deployment?: { type?: string };
         parts?: { name?: string; root?: string; test?: { enabled?: boolean; command?: string; image?: string; one?: string } }[];
@@ -189,6 +196,7 @@ export function thinkubeDeclaration(
           name?: string;
           build?: string;
           test?: { enabled?: boolean; command?: string; image?: string; one?: string };
+          health?: unknown;
         }[];
         routes?: { path?: string; to?: string }[];
       };
@@ -197,7 +205,8 @@ export function thinkubeDeclaration(
       .filter((c) => typeof c?.name === "string" && typeof c?.build === "string")
       .map((c) => {
         const test = testOf(c.test);
-        return { name: c.name as string, build: c.build as string, ...(test ? { test } : {}) };
+        const health = typeof c.health === "string" && c.health.trim() ? c.health.trim() : undefined;
+        return { name: c.name as string, build: c.build as string, ...(test ? { test } : {}), ...(health ? { health } : {}) };
       });
     const routes: ThinkubeRoute[] = (doc?.spec?.routes ?? [])
       .filter((r) => typeof r?.path === "string" && typeof r?.to === "string")
@@ -219,6 +228,13 @@ export function thinkubeDeclaration(
           ...(typeof d.at === "string" && d.at.trim() ? { at: d.at.trim() } : {}),
         }
       : undefined;
+    const declaredVersion = doc?.metadata?.version;
+    const version =
+      typeof declaredVersion === "string" && declaredVersion.trim()
+        ? declaredVersion.trim()
+        : typeof declaredVersion === "number"
+          ? String(declaredVersion)
+          : undefined;
     const v = doc?.spec?.verify;
     const verify: ThinkubeVerify | undefined = v
       ? {
@@ -237,6 +253,7 @@ export function thinkubeDeclaration(
         ...(deploy ? { deploy } : {}),
         ...(verify ? { verify } : {}),
         ...(docsRoot ? { docsRoot } : {}),
+        ...(version ? { version } : {}),
       },
     };
   } catch (e) {

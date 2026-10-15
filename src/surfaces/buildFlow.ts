@@ -21,6 +21,7 @@ import { promisesOfSpec } from "../derive/specs";
 import { Space, Spec } from "../core/schema";
 import { builtIds } from "../core/contradiction";
 import type { TandemSession } from "./session";
+import { readinessRefusal } from "../run/readiness";
 
 /** What a component costs to think about, and what it will make true. */
 export interface WorkCost {
@@ -131,6 +132,20 @@ export async function buildFlow(
   const signed = builtIds(s.space);
   if (ids.every((id) => signed.has(id)))
     return { ok: false, reason: `"${spec.name}" is already built` };
+
+  // What a run would refuse or trip over for the repository's own sake —
+  // its setup, where checks land, its deploy, its release, its secrets —
+  // is asked before the signature, while a person can still fix it.
+  if (!s.deps.readiness)
+    return { ok: false, reason: "this session has no readiness check, so nothing can be signed from it" };
+  let ready;
+  try {
+    ready = await s.deps.readiness();
+  } catch (e) {
+    return { ok: false, reason: `the readiness check could not run: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const notReady = readinessRefusal(ready);
+  if (notReady) return { ok: false, reason: notReady };
 
   // The press is the moment of consent: every assumption nobody objected
   // to becomes a decision on the record at that instant, and from then on

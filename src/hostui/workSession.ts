@@ -22,6 +22,7 @@ import {
   writeContextScope,
 } from "../core/workProjects";
 import { vs } from "../core/vscodeHost";
+import { checkReadiness, type Readiness } from "../run/readiness";
 
 /** The multi-select over the PRODUCT's repositories (the human's boundary
  *  correction: never "whatever is open in the workspace"). Returns the
@@ -116,6 +117,7 @@ export async function ensureWorkSession(args: {
     await editContextScope(args.storeRoot, wp, slug, args.openRepos());
   const config = vs().workspace.getConfiguration("thinkubeTandem");
   const { TandemSession } = await import("../surfaces/session");
+  const scopes = scopesReader(args.storeRoot, wp, slug, args.openRepos);
   const s = new TandemSession({
     // Rounds get a neutral working directory; the checked repositories
     // arrive as member scopes and every touchpoint names its repository.
@@ -130,7 +132,7 @@ export async function ensureWorkSession(args: {
     now: () => new Date().toISOString(),
     author,
     scope: { gitRoot: args.storeRoot, prefix: "", projectId: wp.id, label: `${wp.product} / ${wp.name}` },
-    scopes: scopesReader(args.storeRoot, wp, slug, args.openRepos),
+    scopes,
     resolveScope: async (scopeId) => {
       const p = args.openRepos().find((x) => x.card.id === scopeId);
       if (!p) return undefined;
@@ -149,6 +151,17 @@ export async function ensureWorkSession(args: {
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
     anchorless: true,
     onChanged: (message) => args.onChanged(key, message),
+    // Every repository checked for this space, one after another: each may
+    // install, build and deploy, and two at once compete for one machine.
+    readiness: async () => {
+      const all: Readiness[] = [];
+      for (const sc of scopes()) {
+        const p = args.openRepos().find((x) => x.card.id === sc.id);
+        if (!p) throw new Error(`${sc.label ?? sc.id} is checked for this space but is not open here`);
+        all.push(await checkReadiness({ repoRoot: p.gitRoot, log: (l) => args.onChanged(key, l) }));
+      }
+      return all;
+    },
   });
   args.sessions.set(key, s);
   return s;

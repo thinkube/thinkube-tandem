@@ -29,13 +29,15 @@ import { execFile } from "node:child_process";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { downstreamOf } from "../run/survey";
-import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
+import { settleTemplateAfterAccept, validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
 import { asFindings, exercised, lookAfterDeploy } from "../run/lookRound";
 import { draftWithFindings } from "../run/feedback";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { makeLive } from "../run/makeLive";
 import type { Delivery } from "../core/schema";
 import { factsOf } from "../run/facts";
+import { defaultExec } from "../run/oracle";
+import { controlEnvOf } from "../run/validationDeploy";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
  *  cases are separate so a caller reading `reason` after `ok` is false gets
@@ -121,6 +123,43 @@ function worldRefused(space: TandemSession["space"], d: Delivery): TandemSession
   );
   if (!made.length) return space;
   return { ...space, contradictions: [...(space.contradictions ?? []), ...made] };
+}
+
+/**
+ * A template's accepted work whose promises settled after the merge have
+ * no answer yet, settled now: its declared deploy is run and its health
+ * asked, as at Accept. Asked for by a person — a deploy is never started
+ * because a window opened.
+ */
+export async function settleMergedTemplates(s: TandemSession): Promise<void> {
+  const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+  if (downstreamOf(gitRoot) !== "template") return;
+  const waiting = s.space.deliveries.filter(
+    (d) =>
+      d.acceptedAt &&
+      !d.rejectedAt &&
+      !d.afterMerge &&
+      d.proofs.some((p) => p.settledBy && (p.verdict === "pending" || p.verdict === "red")),
+  );
+  for (const d of waiting) await settleTemplate(s, gitRoot, d);
+}
+
+/** One template delivery settled, persisted, and — when it went live —
+ *  looked at. */
+async function settleTemplate(s: TandemSession, gitRoot: string, delivery: Delivery): Promise<void> {
+  const went = await settleTemplateAfterAccept({
+    repoRoot: gitRoot,
+    delivery,
+    exec: defaultExec,
+    update: (d, note) => {
+      s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === d.id ? d : x)) };
+      s.persist();
+      s.changed(note);
+    },
+    log: (l) => s.changed(l),
+  });
+  if (went.live && went.at)
+    await lookAndFile(s, went.at, s.space.deliveries.find((x) => x.id === delivery.id));
 }
 
 export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
@@ -222,14 +261,19 @@ async function lookAndFile(s: TandemSession, url: string, delivery?: Delivery): 
  * Never awaited by the accept, which returns immediately; everything it
  * learns arrives through the space.
  */
-async function afterMerge(s: TandemSession, gitRoot: string): Promise<void> {
+async function afterMerge(s: TandemSession, gitRoot: string, delivery: Delivery): Promise<void> {
+  // A template is proved by deploying it, so its deploy is also the
+  // settlement of every promise answered after the merge.
+  if (downstreamOf(gitRoot) === "template") return settleTemplate(s, gitRoot, delivery);
   const read = thinkubeDeclaration(gitRoot);
   const deploy = read && "declared" in read ? read.declared.deploy : undefined;
   if (!deploy) return;
 
+  const env = controlEnvOf();
   const went = await makeLive({
     repoRoot: gitRoot,
     deploy,
+    ...(env ? { env } : {}),
     log: (l) => s.changed(l),
   });
   if (!went.live) {
@@ -700,7 +744,7 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     // a playbook run from the core repo, a call into control, a script
     // beside the code. A repository that declares nothing is deployed by the
     // merge, or by hand as it always was.
-    void afterMerge(s, gitRoot);
+    void afterMerge(s, gitRoot, r.delivery);
     // A playbook component proves itself on the live cluster, and Tandem
     // can run that itself — the one downstream it executes rather than
     // watches. Started, never awaited, like the pipeline watch.

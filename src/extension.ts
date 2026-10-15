@@ -13,6 +13,7 @@ import { catchUpOnMergedWork } from "./surfaces/runGate";
 import * as vscode from "vscode";
 import * as path from "node:path";
 import { startRunElsewhere } from "./run/spawnDriver";
+import { checkReadiness } from "./run/readiness";
 import { harvestOwnRepairs } from "./engine/selfDefects";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
@@ -209,6 +210,9 @@ async function ensureSession(
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     onChanged: (message) => pushActive(context, sessionKey, message),
+    readiness: async () => [
+      await checkReadiness({ repoRoot: bound.gitRoot, log: (l) => pushActive(context, sessionKey, l) }),
+    ],
     // A run is a process of its own, so reloading this window does not end
     // it; the session follows the record the driver writes.
     runElsewhere: async ({ fresh }) =>

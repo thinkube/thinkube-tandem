@@ -30,6 +30,11 @@ import { checkOrdinalOf } from "../core/testShape";
 /** Files a check can sit beside and import — source, in any language here. */
 const CODE = /\.(m|c)?[jt]sx?$|\.(vue|svelte)$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|lua)$/i;
 
+/** Whether a check could be minted beside this file: source, not a test. */
+export function isCodePath(f: string): boolean {
+  return CODE.test(f) && !isTestPath(f) && !isProbePath(f);
+}
+
 interface TestIdiom {
   /** The suffix this repository's tests wear: `.test.ts`, `_test.go`. */
   suffix: string;

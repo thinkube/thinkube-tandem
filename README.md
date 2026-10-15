@@ -67,10 +67,12 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `enable_repo` | Enables a repository that exists on disk, filed under a product the store knows. |
 | `list_spaces` | Every enabled project and the thinking spaces under each. |
 | `new_space` | Makes a thinking space in an enabled repository, and returns the name the other tools use for it. Spaces of a work project (work across several repositories) are not reachable through the server. |
-| `read_space` | A space's asks, how many promises were derived, its phase, open questions, and whether a signed cut is waiting. |
+| `read_space` | A space's asks, how many promises were derived, its phase, open questions, whether a signed cut is waiting, and the last readiness answer. |
 | `read_run` | The current or last run: every unit and its state, and the run's note. |
 | `look_at` | Opens a deployed address and reports what a person would notice: a blank page, nothing to press, a page with no height, errors the page threw. Findings only. |
 | `read_delivery` | The latest delivery: its proofs, its findings, and whether it was withheld. |
+| `check_readiness` | Whether the repository is ready for work to be signed against it: its setup holds on a clean copy of HEAD, checks land where its suite runs tests, and, for a template, its deploy is declared, its newest release tag matches `metadata.version`, its manifest's secrets exist in Thinkube Control, and its deploy goes live. Build refuses while any item is not ready. |
+| `ask_platform_again` | Asks again what became of accepted work after its merge. For a template, its declared deploy is run and its health path asked, which settles the promises answered after the merge. |
 | `read_log` | The tail of a step's log, or of the run's own log when no step is given. |
 | `save_draft` | Puts text in the capture box, one ask per line. It only drafts; turning drafts into asks is the person's act. |
 | `read_draft` | Reads the drafted lines (Read), so they can be kept. Reading decides nothing. |

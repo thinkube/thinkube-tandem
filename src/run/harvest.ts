@@ -26,7 +26,10 @@ import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Delivery, Proof } from "../core/schema";
-import { controlReachedBy } from "../hostui/templateCore";
+import { controlReachedBy, type Http as ControlHttp } from "../hostui/templateCore";
+import type { Invoke } from "./makeLive";
+import type { Exec } from "./oracle";
+import { headOf, validationDeploy, type ReachControl } from "./validationDeploy";
 
 /** The control API's base URL for a gitops app, from the repository's own
  *  remote: `git.<domain>` names the platform, `control.<domain>` runs the
@@ -461,4 +464,87 @@ function defaultFindPlaybook(repoRoot: string, dir: string): string | undefined 
     here = path.posix.dirname(here);
   }
   return undefined;
+}
+
+/** Who answers a template's promises settled after the merge. */
+const VALIDATION = "a validation deployment through thinkube-control";
+
+/**
+ * A template's settlement, after its delivery is accepted.
+ *
+ * A template is proved by deploying it: its declared deploy is run for the
+ * merged commit and its health path is asked. Went live and answered: every
+ * proof settled after the merge turns green. Tried and did not go live:
+ * they turn red, in the deploy's own words. Not tried, because the
+ * repository does not declare how: they stay pending with the reason, and
+ * the outcome is unjudged — nothing is known about the work from that.
+ *
+ * A red proof of an earlier settlement is settled again: a deploy that
+ * failed for a fault since fixed says nothing about the work any more.
+ *
+ * Returns whether it went live, and where, for the look that follows.
+ */
+export async function settleTemplateAfterAccept(a: {
+  repoRoot: string;
+  delivery: Delivery;
+  update: (d: Delivery, note: string) => void;
+  log: (line: string) => void;
+  exec: Exec;
+  invoke?: Invoke;
+  http?: ControlHttp;
+  control?: ReachControl;
+  wait?: (ms: number) => Promise<unknown>;
+  now?: () => string;
+}): Promise<{ live: boolean; at?: string }> {
+  const now = a.now ?? (() => new Date().toISOString());
+  const settling = (p: Proof): boolean => !!p.settledBy && (p.verdict === "pending" || p.verdict === "red");
+  let v: Awaited<ReturnType<typeof validationDeploy>> | { ok: false; stage: "machine"; why: string };
+  try {
+    const head = await headOf(a.repoRoot, a.exec);
+    a.log(`settling by ${VALIDATION}, for ${head.slice(0, 8)}`);
+    v = await validationDeploy({
+      repoRoot: a.repoRoot,
+      head,
+      ...(a.invoke ? { invoke: a.invoke } : {}),
+      ...(a.http ? { http: a.http } : {}),
+      ...(a.control ? { control: a.control } : {}),
+      ...(a.wait ? { wait: a.wait } : {}),
+      log: a.log,
+    });
+  } catch (e) {
+    v = { ok: false, stage: "machine", why: e instanceof Error ? e.message : String(e) };
+  }
+  const judged = v.ok || v.stage === "deploy" || v.stage === "health";
+  const proofs: Proof[] = a.delivery.proofs.map((p) => {
+    if (!settling(p)) return p;
+    if (v.ok)
+      return {
+        ...p,
+        verdict: "green",
+        ref: `settled by ${VALIDATION}: it went live at ${v.at} and ${v.url} answered`.slice(0, 300),
+      };
+    if (judged) return { ...p, verdict: "red", ref: `settled by ${VALIDATION}: ${v.why}`.slice(0, 300) };
+    return { ...p, verdict: "pending", ref: `still pending — ${v.why}`.slice(0, 300) };
+  });
+  const outcome = v.ok ? "held" : judged ? "broke" : "unjudged";
+  const d: Delivery = {
+    ...a.delivery,
+    proofs,
+    afterMerge: {
+      at: now(),
+      outcome,
+      said: VALIDATION,
+      ...(v.ok ? {} : { detail: v.why.slice(0, 2000) }),
+    },
+  };
+  const answered = a.delivery.proofs.some(settling);
+  a.update(
+    d,
+    v.ok
+      ? `the merged template went live at ${v.at}` + (answered ? " — the promises settled after the merge are answered" : "")
+      : judged
+        ? `the merged template did not go live: ${v.why.split("\n")[0]}`
+        : `the merged template could not be deployed to judge it: ${v.why.split("\n")[0]} — nothing is known about the work from this`,
+  );
+  return v.ok ? { live: true, at: v.at } : { live: false };
 }

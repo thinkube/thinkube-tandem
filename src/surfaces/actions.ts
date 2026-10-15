@@ -187,6 +187,10 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
   "read-allowed": { label: "Read what is allowed now" },
   "full-rerun": { label: "Run again from nothing" },
   "list-spaces": { label: "List the spaces" },
+  // Asking whether a repository is ready runs its setup and, for a
+  // template, its declared deploy — on a development platform, a re-run,
+  // and nothing it finds is decided here: Build reads the answer.
+  "check-readiness": { label: "Check readiness" },
   "stop-run-tool": { label: "Stop the run" },
 
   // ── the tree's own commands, reachable from the machine at last ────

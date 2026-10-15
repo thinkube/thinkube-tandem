@@ -16,6 +16,7 @@ import { WorkerModelConfig } from "../engine/workerModel";
 import { solveModel } from "../derive/model";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
 import { proposeSpecs } from "../derive/specs";
+import type { Readiness } from "../run/readiness";
 
 export interface SessionDeps {
   round: RoundDeps;
@@ -79,4 +80,9 @@ export interface SessionDeps {
    *  then follows the record that process writes. Absent, the session
    *  drives the run itself — which is what the driver process does. */
   runElsewhere?: (a: { fresh: boolean }) => Promise<{ ok: boolean; reason?: string; pid?: number }>;
+  /** Whether every repository this session builds into is ready for work
+   *  to be signed against it (src/run/readiness.ts). Build asks it before
+   *  signing and refuses on any item that is not ready; a session without
+   *  it signs nothing. */
+  readiness?: () => Promise<Readiness[]>;
 }
