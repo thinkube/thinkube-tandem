@@ -27,6 +27,24 @@ function workingOutLogPath(storeDir: string): string {
   return path.join(storeDir, "runs", "working-out.log");
 }
 
+/** The step a person opens to read the working-out log on the board. */
+export const WORKING_OUT = "working-out";
+
+/** Whether anything has been written to a space's working-out log. */
+export function hasWorkingOutLog(storeDir: string): boolean {
+  return fs.existsSync(workingOutLogPath(storeDir));
+}
+
+/** The last `n` lines of a space's working-out log and how many it holds;
+ *  undefined when nothing has been written there. */
+export function workingOutTail(storeDir: string, n: number): { lines: string[]; total: number; shown: number } | undefined {
+  const file = workingOutLogPath(storeDir);
+  if (!fs.existsSync(file)) return undefined;
+  const all = fs.readFileSync(file, "utf8").split("\n").filter((l) => l.length);
+  const lines = all.slice(-n);
+  return { lines, total: all.length, shown: lines.length };
+}
+
 /**
  * Append one line of working out, stamped like a run's lines. A line that
  * cannot be written throws, for the caller to say so.

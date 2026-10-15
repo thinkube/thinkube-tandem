@@ -95,6 +95,37 @@ export async function pumpUnits(a: {
     await Promise.race([...inflight.values()]);
   }
   await Promise.all([...inflight.values()]);
-  // Never ran is not failed: a unit the run never reached says so, and the real failure stays findable.
-  for (const id of pending) st.block(id, "never ran — the run stopped, or something it waits on failed");
+  // Never ran is not failed: a unit the run never reached says so, and names
+  // the failure it waits behind, so the real failure is found from it.
+  for (const id of pending) st.block(id, whyNeverRan(id, dag, failed, (f) => st.units.get(f)?.note));
+}
+
+/**
+ * Why a unit the run never reached did not run: the failed unit it waits on,
+ * directly or through other waiting units, with that unit's own reason; or,
+ * with no failure behind it, that the run stopped. A requirement may name a
+ * slice, which waits on every unit of that slice.
+ */
+export function whyNeverRan(
+  id: string,
+  dag: readonly Pick<SchedUnit, "id" | "slice" | "requires">[],
+  failed: ReadonlySet<string>,
+  noteOf: (id: string) => string | undefined,
+): string {
+  const byId = new Map(dag.map((u) => [u.id, u]));
+  const seen = new Set<string>();
+  const cause = (at: string): string | undefined => {
+    if (seen.has(at)) return undefined;
+    seen.add(at);
+    for (const r of byId.get(at)?.requires ?? []) {
+      const units = byId.has(r) ? [r] : dag.filter((u) => u.slice === r).map((u) => u.id);
+      const hit = units.find((u) => failed.has(u)) ?? units.map(cause).find(Boolean);
+      if (hit) return hit;
+    }
+    return undefined;
+  };
+  const f = cause(id);
+  if (!f) return "never ran — the run stopped before it was reached";
+  const note = noteOf(f);
+  return `never ran — it waits on ${f}, which failed${note ? `: ${note}` : ""}`;
 }

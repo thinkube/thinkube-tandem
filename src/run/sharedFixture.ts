@@ -31,45 +31,86 @@ interface FixturePlan {
   waiters: string[];
 }
 
-const escape = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** Whether a tester's own reading names a seam: its function as a whole
- *  word, or its module as a path or a dotted name. A module at the root has
- *  no path to name it by, so only its file name counts. */
-function names(text: string, s: Seam): boolean {
-  const mod = s.file.replace(/\.[^./]+$/, "");
-  const paths = [s.file, ...(mod.includes("/") ? [mod, mod.replace(/\//g, ".")] : [])];
-  return (
-    new RegExp(`(?<![\\w$])${escape(s.fn)}(?![\\w$])`).test(text) ||
-    paths.some((p) => new RegExp(`(?<![\\w$./])${escape(p)}(?![\\w$])`).test(text))
-  );
+/** The production code a tester's slice works on: every file its code
+ *  units change, consume or read, and the source of each that exists. */
+export interface TesterCode {
+  files: string[];
+  sources: { rel: string; text: string }[];
 }
 
-/**
- * What a tester is briefed from, as one text to look for seams in: its
- * slice's criteria and contract, the notes of its slice's units, and the
- * production files its slice's code changes, consumes or reads — their
- * paths, and the source of each that exists in the tree.
- */
-export async function testerReading(
-  tree: string,
-  slice: SliceForDag,
-  criteria: readonly string[],
-): Promise<string> {
+const escape = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** The dotted module a Python file is imported as, from the repository
+ *  root. */
+const pyModule = (rel: string): string => rel.replace(/\.py$/, "").replace(/\/__init__$/, "").replace(/\//g, ".");
+
+/** Whether an imported module name is the module at `file`: the package
+ *  root may sit below the repository root (`backend/app/x.py` is imported
+ *  as `app.x`), so the name matches the module's dotted ending. */
+const isModule = (imported: string, file: string): boolean =>
+  imported !== "" && (file === imported || file.endsWith(`.${imported}`));
+
+/** The modules a Python source imports, absolute, with the names it takes
+ *  from each (`*` when it imports the module itself). A relative import is
+ *  resolved against the importing file's package. */
+function pythonImports(rel: string, text: string): { module: string; names: string[] }[] {
+  const pkg = pyModule(rel).split(".").slice(0, -1);
+  const absolute = (dots: string, rest: string): string =>
+    dots ? [...pkg.slice(0, pkg.length - (dots.length - 1)), ...(rest ? [rest] : [])].join(".") : rest;
+  const out: { module: string; names: string[] }[] = [];
+  for (const m of text.matchAll(/^[ \t]*from[ \t]+(\.*)([\w.]*)[ \t]+import[ \t]+(?:\(([^)]*)\)|([^\n]+))/gm))
+    out.push({
+      module: absolute(m[1], m[2]),
+      names: (m[3] ?? m[4]).split(",").map((n) => n.trim().split(/\s+as\s+/)[0]).filter(Boolean),
+    });
+  for (const m of text.matchAll(/^[ \t]*import[ \t]+([\w.]+)/gm)) out.push({ module: m[1], names: ["*"] });
+  return out;
+}
+
+/** The repository files a script source imports by a relative specifier,
+ *  without their extension. */
+function scriptImports(rel: string, text: string): string[] {
+  const dir = path.posix.dirname(rel);
+  const specs = [...text.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s+)["'](\.{1,2}\/[^"']+)["']/gm)].map((m) => m[1]);
+  return specs.map((sp) => path.posix.normalize(path.posix.join(dir, sp)).replace(/\.[cm]?[jt]sx?$/, ""));
+}
+
+/** Whether a production source calls a seam's function, imported from the
+ *  module that defines it. */
+function callsSeam(src: { rel: string; text: string }, s: Seam): boolean {
+  if (src.rel === s.file) return false;
+  const call = new RegExp(`(?<![\\w$])${escape(s.fn)}\\s*\\(`);
+  if (!call.test(src.text)) return false;
+  if (s.file.endsWith(".py")) {
+    const mod = pyModule(s.file);
+    const parent = mod.split(".").slice(0, -1).join(".");
+    const last = mod.split(".").pop()!;
+    return pythonImports(src.rel, src.text).some(
+      (i) =>
+        (isModule(i.module, mod) && (i.names.includes(s.fn) || i.names.includes("*"))) ||
+        (isModule(i.module, parent) && i.names.includes(last)),
+    );
+  }
+  const target = s.file.replace(/\.[cm]?[jt]sx?$/, "");
+  return scriptImports(src.rel, src.text).some((f) => f === target || f === target.replace(/\/index$/, ""));
+}
+
+/** Whether a tester's slice works with a seam: its code works on the file
+ *  that defines the seam, or calls the seam's function from that file. */
+function uses(code: TesterCode, s: Seam): boolean {
+  return code.files.includes(s.file) || code.sources.some((src) => callsSeam(src, s));
+}
+
+/** The production code a tester's slice works on, read from the tree. */
+export async function testerCode(tree: string, slice: SliceForDag): Promise<TesterCode> {
   const code = slice.workUnits.filter((w) => (w.role ?? "code") !== "test");
   const files = [...new Set(code.flatMap((w) => [...w.footprint, ...(w.consumes ?? []), ...(w.reads ?? [])]))];
-  const sources: string[] = [];
+  const sources: { rel: string; text: string }[] = [];
   for (const rel of files) {
     const abs = path.join(tree, rel);
-    if (fs.existsSync(abs) && fs.statSync(abs).isFile()) sources.push(fs.readFileSync(abs, "utf8"));
+    if (fs.existsSync(abs) && fs.statSync(abs).isFile()) sources.push({ rel, text: fs.readFileSync(abs, "utf8") });
   }
-  return [
-    ...criteria,
-    slice.contract ?? "",
-    ...slice.workUnits.map((w) => w.note ?? ""),
-    ...files,
-    ...sources,
-  ].join("\n");
+  return { files, sources };
 }
 
 /** Where the shared fixture lives for checks written beside `probe`, by
@@ -96,21 +137,20 @@ function reaches(fixture: string, probe: string): boolean {
 
 /**
  * Plan the run's shared fixture. `testers` are the run's tester units still
- * to run, in schedule order, each with the text it is briefed from (its
- * slice's criteria, contract, notes and the production files it touches).
- * A seam is shared when no fixture already doubles it and the texts of two
- * or more testers name it. The first such tester owns the fixture; every
- * other tester whose checks reach the fixture waits for it.
+ * to run, in schedule order, each with the production code its slice works
+ * on. A seam is shared when no fixture already doubles it and the code of
+ * two or more testers' slices uses it. The first such tester owns the
+ * fixture; every other tester whose checks reach the fixture waits for it.
  */
 export function planSharedFixture(a: {
-  testers: readonly { id: string; footprint: readonly string[]; text: string }[];
+  testers: readonly { id: string; footprint: readonly string[]; code: TesterCode }[];
   seams: readonly Seam[];
   fixtures: readonly SharedFixture[];
 }): FixturePlan | undefined {
   const open = a.seams.filter((s) => !fixtureCovers(a.fixtures, s));
-  const shared = open.filter((s) => a.testers.filter((t) => names(t.text, s)).length >= 2);
+  const shared = open.filter((s) => a.testers.filter((t) => uses(t.code, s)).length >= 2);
   if (!shared.length) return undefined;
-  const users = a.testers.filter((t) => shared.some((s) => names(t.text, s)) && t.footprint.some(isProbePath));
+  const users = a.testers.filter((t) => shared.some((s) => uses(t.code, s)) && t.footprint.some(isProbePath));
   const owner = users[0];
   if (!owner) return undefined;
   const fixture = fixturePathFor(owner.footprint.find(isProbePath)!);
@@ -149,7 +189,9 @@ export function applyFixturePlan(
  * Commit the fixture on the run branch the moment its owner finishes, so
  * every runner that grades a waiter's checks — the committed base plus that
  * slice's own files — holds it. The message carries text after the slice
- * handle, so a later resume never reads it as a finished slice.
+ * handle, so a later resume never reads it as a finished slice. False when
+ * the owner did not write the fixture: its waiters were scheduled to use it,
+ * so the owner has not done its work.
  */
 export async function commitSharedFixture(a: {
   worktree: string;
@@ -158,17 +200,14 @@ export async function commitSharedFixture(a: {
   plan: FixturePlan;
   exec: Exec;
   log: (line: string) => void;
-}): Promise<void> {
-  if (!fs.existsSync(path.join(a.worktree, a.plan.path))) {
-    a.log(`⚠ ${a.plan.owner}: the shared fixture ${a.plan.path} was not written — the testers waiting on it write their own doubles`);
-    return;
-  }
+}): Promise<boolean> {
+  if (!fs.existsSync(path.join(a.worktree, a.plan.path))) return false;
   const add = await a.exec("git", ["add", "--", a.plan.path], a.worktree);
   if (add.code !== 0) throw new Error(`the shared fixture ${a.plan.path} could not be staged: ${add.out.trim()}`);
   const staged = await a.exec("git", ["diff", "--cached", "--quiet", "--", a.plan.path], a.worktree);
   if (staged.code === 0) {
     a.log(`✓ ${a.plan.owner}: the shared fixture ${a.plan.path} is unchanged on the branch`);
-    return;
+    return true;
   }
   const c = await a.exec(
     "git",
@@ -177,4 +216,5 @@ export async function commitSharedFixture(a: {
   );
   if (c.code !== 0) throw new Error(`the shared fixture ${a.plan.path} could not be committed: ${c.out.trim()}`);
   a.log(`✓ ${a.plan.owner}: the shared fixture ${a.plan.path} is committed — ${a.plan.waiters.join(", ")} use it`);
+  return true;
 }

@@ -233,6 +233,9 @@ export interface SpacePush {
   showing?: string;
   /** The tail of one step's own log, and how long the whole log is. */
   runLog?: { step: string; lines: string[]; total: number; shown: number };
+  /** Whether the space has a working-out log: work started outside the
+   *  editor, such as through the MCP server, writes there. */
+  workingOutLog: boolean;
   questions: {
     id: string;
     text: string;

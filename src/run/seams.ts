@@ -62,7 +62,7 @@ async function treeFiles(tree: string): Promise<string[]> {
   const out: string[] = [];
   const skip = ignoredFor(tree);
   const walk = async (dir: string): Promise<void> => {
-    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    const entries = await fs.readdir(dir, { withFileTypes: true });
     for (const e of entries) {
       const abs = path.join(dir, e.name);
       if (e.isDirectory()) {

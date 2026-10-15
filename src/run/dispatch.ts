@@ -68,7 +68,7 @@ import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
 import { clearanceStanza, coderStanza, fixturesStanza, testerStanza } from "./brief";
 import { productionSeams, sharedFixtures } from "./seams";
-import { applyFixturePlan, commitSharedFixture, planSharedFixture, testerReading } from "./sharedFixture";
+import { applyFixturePlan, commitSharedFixture, planSharedFixture, testerCode } from "./sharedFixture";
 import { sliceBookkeeping } from "./plan";
 import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
@@ -250,12 +250,11 @@ export async function dispatchTep(
     testers: await Promise.all(
       dag
         .filter((u) => u.role === "test" && !standing.has(u.slice))
-        .map(async (u) => {
-          const slice = slices.find((s) => s.handle === u.slice)!;
-          const ids = (slice as { criterionIds?: string[] }).criterionIds ?? [];
-          const criteria = ids.flatMap((_, i) => criterionOf(u.slice, i + 1)?.text ?? []);
-          return { id: u.id, footprint: u.footprint, text: await testerReading(worktree, slice, criteria) };
-        }),
+        .map(async (u) => ({
+          id: u.id,
+          footprint: u.footprint,
+          code: await testerCode(worktree, slices.find((s) => s.handle === u.slice)!),
+        })),
     ),
     seams: await productionSeams(worktree),
     fixtures: await sharedFixtures(worktree),
@@ -648,8 +647,10 @@ export async function dispatchTep(
     // the run stopped.
     if (!ok && st.halted && !st.units.get(next.id)?.note)
       failWith(next.id, "the run stopped before this unit finished — its work was never judged");
-    if (ok && ownsFixture)
-      await commitSharedFixture({ worktree, tep, slice: next.slice, plan: ownsFixture, exec, log: (l) => log(l, next.id) });
+    if (ok && ownsFixture && !(await commitSharedFixture({ worktree, tep, slice: next.slice, plan: ownsFixture, exec, log: (l) => log(l, next.id) }))) {
+      failWith(next.id, `it did not write the shared fixture ${ownsFixture.path} that ${ownsFixture.waiters.join(", ")} wait for`);
+      ok = false;
+    }
     await finishUnit(next.id, next.slice, ok);
   };
   await pumpUnits({

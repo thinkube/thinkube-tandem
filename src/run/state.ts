@@ -84,7 +84,7 @@ export interface RunUnitView {
  * whole space. So the tail travels, deep enough to scroll back through,
  * and the count says what is not being shown.
  */
-const LOG_TAIL = 500;
+export const LOG_TAIL = 500;
 /** Lines kept per step. Generous: a step's log is the evidence it failed. */
 const STEP_LOG_CAP = 2000;
 

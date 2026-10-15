@@ -65,6 +65,7 @@ const PHASE_TITLES: Record<string, string> = {
   gate: "The closing gate — every check, on the real state",
   delivery: "The delivery — handing it over",
   run: "The run",
+  "working-out": "The working-out — work started outside the editor",
 };
 
 const btn: React.CSSProperties = {
@@ -292,7 +293,7 @@ export function Rail(props: {
   // A rail with nothing to say draws nothing: an empty column beside a page
   // is a rule down the screen with no reason on it.
   const parked = push.run?.parked?.length ?? 0;
-  const says = parked > 0 || !!push.runLog || (props.canBuild && (ready.thinking || ready.subjects > 0));
+  const says = parked > 0 || !!push.runLog || push.workingOutLog || (props.canBuild && (ready.thinking || ready.subjects > 0));
   if (!says) return null;
 
   return (
@@ -308,6 +309,16 @@ export function Rail(props: {
     >
       <div style={{ padding: 10 }}>
         <Parked push={push} />
+        {push.workingOutLog && push.runLog?.step !== "working-out" ? (
+          <button
+            data-open-working-out
+            onClick={() => post({ action: "read-log", stepId: "working-out" })}
+            style={{ fontSize: FS.caption, cursor: "pointer", marginBottom: 14 }}
+            title="What was done in this space outside the editor, such as through the MCP server"
+          >
+            Read the working-out log
+          </button>
+        ) : null}
         {push.runLog ? (
           <StepLog
             log={push.runLog}

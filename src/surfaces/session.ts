@@ -20,7 +20,8 @@ import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
 import { renderCutScreen } from "../gates/render";
 import { DispatchOutcome } from "../run/dispatch";
-import { RunState } from "../run/state";
+import { LOG_TAIL, RunState } from "../run/state";
+import { hasWorkingOutLog, WORKING_OUT, workingOutTail } from "../run/runLog";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
@@ -394,9 +395,21 @@ export class TandemSession {
     this.deps.onChanged?.();
   }
 
+  /** The open log: a run step's, or the working-out log the store keeps
+   *  for work done in this space outside any run, by any process. */
   logView() {
-    if (!this.openLog || !this.runState) return undefined;
+    if (!this.openLog) return undefined;
+    if (this.openLog.step === WORKING_OUT) {
+      const tail = workingOutTail(this.deps.storeDir, LOG_TAIL);
+      return { step: WORKING_OUT, ...(tail ?? { lines: [], total: 0, shown: 0 }) };
+    }
+    if (!this.runState) return undefined;
     return { step: this.openLog.step, ...this.runState.logTail(this.openLog.step) };
+  }
+
+  /** Whether the store holds a working-out log for this space. */
+  hasWorkingOut(): boolean {
+    return hasWorkingOutLog(this.deps.storeDir);
   }
 
   groundingView(): { askId: string; label: string; current: number; total: number }[] {

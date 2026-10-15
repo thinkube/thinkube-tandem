@@ -171,6 +171,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     grounding: session.groundingView(),
     signedTeps: session.space.cuts.filter((c) => c.signature).length,
     runLog: session.logView(),
+    workingOutLog: session.hasWorkingOut(),
     // The chart names each worker by the slice it builds, in the words the
     // human named it — the worker id stays available underneath. `runId`
     // rides along in the spread: the same id that will land on the
