@@ -690,14 +690,15 @@ export class TandemSession {
   }
 
   /**
-   * What a run in another process is doing, read from its record — for a
-   * holder of this session that is told of nothing, such as the MCP server,
-   * whose session would otherwise show a run that ended as still in flight.
+   * The space and its run as the store holds them now — for a holder of this
+   * session that is told of nothing, such as the MCP server. A run in its
+   * own process ends there and files its delivery there; without this, the
+   * held session showed that run as still in flight and its delivery as
+   * missing, and anything it saved would have been written over them.
    */
-  readRunFromStore(): void {
+  reloadFromStore(): void {
     if (this.driving || this.starting) return;
-    const seen = readRun(this.deps.storeDir, () => this.deps.onChanged?.());
-    if (seen) Object.assign(this, { runState: seen.state, running: seen.running, runNote: seen.note });
+    this.load();
   }
 
   private async startElsewhere(cutId: string, fresh: boolean): Promise<{ ok: boolean; reason?: string }> {

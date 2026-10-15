@@ -102,7 +102,24 @@ test("a held session sees a run that ended in its own process as ended", async (
   assert.equal(s.running, true);
   saveRun(dir, { cutId: "cut-1", at: new Date().toISOString(), owner, state: "refused", note: "The build stopped: the product build fails" }, new RunState(() => {}));
   assert.equal(s.running, true, "nothing has read the record yet");
-  s.readRunFromStore();
+  s.reloadFromStore();
   assert.equal(s.running, false);
   assert.match(s.runNote ?? "", /product build fails/);
+});
+
+test("a held session sees a delivery another process filed", () => {
+  const { s: writer, dir } = sessionWith(async () => ({ ok: true }));
+  const held = new TandemSession({
+    author: "tester",
+    round: { model: "sonnet", repoRoot: dir },
+    storeDir: dir,
+    storageDir: path.join(dir, ".local"),
+    now: () => new Date().toISOString(),
+  } as never);
+  held.load();
+  assert.equal(held.space.deliveries.length, 0);
+  writer.space = { ...writer.space, deliveries: [{ id: "delivery-TEP-1", cutId: "cut-1", proofs: [] } as never] };
+  writer.persist();
+  held.reloadFromStore();
+  assert.deepEqual(held.space.deliveries.map((d) => d.id), ["delivery-TEP-1"]);
 });

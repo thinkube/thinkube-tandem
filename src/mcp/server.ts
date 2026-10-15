@@ -46,9 +46,9 @@ export async function main(argv: readonly string[]): Promise<number> {
     const key = `${path.resolve(repo)}::${space}`;
     const held = sessions.get(key);
     if (held) {
-      // A run lives in its own process and ends there; its record is the
-      // only word of it that reaches a held session.
-      held.session.readRunFromStore();
+      // A run lives in its own process and files its delivery there; the
+      // store is the only word of it that reaches a held session.
+      held.session.reloadFromStore();
       return held;
     }
     const r = await attach({ repo, space, onChanged: (m) => m && say(`· ${m}`) });
