@@ -25,6 +25,7 @@
  */
 import * as path from "node:path";
 import { isProbePath, isTestPath } from "./testHomes";
+import { checkOrdinalOf } from "../core/testShape";
 
 /** Files a check can sit beside and import — source, in any language here. */
 const CODE = /\.(m|c)?[jt]sx?$|\.(vue|svelte)$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|lua)$/i;
@@ -272,7 +273,7 @@ export function pinRecordedChecks(
     for (const u of s.workUnits ?? s.units ?? []) {
       if ((u.role ?? "code") !== "test") continue;
       u.footprint = u.footprint.map((f) => {
-        const k = /_AC-(\d+)\./.exec(f)?.[1];
+        const k = checkOrdinalOf(f);
         const cid = k ? ids[Number(k) - 1] : undefined;
         const home = cid ? recorded.get(cid) : undefined;
         if (!home || home === f || !onBranch.has(home)) return f;

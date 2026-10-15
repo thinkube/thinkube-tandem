@@ -61,3 +61,18 @@ export function isProbePath(rel: string): boolean {
 export function testKind(rel: string): "unit" | "held-out" {
   return isProbePath(rel) ? "held-out" : "unit";
 }
+
+/**
+ * The criterion ordinal a check file carries in its name: `_AC-<k>` followed
+ * by whatever suffix the repository's tests wear — `.test.ts`, or `_test.py`
+ * for a check born in a Python test directory. Undefined for any other file.
+ */
+export function checkOrdinalOf(rel: string): number | undefined {
+  const m = /_AC-(\d+)(?!\d)/.exec(rel);
+  return m ? Number(m[1]) : undefined;
+}
+
+/** Whether a check file proves criterion `ac` of its slice. */
+export function isCheckOf(rel: string, ac: number): boolean {
+  return checkOrdinalOf(rel) === ac;
+}

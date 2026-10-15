@@ -18,6 +18,7 @@ import { waitReasons } from "./fence";
 import type { RunState } from "./state";
 import * as fsp from "node:fs/promises";
 import type { Proved } from "./proved";
+import { checkOrdinalOf } from "../core/testShape";
 
 export { confessedDeferrals, writeDeliveryRecord, keptChecks, docsObligations } from "./planDelivery";
 export type { KeptCheck } from "./planDelivery";
@@ -204,8 +205,7 @@ export function sliceBookkeeping(
 
 /** The check ordinal a probe file carries in its name. */
 function acOf(probe: string): number {
-  const m = /_AC-(\d+)\./.exec(probe);
-  return m ? Number(m[1]) : 0;
+  return checkOrdinalOf(probe) ?? 0;
 }
 
 /**

@@ -32,6 +32,7 @@ import { evidenceKey } from "./owner";
 import { clearanceNote } from "./clearance";
 import { withCpuTruth } from "./cpuAllowance";
 import type { ClearanceRuling } from "./clearance";
+import { isCheckOf } from "../core/testShape";
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
  *  context: a child `node --test` that detects a parent runner SKIPS itself
@@ -326,7 +327,7 @@ export function sliceOracleFactory(
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
       for (const rel of probes) {
-        if (!failingAcs.some((ac) => rel.includes(`_AC-${ac}.`))) continue;
+        if (!failingAcs.some((ac) => isCheckOf(rel, ac))) continue;
         try {
           probeSrc += `\n── ${rel} ──\n` + (await fs.readFile(path.join(a.testerWt, rel), "utf8")).slice(0, 8000);
         } catch {
@@ -352,7 +353,7 @@ export function sliceOracleFactory(
         `WHERE YOU ARE: ${a.worktree} — the delivery's one tree. Read ONLY under that path; any other copy of this`,
         "repository on the machine is not the delivery. Everything you need is named here:",
         `  the coder's files: ${(a.footprintOf?.(slice) ?? []).join(", ") || "(none)"}`,
-        `  the failing checks: ${probes.filter((rel) => failingAcs.some((ac) => rel.includes(`_AC-${ac}.`))).join(", ") || "(none)"}`,
+        `  the failing checks: ${probes.filter((rel) => failingAcs.some((ac) => isCheckOf(rel, ac))).join(", ") || "(none)"}`,
         "",
         "──── THE CODER'S BRIEF ────",
         (a.briefBySlice.get(slice) ?? "(brief unavailable)").slice(0, 60000),

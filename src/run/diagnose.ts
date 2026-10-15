@@ -24,6 +24,7 @@ import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
+import { isCheckOf } from "../core/testShape";
 
 /** Evidence a coder cannot act on: an assertion that compared nothing it
  *  shows, or a failure with no words of its own at all. */
@@ -62,7 +63,7 @@ export function makeDiagnoser(
     const used = spent.get(key) ?? 0;
     if (used >= DIAGNOSIS_BUDGET) return undefined;
     const criterion = a.criterionOf?.(slice, ac);
-    const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+    const rel = (a.sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, ac));
     const verif = (a.sliceVerifs.get(slice) ?? []).find((v) => v.ac === ac);
     if (!criterion || !rel || !verif) return undefined;
     spent.set(key, used + 1);

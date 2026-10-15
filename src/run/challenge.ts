@@ -18,6 +18,7 @@ import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import type { OracleFactoryArgs } from "./oracle";
+import { isCheckOf } from "../core/testShape";
 
 const CHALLENGE_BUDGET = 2;
 
@@ -41,7 +42,7 @@ export function makeChallenge(
       if (used >= CHALLENGE_BUDGET)
         return `check ${ac} has been challenged ${CHALLENGE_BUDGET} times — meet it as it stands, or report UNDELIVERED with your evidence.`;
       const criterion = a.criterionOf?.(slice, ac);
-      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, ac));
       if (!criterion || !rel) return `no check ${ac} exists on this slice.`;
       spent.set(`${slice}#${ac}`, used + 1);
       let probeSrc = "";
@@ -156,7 +157,7 @@ const REPAIR_BUDGET = 1;
 export function makeReauthor(a: OracleFactoryArgs): (slice: string, ac: number, why: string) => Promise<boolean> {
   return async (slice, ac, why) => {
     const criterion = a.criterionOf?.(slice, ac);
-    const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+    const rel = (a.sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, ac));
     if (!criterion || !rel) return false;
     const ok = await reauthorCheck(a, {
       slice,
@@ -180,7 +181,7 @@ export function makeRepair(
       const used = spent.get(key) ?? 0;
       if (used >= REPAIR_BUDGET) continue;
       const criterion = a.criterionOf?.(slice, f.ac);
-      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${f.ac}.`));
+      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, f.ac));
       if (!criterion || !rel) continue;
       spent.set(key, used + 1);
       const head = f.evidence.split("\n").find((l) => /Error|Cannot|timed out|did not exit/i.test(l))?.trim().slice(0, 200) ?? "the check could not run";
