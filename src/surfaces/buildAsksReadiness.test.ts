@@ -16,6 +16,9 @@ import assert from "node:assert/strict";
 import { buildFlow } from "./buildFlow";
 import { emptySpace, Space } from "../core/schema";
 import type { Readiness } from "../run/readiness";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 function space(): Space {
   return {
@@ -30,8 +33,11 @@ function space(): Space {
   };
 }
 
-function session(readiness?: () => Promise<Readiness[]>) {
+const READING = { provision: "npm ci", prepare: "", runOne: "npx vitest run <file>", build: "npm run build", suite: "" };
+
+function session(readiness?: (reading?: unknown) => Promise<Readiness[]>) {
   const s = {
+    knowledge: async () => READING,
     space: space(),
     activity: undefined,
     signed: false,
@@ -43,7 +49,11 @@ function session(readiness?: () => Promise<Readiness[]>) {
       s.signed = true;
       return { ok: true };
     },
-    deps: { now: () => "2026-10-15T00:00:00.000Z", ...(readiness ? { readiness } : {}) },
+    deps: {
+      now: () => "2026-10-15T00:00:00.000Z",
+      round: { repoRoot: fs.mkdtempSync(path.join(os.tmpdir(), "build-asks-")) },
+      ...(readiness ? { readiness } : {}),
+    },
   };
   return s;
 }
@@ -88,4 +98,14 @@ test("Build refuses when the readiness check cannot run, or the session has none
   const r2 = await buildFlow(without as never, "s1");
   assert.match(r2.reason ?? "", /no readiness check/);
   assert.equal(without.signed, false);
+});
+
+test("Build hands readiness the setup the run will work with", async () => {
+  let given: unknown;
+  const s = session(async (reading) => {
+    given = reading;
+    return answer([{ name: "setup", ready: true, say: "the setup holds" }]);
+  });
+  await buildFlow(s as never, "s1");
+  assert.deepEqual(given, { provision: "npm ci", prepare: "", runOne: "npx vitest run <file>", build: "npm run build" });
 });

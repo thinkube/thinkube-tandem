@@ -35,7 +35,7 @@ import { draftWithFindings } from "../run/feedback";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { makeLive } from "../run/makeLive";
 import type { Delivery } from "../core/schema";
-import { factsOf } from "../run/facts";
+import { runSetup } from "../run/facts";
 import { defaultExec } from "../run/oracle";
 import { controlEnvOf } from "../run/validationDeploy";
 
@@ -481,12 +481,13 @@ export async function executeRun(
       }
       // The check-setup facts: the machine's own reading of the repo,
       // unless the human explicitly overrode the build step in settings.
-      const prepare = s.deps.prepareCommand || known.prepare || undefined;
-      const provision = known.provision || undefined;
-      const runOne = known.runOne || undefined;
+      const setup = runSetup(s.deps.round.repoRoot, known, s.deps.prepareCommand);
+      const prepare = setup.prepare || undefined;
+      const provision = setup.provision || undefined;
+      const runOne = setup.runOne || undefined;
       // The product build — proved at the door, red at the gate — from the
       // repository's own facts first, the reading second.
-      const build = factsOf(s.deps.round.repoRoot)?.build || known.build || undefined;
+      const build = setup.build || undefined;
       const suiteReds = known.suiteReds;
       const rememberSuiteReds = known.rememberSuiteReds;
       const resetup = known.resetup;

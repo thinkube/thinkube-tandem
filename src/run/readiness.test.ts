@@ -515,3 +515,22 @@ test("a setup whose check could not run is asked again", async () => {
   const again = await checkReadiness(args);
   assert.equal(item(again, "setup").ready, true, item(again, "setup").say);
 });
+
+test("readiness proves the setup the run will work with, and does not reuse an answer proved on another", async () => {
+  const home = { storeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-reading-")), repoId: "svc-reading" };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-reading-repo-"));
+  const g = git();
+  const reading = { provision: "cd web && npm ci", prepare: "", runOne: "./run_tests.sh <file>", build: "cd web && npm run build" };
+  const d = door({ cmd: "cd web && npm run build", output: "FATAL ERROR: Reached heap limit Allocation failed" });
+  const first = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, reading });
+  const setup = item(first, "setup");
+  assert.equal(setup.ready, false, "the reading's build is proved, as the run will prove it");
+  assert.match(setup.say, /cd web && npm run build/);
+  assert.deepEqual(first.reading, reading);
+
+  const fixed = { ...reading, build: "cd web && NODE_OPTIONS=--max-old-space-size=6144 npm run build" };
+  const d2 = door();
+  const again = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d2.boundedExec, reading: fixed });
+  assert.ok(d2.ran.includes(fixed.build), "a different setup is proved again, not read from the kept answer");
+  assert.equal(item(again, "setup").ready, true, item(again, "setup").say);
+});

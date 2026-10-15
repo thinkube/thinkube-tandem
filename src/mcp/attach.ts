@@ -127,11 +127,12 @@ export async function attach(args: AttachArgs): Promise<Attached> {
     docsGateMode: "blocking",
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     ...(args.onChanged ? { onChanged: (m?: string) => args.onChanged!(m, dirs.storeDir) } : {}),
-    readiness: async () => [
+    readiness: async (reading) => [
       await checkReadiness({
         repoRoot: project.gitRoot,
         home: { storeRoot, repoId: project.card.id },
         log: (l) => args.onChanged?.(l, dirs.storeDir),
+        ...(reading ? { reading } : {}),
       }),
     ],
     readinessKept: () => {

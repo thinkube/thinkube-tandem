@@ -17,6 +17,7 @@ import { solveModel } from "../derive/model";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
 import { proposeSpecs } from "../derive/specs";
 import type { Readiness } from "../run/readiness";
+import type { RepositoryFacts } from "../run/facts";
 
 export interface SessionDeps {
   round: RoundDeps;
@@ -84,7 +85,7 @@ export interface SessionDeps {
    *  to be signed against it (src/run/readiness.ts). Build asks it before
    *  signing and refuses on any item that is not ready; a session without
    *  it signs nothing. */
-  readiness?: () => Promise<Readiness[]>;
+  readiness?: (reading?: RepositoryFacts) => Promise<Readiness[]>;
   /** The readiness answers the store keeps for each repository at the HEAD
    *  it stands at now, whichever process gave them; a repository never
    *  answered at that HEAD is absent. Throws when a HEAD cannot be read. */

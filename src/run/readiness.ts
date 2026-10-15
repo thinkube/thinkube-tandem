@@ -37,7 +37,7 @@ import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { controlReachedBy, type Http } from "../hostui/templateCore";
 import { isCodePath, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
 import { haltableExecs } from "./execs";
-import { factsOf } from "./facts";
+import { factsOf, type RepositoryFacts } from "./facts";
 import type { Invoke } from "./makeLive";
 import { defaultExec, runnerEnv, type Exec } from "./oracle";
 import { missing } from "./proved";
@@ -74,6 +74,8 @@ export interface Readiness {
   /** When it was answered. */
   at: string;
   items: ReadinessItem[];
+  /** The run setup it was proved with, when one was given. */
+  reading?: RepositoryFacts;
 }
 
 /** Where a repository's answers are kept: the store, beside its spaces. */
@@ -98,6 +100,9 @@ interface ReadinessArgs {
   wait?: (ms: number) => Promise<unknown>;
   log?: (line: string) => void;
   now?: () => string;
+  /** The setup the run will work with (`runSetup`), when the session has
+   *  read the repository: proved as is, so ready means ready for that run. */
+  reading?: RepositoryFacts;
 }
 
 const asking = new Map<string, Promise<Readiness>>();
@@ -190,7 +195,10 @@ export async function checkReadiness(a: ReadinessArgs): Promise<Readiness> {
   const exec = a.exec ?? defaultExec;
   const head = await headOf(root, exec);
   const key = keyOf(root, head);
-  const kept = readKept(a.home, key);
+  // An answer proved on another setup than the one given now says nothing
+  // about this one's tree items.
+  const found = readKept(a.home, key);
+  const kept = found && JSON.stringify(found.reading) === JSON.stringify(a.reading) ? found : undefined;
   const still = kept ? stillAnswered(kept) : new Map<string, ReadinessItem>();
   if (kept && kept.items.every((i) => still.has(i.name))) return kept;
   const flying = asking.get(`${root}\0${key}`);
@@ -241,7 +249,13 @@ async function answer(
         : await attempt("deploy works", () => deployWorks(a, head)),
     );
   }
-  return { repoRoot: root, head, at: (a.now ?? (() => new Date().toISOString()))(), items };
+  return {
+    repoRoot: root,
+    head,
+    at: (a.now ?? (() => new Date().toISOString()))(),
+    items,
+    ...(a.reading ? { reading: a.reading } : {}),
+  };
 }
 
 /** An item whose own check failed to run is not ready, in the failure's words. */
@@ -277,7 +291,7 @@ async function setupHolds(
     // as in a run: each part's own command, and the whole repository's
     // when a part is built from ".".
     const declared = toldByDeclaration(root);
-    const known = knownUnderDeclaration(factsOf(root), declared.suite);
+    const known = knownUnderDeclaration(a.reading ?? factsOf(root), declared.suite);
     const told = {
       ...(known?.provision ? { provision: known.provision } : {}),
       ...(known?.prepare ? { prepare: known.prepare } : {}),

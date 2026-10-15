@@ -228,3 +228,24 @@ export function rememberWhatHeld(
   });
   if (worthRemembering(facts)) rememberFacts(repoRoot, facts, at);
 }
+
+/**
+ * The setup a run works with: the repository reading's commands, a
+ * person's prepare setting over the reading's, and the product build from
+ * the repository's own proved facts first. Readiness proves this same setup,
+ * so what it calls ready is what the run will run.
+ */
+export function runSetup(
+  repoRoot: string,
+  reading: { provision: string; prepare: string; runOne: string; build?: string; suite?: string },
+  prepareCommand?: string,
+): RepositoryFacts {
+  const build = factsOf(repoRoot)?.build || reading.build;
+  return {
+    provision: reading.provision,
+    prepare: prepareCommand || reading.prepare,
+    runOne: reading.runOne,
+    ...(build ? { build } : {}),
+    ...(reading.suite ? { suite: reading.suite } : {}),
+  };
+}

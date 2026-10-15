@@ -26,6 +26,7 @@ import { allCards } from "../core/cards";
 import { catalogOf, controlReachedBy, createAppFromTemplate } from "../hostui/templateCore";
 import { requestStop } from "../run/record";
 import type { Readiness } from "../run/readiness";
+import { runSetup } from "../run/facts";
 
 export interface ToolCall {
   session: TandemSession;
@@ -371,7 +372,8 @@ export function toolTable(): ToolDef[] {
       inputSchema: IN_SPACE,
       run: async (c) => {
         if (!c.session.deps.readiness) return "this session has no readiness check";
-        return (await c.session.deps.readiness()).flatMap(readinessLines).join("\n");
+        const reading = runSetup(c.session.deps.round.repoRoot, await c.session.knowledge(), c.session.deps.prepareCommand);
+        return (await c.session.deps.readiness(reading)).flatMap(readinessLines).join("\n");
       },
     },
     {

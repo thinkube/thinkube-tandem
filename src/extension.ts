@@ -210,11 +210,12 @@ async function ensureSession(
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     onChanged: (message) => pushActive(context, sessionKey, message),
-    readiness: async () => [
+    readiness: async (reading) => [
       await checkReadiness({
         repoRoot: bound.gitRoot,
         home: { storeRoot, repoId: project.card.id },
         log: (l) => pushActive(context, sessionKey, l),
+        ...(reading ? { reading } : {}),
       }),
     ],
     readinessKept: () => {
