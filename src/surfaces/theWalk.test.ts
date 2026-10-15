@@ -132,6 +132,11 @@ function session(root: string): TandemSession {
       questions: [],
     }),
     completeCut: async () => [],
+    // The repository is ready: its own readiness is driven in
+    // src/run/readiness.test.ts, and the refusal in buildAsksReadiness.test.ts.
+    readiness: async () => [
+      { repoRoot: root, head: "0".repeat(40), at: new Date().toISOString(), items: [{ name: "setup", ready: true, say: "the setup holds" }] },
+    ],
     // The run, replaced: the first press is refused at the door, as a tree
     // that does not build refuses it; the next makes the branch with one
     // commit, every check green.
