@@ -22,6 +22,7 @@ import { runUnitWorker, porcelainPaths } from "./worker";
 import { suiteFootprint, suiteStanza, suiteVerdictOf } from "./suite";
 import type { SuiteFailure, SuiteVerdict } from "./suite";
 import type { Exec } from "./oracle";
+import { stageWork } from "./stageWork";
 import { formatBuild } from "./execs";
 import type { Proved } from "./proved";
 import * as path from "node:path";
@@ -154,7 +155,7 @@ export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: S
     if (verdict.green) {
       a.log(`✓ ${a.tep}: the delivered tree is under the repository's suite`, id);
       a.state.set(id, "done");
-      await a.exec("git", ["add", "-A", "."], a.worktree);
+      await stageWork({ worktree: a.worktree, exec: a.exec, log: (l) => a.log(`${a.tep}: ${l}`, id) });
       await a.exec("git", ["commit", "-q", "-m", `tandem: ${a.tep} — brought under the repository's suite`], a.worktree);
       break;
     }

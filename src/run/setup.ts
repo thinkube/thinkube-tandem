@@ -360,8 +360,8 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     for (const e of after) if (!before.has(e) && !provisioned.includes(e)) built.push(e);
     if (built.length) args.log(`  the build emits into: ${built.join(", ")}`);
   }
-  // Nothing the door lent or watched appear may ever be staged: the gate,
-  // the closer and every slice commit run `git add -A` in this tree.
+  // Nothing the door lent or watched appear may ever be staged: the gate
+  // stages every file the ignore rules leave visible in this tree.
   await excludeFromGit(args.worktree, [...provisioned, ...built], args.exec);
   if (args.build) {
     // Watched exactly like the test build. It was not, so what the PRODUCT

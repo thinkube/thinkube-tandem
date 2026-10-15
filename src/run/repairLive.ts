@@ -17,6 +17,7 @@
  * arrives in a project that is already live.
  */
 import { close } from "./closer";
+import { stageWork } from "./stageWork";
 import { RunState } from "./state";
 
 export async function repairAfterTheMerge(a: {
@@ -97,7 +98,7 @@ export async function repairAfterTheMerge(a: {
     ...(a.deps.worker ? { worker: a.deps.worker } : {}),
   });
   if (closed.green) {
-    await a.exec("git", ["-C", a.worktree, "add", "-A", "."], a.worktree);
+    await stageWork({ worktree: a.worktree, exec: a.exec, log: a.log });
     await a.exec(
       "git",
       ["-C", a.worktree, "commit", "-m", `tandem: ${a.tep} — what the platform refused (attempt ${a.attempt})`],

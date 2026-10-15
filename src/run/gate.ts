@@ -29,6 +29,7 @@ import {
   writeDeliveryRecord,
 } from "./plan";
 import { porcelainPaths } from "./worker";
+import { stageWork } from "./stageWork";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
 import { handOver } from "./handOver";
@@ -519,7 +520,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         const again = await judgeWith(treeCmd!, worktree);
         verdict = suiteVerdictOf(again.code, again.output, worktree);
         if (verdict.green) {
-          await exec("git", ["add", "-A", "."], worktree);
+          await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
           await exec("git", ["commit", "-m", `tandem: ${tep} — closed`], worktree);
         }
       }
@@ -580,7 +581,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     if (deps.storeDir)
       await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults, runId, producedAt });
     undelivered.push(...docsObligations(slices, worktree));
-    await exec("git", ["add", "-A", "."], worktree);
+    await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
     await exec("git", ["commit", "-m", `tandem: ${tep} (suite red — withheld)`], worktree);
     // Withheld is still on the record: what was checked and why it stopped
     // is readable; nothing was opened and it cannot be accepted. It carries
@@ -655,7 +656,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   }
   unkept = unkept.filter((x) => x.kind === "probe");
   if (unkept.length) {
-    await exec("git", ["add", "-A", "."], worktree);
+    await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
     await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
     const named = unkept.map((p) => `- ${p.label}${p.ref ? `: ${p.ref.split("\n")[0].slice(0, 160)}` : ""}`);
     // A person's Stop is not a verdict on the work. A run stopped

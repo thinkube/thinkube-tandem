@@ -25,7 +25,7 @@ import type { Cut, Delivery, Proof, Space } from "../core/schema";
 import type { TreeShape } from "../gates/moduleSizes";
 import type { DispatchDeps } from "./deps";
 import type { DispatchOutcome } from "./dispatch";
-import { porcelainPaths } from "./worker";
+import { stageWork } from "./stageWork";
 import { downstreamOf } from "./survey";
 
 export async function handOver(a: {
@@ -62,13 +62,13 @@ export async function handOver(a: {
   // inherits every check pinning the files it touches.
   log(`${tep}: ${kept.length} check(s) recorded on the delivery and kept in the tree`);
   log(`${tep}: committing the delivery`);
-  await exec("git", ["add", "-A", "."], worktree);
+  const staged = await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
   // A cut whose proofs left nothing new in the tree (every criterion
   // already settled, or graded but never written to disk) has no changes
   // to commit — running `git commit` anyway fails where the shell answers
-  // non-zero as a thrown error rather than a code, so the dirty tree is
-  // checked first and the commit is skipped when there is nothing to record.
-  if ((await porcelainPaths(worktree)).length) {
+  // non-zero as a thrown error rather than a code, so the index is checked
+  // first and the commit is skipped when there is nothing to record.
+  if (staged.toCommit) {
     await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
   } else {
     log(`${tep}: nothing new to commit for the delivery`);
