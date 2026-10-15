@@ -396,6 +396,14 @@ export function toolTable(): ToolDef[] {
       },
     },
     {
+      name: "read_draft",
+      action: "read-draft",
+      description:
+        "Read the drafted lines (the editor's Read): works out what they ask, ready to keep. Reading decides nothing.",
+      inputSchema: IN_SPACE,
+      run: async (c) => notLive(c, "read-draft") ?? gestureReport(c, await c.session.readDraft()),
+    },
+    {
       name: "read_asks",
       action: "think",
       description:
@@ -499,7 +507,7 @@ export function toolTable(): ToolDef[] {
       name: "keep_draft",
       action: "keep-draft",
       description:
-        "Turn the read draft into asks (the editor's Keep). Run read_asks first when the draft is new. Needs TANDEM_AUTONOMOUS=1.",
+        "Turn the read draft into asks (the editor's Keep). Run read_draft first. Needs TANDEM_AUTONOMOUS=1.",
       inputSchema: IN_SPACE,
       run: (c) => notLive(c, "keep-draft") ?? gestureReport(c, c.session.keepDraft()),
     },

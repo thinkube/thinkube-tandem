@@ -73,6 +73,7 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `read_delivery` | The latest delivery: its proofs, its findings, and whether it was withheld. |
 | `read_log` | The tail of a step's log, or of the run's own log when no step is given. |
 | `save_draft` | Puts text in the capture box, one ask per line. It only drafts; turning drafts into asks is the person's act. |
+| `read_draft` | Reads the drafted lines (Read), so they can be kept. Reading decides nothing. |
 | `read_asks` | Reads the recorded asks again, applies the reading, and groups the subjects into sets. |
 | `group_into_sets` | Groups the subjects into sets to build one at a time. A person picks the set. |
 | `reground` | Reads the code again and re-places every promise that has drifted. |
