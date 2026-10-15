@@ -127,6 +127,9 @@ export interface SetupArgs {
    *  path). Proved on one existing test before it is trusted; an answer
    *  that does not hold is dropped, never a reason to refuse the run. */
   runOne?: string;
+  /** `runOne` is what the repository declares (`thinkube.yaml` test.one):
+   *  a corrected setup answer changes how the tree is installed, never it. */
+  runOneDeclared?: boolean;
   /** Re-read the setup facts with a failure as evidence; the door tries the
    *  corrected answer once before refusing. */
   resetup?: (
@@ -204,15 +207,21 @@ export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
 /** The setup answer re-read once with the failure as evidence, and the corrected answer tried. */
 async function correctAndRetry(args: SetupArgs, first: TreeSetup): Promise<TreeSetup> {
   args.log(`asking how this tree is provisioned, from the failure — this takes a few minutes`);
-  const again = await args.resetup!(first.refusal!).catch(() => undefined);
-  if (!again || (again.provision === (args.provision ?? "") && again.prepare === (args.prepare ?? "")))
+  let again;
+  try {
+    again = await args.resetup!(first.refusal!);
+  } catch (e) {
+    args.log(`the setup answer could not be re-read from the failure — ${e instanceof Error ? e.message : String(e)}`);
     return first;
+  }
+  if (again.provision === (args.provision ?? "") && again.prepare === (args.prepare ?? "")) return first;
   args.log(
     `the setup answer was corrected from the failure — provision: ${again.provision || "NONE"}; prepare: ${again.prepare || "NONE"}`,
   );
   // The store already borrowed did not build; the corrected answer is
   // tried on a tree of its own, never over that store again.
-  const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare, runOne: again.runOne ?? args.runOne }, false);
+  const runOne = args.runOneDeclared ? args.runOne : (again.runOne ?? args.runOne);
+  const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare, ...(runOne ? { runOne } : {}) }, false);
   if (!second.refusal)
     args.proven?.({ provision: again.provision, prepare: again.prepare, runOne: second.runOne ?? "" });
   return second.refusal ? second : { ...second, corrected: { provision: again.provision, prepare: again.prepare } };
@@ -594,7 +603,7 @@ function setupArgsFor(a: {
     dependencies?: string[];
     parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
   };
-  told: { provision?: string; prepare?: string; build?: string; runOne?: string; suite?: string };
+  told: { provision?: string; prepare?: string; build?: string; runOne?: string; runOneDeclared?: boolean; suite?: string };
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -617,6 +626,7 @@ function setupArgsFor(a: {
     ...(a.told.prepare ? { prepare: a.told.prepare } : {}),
     ...(a.told.build ? { build: a.told.build } : {}),
     ...(a.told.runOne ? { runOne: a.told.runOne } : {}),
+    ...(a.told.runOne && a.told.runOneDeclared ? { runOneDeclared: true } : {}),
     ...(a.resetup ? { resetup: a.resetup } : {}),
     ...(a.proven ? { proven: a.proven } : {}),
   };
@@ -646,6 +656,8 @@ export async function openTheDoor(a: {
     prepare?: string;
     build?: string;
     runOne?: string;
+    /** `runOne` is the repository's declaration, which a corrected answer keeps. */
+    runOneDeclared?: boolean;
     suite?: string;
     /** Each part's own commands, as the repository declares them. */
     parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;

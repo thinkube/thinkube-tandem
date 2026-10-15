@@ -156,6 +156,7 @@ export async function whatWeKnow(a: {
     told: {
       ...deps.told,
       ...declared,
+      ...(declared.runOne ? { runOneDeclared: true } : {}),
       ...(deps.resetup ? { resetup: deps.resetup } : {}),
       ...(deps.proveSetup ? { proveSetup: deps.proveSetup } : {}),
     },

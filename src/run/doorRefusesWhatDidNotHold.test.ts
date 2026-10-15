@@ -224,3 +224,53 @@ test("npm ci on a repository that keeps no lock file is npm install", async () =
   assert.ok(ran.includes("cd frontend && npm install"), ran.join(" | "));
   assert.ok(said.some((l) => /npm ci becomes npm install/.test(l)));
 });
+
+test("a corrected install keeps the single-test command the repository declares", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
+  const ran: string[] = [];
+  let builds = 0;
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    provision: "cd backend && uv sync",
+    build: "cd frontend && npm run build",
+    runOne: "frontend/run_tests.sh <file>",
+    runOneDeclared: true,
+    resetup: async () => ({ provision: "cd backend && uv sync && cd ../frontend && npm ci", prepare: "", runOne: "cd backend && uv run pytest <file>" }),
+    exec: async (cmd, args) =>
+      cmd === "git" && args[0] === "-C" && args[2] === "ls-files" ? { code: 0, out: "frontend/tests/types.test.ts\n" } : { code: 0, out: "" },
+    boundedExec: async (cmd) => {
+      ran.push(cmd);
+      if (/npm run build/.test(cmd)) {
+        builds++;
+        return builds === 1 ? { code: 1, output: "sh: 1: nuxt: not found" } : { code: 0, output: "built" };
+      }
+      return { code: 0, output: "1 passed" };
+    },
+    log: () => {},
+  });
+  assert.equal(setup.refusal, undefined);
+  assert.ok(ran.includes("frontend/run_tests.sh frontend/tests/types.test.ts"), ran.join("\n"));
+  assert.ok(!ran.some((c) => c.startsWith("cd backend && uv run pytest")), "the corrected answer's own runner is not used");
+});
+
+test("a setup answer that cannot be re-read says why, and the first refusal stands", async () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-base-"));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-wt-"));
+  const said: string[] = [];
+  const setup = await setupRunTree({
+    worktree: wt,
+    repoRoot: base,
+    provision: "npm ci",
+    build: "npm run build",
+    resetup: async () => {
+      throw new Error("the model round ended without an answer");
+    },
+    exec: async () => ({ code: 0, out: "" }),
+    boundedExec: async (cmd) => (/npm run build/.test(cmd) ? { code: 1, output: "sh: 1: vite: not found" } : { code: 0, output: "" }),
+    log: (l) => said.push(l),
+  });
+  assert.ok(setup.refusal);
+  assert.ok(said.some((l) => /could not be re-read from the failure — the model round ended without an answer/.test(l)), said.join("\n"));
+});
