@@ -37,9 +37,16 @@ function tree(): { dir: string; base: string } {
 }
 
 /** The gate, with nothing to run but the build this repository declares. */
-async function gateWithNoSuite(build: { code: number; output: string }) {
+async function gateWithNoSuite(build: { code: number; output: string }, o: { template?: boolean } = {}) {
   const st = new RunState(() => {});
   const { dir: worktree, base } = tree();
+  if (o.template) {
+    fs.writeFileSync(path.join(worktree, "manifest.yaml"), "kind: TemplateManifest\nmetadata:\n  name: svc\n");
+    fs.writeFileSync(
+      path.join(worktree, "thinkube.yaml"),
+      "apiVersion: thinkube.io/v1\nkind: ThinkubeDeployment\nspec:\n  containers:\n    - { name: svc, build: . }\n",
+    );
+  }
   const ran: string[] = [];
   const said: string[] = [];
   const out = await closeGate({
@@ -99,6 +106,14 @@ test("with no suite that runs here, the gate judges the tree by the repository's
     said.some((l) => /judged by its own product build/.test(l)),
     `and the gate says what it is judging: ${said.join(" · ")}`,
   );
+});
+
+test("for a template, the gate says the declared build is not the image, and names the deploy as the image's judge", async () => {
+  const { said } = await gateWithNoSuite({ code: 0, output: "built" }, { template: true });
+  const all = said.join(" · ");
+  assert.ok(said.some((l) => /building the delivered tree with the declared build only \(npm run build\)/.test(l)), all);
+  assert.ok(said.some((l) => /judged by its own declared build \(npm run build\); the image is built, and its tests run, only by the platform's deploy/.test(l)), all);
+  assert.ok(!said.some((l) => /judged by its own product build/.test(l)), `nothing says the product builds: ${all}`);
 });
 
 test("a build that fails is a red the gate answers for — never a silent hand-over", async () => {

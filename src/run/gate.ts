@@ -52,6 +52,8 @@ import { treeShape } from "../gates/moduleSizes";
 import { runnerFor } from "./proved";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { askTheTool } from "./settles";
+import { declaredBuildPassed, IMAGE_JUDGED_BY_DEPLOY } from "./buildWords";
+import { downstreamOf } from "./survey";
 
 export type { GateContext } from "./state";
 
@@ -113,13 +115,19 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   say(`${tep}: closing gate`);
   const { verifs, probeOfAc } = closingVerifications(slices, runnerFor(g.runOne, g.parts));
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
-  // the product's is the one that decides whether this tree can ship.
+  // the product's is the one that decides whether this tree can ship. A
+  // template's image is not that build: the platform's deploy builds it.
+  const template = downstreamOf(deps.repoRoot) === "template";
   if (deps.prepare) say(`${tep}: preparing the delivered tree (${deps.prepare})`);
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   // Prepares the tree so the checks can run. NOT a judgement: what the
   // build says at the END is the only reading that decides anything.
   if (deps.build && deps.build !== deps.prepare) {
-    say(`${tep}: building the delivered tree (${deps.build})`);
+    say(
+      template
+        ? `${tep}: building the delivered tree with the declared build only (${deps.build}) — ${IMAGE_JUDGED_BY_DEPLOY}`
+        : `${tep}: building the delivered tree (${deps.build})`,
+    );
     await prepareAtGate(deps.build, worktree, boundedExec, log);
   }
   say(`${tep}: running ${verifs.length} check(s) against the delivered tree`);
@@ -307,7 +315,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       const b = await boundedExec(deps.build, cwd);
       parts.push(
         b.code === 0
-          ? `ok 1 - the product build (${deps.build}) builds as shipped`
+          ? `ok 1 - ${declaredBuildPassed(deps.build, template)}`
           : `not ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}`,
       );
     }
@@ -366,9 +374,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   } else if (!g.suite) {
     log(
       deps.build
-        ? `${tep}: no whole-suite command runs here — the tree is judged by its own product build${
+        ? `${tep}: no whole-suite command runs here — the tree is judged by its own ${template ? "declared" : "product"} build${
             partSuites.length ? ` and the ${partSuites.map((p) => p.root).join(", ")} suite(s)` : ""
-          } (${deps.build})`
+          } (${deps.build})${template ? `; ${IMAGE_JUDGED_BY_DEPLOY}` : ""}`
         : `${tep}: no whole-suite command runs here — the standing-suite veto does not apply`,
     );
   }
@@ -520,7 +528,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (treeCmd)
     proofs.push({
       kind: "suite",
-      label: g.suite ? "repo suite" : "the product build",
+      label: g.suite ? "repo suite" : template ? "the declared build" : "the product build",
       verdict: verdict.green ? "green" : "red",
       ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
     });

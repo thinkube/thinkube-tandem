@@ -22,7 +22,7 @@ import {
   writeContextScope,
 } from "../core/workProjects";
 import { vs } from "../core/vscodeHost";
-import { checkReadiness, type Readiness } from "../run/readiness";
+import { checkReadiness, readinessNow, type Readiness } from "../run/readiness";
 
 /** The multi-select over the PRODUCT's repositories (the human's boundary
  *  correction: never "whatever is open in the workspace"). Returns the
@@ -158,10 +158,23 @@ export async function ensureWorkSession(args: {
       for (const sc of scopes()) {
         const p = args.openRepos().find((x) => x.card.id === sc.id);
         if (!p) throw new Error(`${sc.label ?? sc.id} is checked for this space but is not open here`);
-        all.push(await checkReadiness({ repoRoot: p.gitRoot, log: (l) => args.onChanged(key, l) }));
+        all.push(
+          await checkReadiness({
+            repoRoot: p.gitRoot,
+            home: { storeRoot: args.storeRoot, repoId: p.card.id },
+            log: (l) => args.onChanged(key, l),
+          }),
+        );
       }
       return all;
     },
+    readinessKept: () =>
+      scopes().flatMap((sc) => {
+        const p = args.openRepos().find((x) => x.card.id === sc.id);
+        if (!p) throw new Error(`${sc.label ?? sc.id} is checked for this space but is not open here`);
+        const kept = readinessNow({ storeRoot: args.storeRoot, repoId: p.card.id }, p.gitRoot);
+        return kept ? [kept] : [];
+      }),
   });
   args.sessions.set(key, s);
   return s;

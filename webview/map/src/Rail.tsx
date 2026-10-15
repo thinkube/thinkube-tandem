@@ -238,6 +238,44 @@ function Parked(props: { push: SpacePush }): JSX.Element | null {
   );
 }
 
+/** The readiness the store keeps for the repositories this space builds
+ *  into, at the commit each stands at now — whichever process checked it. */
+function KeptReadiness(props: { readiness: SpacePush["readiness"] }): JSX.Element | null {
+  const r = props.readiness;
+  if (!r) return null;
+  if ("unread" in r)
+    return (
+      <div data-readiness-unread style={{ fontSize: FS.caption, color: C.bad, marginBottom: SP.sm }}>
+        Readiness could not be read: {r.unread}
+      </div>
+    );
+  if (!r.kept.length)
+    return (
+      <div data-readiness-unasked style={{ fontSize: FS.caption, opacity: O.dim, marginBottom: SP.sm }}>
+        Readiness has not been checked at this commit. Pressing Build checks it first.
+      </div>
+    );
+  return (
+    <div data-readiness style={{ marginBottom: SP.sm }}>
+      <div style={label}>Readiness</div>
+      {r.kept.map((k) => (
+        <div key={k.repoRoot} style={{ fontSize: FS.caption, lineHeight: 1.5 }}>
+          <div style={{ color: C.quiet }}>
+            {k.repoRoot} at {k.head.slice(0, 8)}, checked {k.at}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: SP.lg }}>
+            {k.items.map((i) => (
+              <li key={i.name} style={{ whiteSpace: "pre-wrap", ...(i.ready ? {} : { color: C.bad }) }}>
+                {i.ready ? "ready" : "not ready"}, {i.name}: {i.say}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Rail(props: {
   push: SpacePush;
   /** Build lives on the work page and nowhere else: pressing it is the one
@@ -284,6 +322,7 @@ export function Rail(props: {
           </div>
         ) : ready.subjects ? (
           <section data-build-section style={{ marginBottom: 14 }}>
+            <KeptReadiness readiness={push.readiness} />
             <div style={label}>Pressing this</div>
             <ul
               data-build-price

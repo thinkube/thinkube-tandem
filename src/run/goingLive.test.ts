@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { goLiveAndJudge } from "./goingLive";
+import { goLiveAndJudge, liveWhenAlreadyThere } from "./goingLive";
 import { templateGoesLive } from "./templateLive";
 import type { Delivery } from "../core/schema";
 
@@ -154,4 +154,101 @@ test("a deploy that could not run is reported in its own words, and nothing is r
   assert.equal(r.recorded?.afterMerge?.outcome, "unjudged");
   assert.match(r.recorded?.afterMerge?.detail ?? "", /THINKUBE_API_TOKEN is not set/);
   assert.equal(r.recorded?.afterMerge?.said, "a validation deployment through thinkube-control");
+});
+
+/** The live phase for work the project already had: a template with its
+ *  deploy declared, its head recorded deployed or not; or a repository
+ *  only asked at its address. */
+async function alreadyThere(o: { deploys: boolean; recorded?: boolean; answers?: number }) {
+  const root = template();
+  const common = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-golive-git-"));
+  if (o.recorded) {
+    fs.mkdirSync(path.join(common, "tandem"));
+    fs.writeFileSync(path.join(common, "tandem", "deployed"), `${MERGED}\n`);
+  }
+  const deploys: string[] = [];
+  const knocked: string[] = [];
+  const phases: string[] = [];
+  const blocked: string[] = [];
+  let judged = 0;
+  const byDeploy = templateGoesLive({
+    repoRoot: root,
+    exec: async (_cmd, args) =>
+      args[2] === "rev-parse" ? { code: 0, out: `${args[3] === "--git-common-dir" ? common : MERGED}\n` } : { code: 0, out: "" },
+    log: () => {},
+    invoke: async (command) => {
+      deploys.push(command);
+      return { code: 0, out: "deployed" };
+    },
+    http: async () => new Response("ok", { status: 200 }),
+    control: () => ({ base: "https://control.example.com", token: "tok" }),
+    wait: async () => {},
+  });
+  await liveWhenAlreadyThere({
+    at: "https://svc.example.com",
+    ...(o.deploys
+      ? {
+          deploy: () =>
+            goLiveAndJudge({
+              at: "https://svc.example.com",
+              delivery: { ...delivered(), alreadyThere: true } as Delivery,
+              waiting: "the project already had this work — deploying it as the repository declares",
+              goLive: byDeploy.goLive,
+              whyItFailed: byDeploy.whyItFailed,
+              said: "a validation deployment through thinkube-control",
+              settle: byDeploy.settle,
+              repair: async () => ({ green: false, report: "" }),
+              buildsHere: async () => ({ ok: true, output: "" }),
+              land: async () => ({ ok: true, moved: false }),
+              halted: () => false,
+              say: () => {},
+              phase: (s, note) => phases.push(`${s}: ${note}`),
+              noProduct: (why) => blocked.push(why),
+              record: () => {},
+              judge: async () => {
+                judged++;
+              },
+            }),
+        }
+      : {}),
+    knock: async (at) => {
+      knocked.push(at);
+      return o.answers;
+    },
+    phase: (s, note) => phases.push(`${s}: ${note}`),
+    noProduct: (why) => blocked.push(why),
+    answering: async () => {
+      judged++;
+    },
+  });
+  return { deploys, knocked, phases, blocked, judged };
+}
+
+test("work a template already had is deployed by its declared deploy, not only knocked on", async () => {
+  const r = await alreadyThere({ deploys: true });
+  assert.deepEqual(r.deploys, ["python3 scripts/deploy.py svc"], "a head never deployed is deployed");
+  assert.deepEqual(r.knocked, [], "the address alone is not the answer");
+  assert.equal(r.phases[0], "running: the project already had this work — deploying it as the repository declares");
+  assert.equal(r.phases.at(-1), "done: live at https://svc.example.com");
+  assert.equal(r.judged, 1);
+});
+
+test("work a template already had, at a head recorded deployed, is not deployed again but still asked", async () => {
+  const r = await alreadyThere({ deploys: true, recorded: true });
+  assert.deepEqual(r.deploys, [], "a commit recorded as deployed is not deployed twice");
+  assert.equal(r.phases.at(-1), "done: live at https://svc.example.com");
+  assert.equal(r.judged, 1);
+});
+
+test("work a repository without a declared deploy already had is asked at its address, and judged when it answers", async () => {
+  const live = await alreadyThere({ deploys: false, answers: 200 });
+  assert.deepEqual(live.deploys, []);
+  assert.deepEqual(live.knocked, ["https://svc.example.com"]);
+  assert.deepEqual(live.phases, ["running: the project already had this work — asking https://svc.example.com", "done: live at https://svc.example.com"]);
+  assert.equal(live.judged, 1);
+
+  const silent = await alreadyThere({ deploys: false });
+  assert.equal(silent.phases.at(-1), "failed: https://svc.example.com does not answer");
+  assert.deepEqual(silent.blocked, ["https://svc.example.com does not answer"]);
+  assert.equal(silent.judged, 0);
 });

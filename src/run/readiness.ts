@@ -16,16 +16,20 @@
  * press that cannot be undone.
  *
  * Each item answers `ready`, and `say` tells a person what is wrong and
- * what to do. The answer is kept per HEAD commit and the content of the
- * three files it reads (`thinkube.yaml`, `manifest.yaml`,
- * `.tandem/setup.json`), so asking twice about the same tree runs neither
- * the setup nor a deploy again.
+ * what to do. The answer is kept in the store, beside the repository's
+ * spaces, per checkout, HEAD commit and the content of the three files it
+ * reads (`thinkube.yaml`, `manifest.yaml`, `.tandem/setup.json`). Asking
+ * twice about the same tree runs neither the setup nor a deploy again, and
+ * every process that reads the store — the editor, the MCP server, a run's
+ * driver — reads the same answer.
  */
+import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { spacesHome } from "../core/spaces";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { controlReachedBy, type Http } from "../hostui/templateCore";
 import { isCodePath, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
@@ -34,6 +38,7 @@ import { factsOf } from "./facts";
 import type { Invoke } from "./makeLive";
 import { defaultExec, runnerEnv, type Exec } from "./oracle";
 import { missing } from "./proved";
+import { declaredBuildPassed } from "./buildWords";
 import { openTheDoor, type BoundedExec } from "./setup";
 import { downstreamOf } from "./survey";
 import { headOf, validationDeploy, type ReachControl } from "./validationDeploy";
@@ -55,8 +60,16 @@ export interface Readiness {
   items: ReadinessItem[];
 }
 
+/** Where a repository's answers are kept: the store, beside its spaces. */
+interface ReadinessHome {
+  storeRoot: string;
+  /** The repository's minted id, from its card. */
+  repoId: string;
+}
+
 interface ReadinessArgs {
   repoRoot: string;
+  home: ReadinessHome;
   /** git, and the door's own listing. */
   exec?: Exec;
   /** The door's commands: install, build, one test. */
@@ -71,14 +84,13 @@ interface ReadinessArgs {
   now?: () => string;
 }
 
-const answered = new Map<string, { key: string; result: Readiness }>();
 const asking = new Map<string, Promise<Readiness>>();
 
 /** The files whose content decides the answer, beside the HEAD commit. */
 const READ = ["thinkube.yaml", "manifest.yaml", path.join(".tandem", "setup.json")];
 
 function keyOf(root: string, head: string): string {
-  const h = crypto.createHash("sha256").update(head);
+  const h = crypto.createHash("sha256").update(`${root}\0${head}`);
   for (const f of READ) {
     const at = path.join(root, f);
     h.update(`\0${f}\0`).update(fs.existsSync(at) ? fs.readFileSync(at) : "(absent)");
@@ -86,9 +98,53 @@ function keyOf(root: string, head: string): string {
   return h.digest("hex");
 }
 
-/** The last answer for this repository, when one was given in this process. */
-export function lastReadiness(repoRoot: string): Readiness | undefined {
-  return answered.get(path.resolve(repoRoot))?.result;
+/** The file one answer is kept in. */
+function keptAt(home: ReadinessHome, key: string): string {
+  return path.join(spacesHome(home.storeRoot, home.repoId, "repository"), `readiness-${key}.json`);
+}
+
+/** The answer kept for this key, if one was given. A kept answer that
+ *  cannot be parsed throws, naming the file. */
+function readKept(home: ReadinessHome, key: string): Readiness | undefined {
+  const at = keptAt(home, key);
+  if (!fs.existsSync(at)) return undefined;
+  try {
+    return JSON.parse(fs.readFileSync(at, "utf8")) as Readiness;
+  } catch (e) {
+    throw new Error(`the readiness answer kept at ${at} cannot be read: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** Keep an answer, written whole: a reader never sees half a file. */
+function keep(home: ReadinessHome, key: string, result: Readiness): void {
+  const at = keptAt(home, key);
+  fs.mkdirSync(path.dirname(at), { recursive: true });
+  const tmp = `${at}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(result, null, 2) + "\n");
+  fs.renameSync(tmp, at);
+}
+
+/** The commit a checkout's HEAD names, read synchronously, for a reader
+ *  that renders. A HEAD git cannot name throws in git's words. */
+function headNow(root: string): string {
+  const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+  if (!/^[0-9a-f]{40}$/.test(head)) throw new Error(`git could not name HEAD in ${root}: ${head.slice(0, 300)}`);
+  return head;
+}
+
+/** The answer the store keeps for this checkout at the HEAD it stands at
+ *  now, given by whichever process asked; nothing when that tree was never
+ *  answered. */
+export function readinessNow(
+  home: ReadinessHome,
+  repoRoot: string,
+  head: (root: string) => string = headNow,
+): Readiness | undefined {
+  const root = path.resolve(repoRoot);
+  return readKept(home, keyOf(root, head(root)));
 }
 
 /** Why work cannot be signed against these repositories, or nothing when
@@ -111,22 +167,23 @@ export function readinessRefusal(all: readonly Readiness[]): string | undefined 
   );
 }
 
-/** The readiness of one repository, from the cache when its HEAD and its
+/** The readiness of one repository, from the store when its HEAD and its
  *  declarations are what they were when it was last answered. */
 export async function checkReadiness(a: ReadinessArgs): Promise<Readiness> {
   const root = path.resolve(a.repoRoot);
   const exec = a.exec ?? defaultExec;
   const head = await headOf(root, exec);
   const key = keyOf(root, head);
-  const held = answered.get(root);
-  if (held?.key === key) return held.result;
+  const kept = readKept(a.home, key);
+  if (kept) return kept;
   const flying = asking.get(`${root}\0${key}`);
   if (flying) return flying;
   const asked = answer({ ...a, repoRoot: root, exec }, head).then((result) => {
-    // A deploy that commits a release moves HEAD, so a question about the
-    // new commit is a new question: its tree is answered again, and its
-    // deploy is not run again because that commit is recorded as deployed.
-    answered.set(root, { key, result });
+    // Kept under the HEAD it was asked about. A deploy that commits a
+    // release moves HEAD, so a question about the new commit is a new
+    // question: its tree is answered again, and its deploy is not run
+    // again because that commit is recorded as deployed.
+    keep(a.home, key, result);
     return result;
   });
   asking.set(`${root}\0${key}`, asked);
@@ -141,7 +198,7 @@ async function answer(a: ReadinessArgs & { exec: Exec }, head: string): Promise<
   const root = a.repoRoot;
   const template = downstreamOf(root) === "template";
   const items: ReadinessItem[] = [];
-  items.push(await attempt("setup", () => setupHolds(a, head)));
+  items.push(await attempt("setup", () => setupHolds(a, head, template)));
   items.push(await attempt("check homes", () => checksLandWhereTestsRun(root, a.exec)));
   if (template) {
     items.push(await attempt("deploy declared", async () => deployDeclared(root)));
@@ -178,7 +235,11 @@ async function attempt(name: string, check: () => Promise<Omit<ReadinessItem, "n
  * HEAD, exactly as a run's first minute runs them — with what the
  * repository declares and what an earlier run proved about it.
  */
-async function setupHolds(a: ReadinessArgs & { exec: Exec }, head: string): Promise<Omit<ReadinessItem, "name">> {
+async function setupHolds(
+  a: ReadinessArgs & { exec: Exec },
+  head: string,
+  template: boolean,
+): Promise<Omit<ReadinessItem, "name">> {
   const root = a.repoRoot;
   const short = head.slice(0, 8);
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ready-"));
@@ -225,7 +286,7 @@ async function setupHolds(a: ReadinessArgs & { exec: Exec }, head: string): Prom
             ready: true,
             say:
               `the setup holds on an untouched copy of ${short}` +
-              (ready.build ? `, and the product builds` : "") +
+              (ready.build ? `, and ${declaredBuildPassed(ready.build, template)}` : "") +
               (ready.runOne ? `, and one test runs with: ${ready.runOne}` : ""),
           };
   } finally {

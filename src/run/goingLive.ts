@@ -100,3 +100,35 @@ export async function goLiveAndJudge(a: {
   );
   if (went.live) await a.judge(alsoMerged);
 }
+
+/**
+ * The live phase for work the project already had: nothing new was
+ * merged, so nothing new is waited for. A template that declares its own
+ * deploy is made live by that deploy, exactly as a new merge is: the
+ * validation deploy skips a commit already recorded as deployed and still
+ * asks its health path, so a head never deployed is deployed, and the
+ * deploy's refusal is the veto. Anything else is only asked at its
+ * address, and judged there when it answers.
+ */
+export async function liveWhenAlreadyThere(a: {
+  at: string;
+  /** The template's whole live phase over its declared deploy, when it declares one. */
+  deploy?: () => Promise<void>;
+  /** The status the address answers with; nothing when it does not answer. */
+  knock: (at: string) => Promise<number | undefined>;
+  phase: (state: "running" | "done" | "failed", note: string) => void;
+  noProduct: (why: string) => void;
+  /** Judge the product found answering at the address. */
+  answering: () => Promise<void>;
+}): Promise<void> {
+  if (a.deploy) return a.deploy();
+  a.phase("running", `the project already had this work — asking ${a.at}`);
+  const code = await a.knock(a.at);
+  const answering = code !== undefined && code < 500;
+  a.phase(answering ? "done" : "failed", answering ? `live at ${a.at}` : `${a.at} does not answer`);
+  if (!answering) {
+    a.noProduct(`${a.at} does not answer`);
+    return;
+  }
+  await a.answering();
+}

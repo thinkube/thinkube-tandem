@@ -21,6 +21,7 @@ import { promiseLabelOf } from "./runPromiseLabel";
 import { saidPlainly } from "../gates/render";
 import { signedIdleNotice } from "./runGate";
 import { runsOnFile } from "../run/record";
+import type { SpacePush } from "./surfaceContract";
 
 const TITLE_CLIP = 64;
 
@@ -120,6 +121,18 @@ function latestVerdictOf(
   return undefined;
 }
 
+/** The readiness the store keeps for this space's repositories at their
+ *  HEAD now, or why it could not be read. */
+function keptReadinessOf(session: TandemSession): SpacePush["readiness"] {
+  const kept = session.deps.readinessKept;
+  if (!kept) return undefined;
+  try {
+    return { kept: kept() };
+  } catch (e) {
+    return { unread: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export function spacePush(session: TandemSession, message?: string): unknown {
   const byId = new Map(session.space.nodes.map((n) => [n.id, n]));
   // What the world answered back, read once for the whole push.
@@ -144,6 +157,7 @@ export function spacePush(session: TandemSession, message?: string): unknown {
     activity: session.activity,
     pendingCheck: session.pendingCheck,
     runNote: session.runNote,
+    readiness: keptReadinessOf(session),
     // Signed work that never delivered: the run can be started again,
     // and the surface is the only place that can say so.
     unrun: session.unrunCut(),

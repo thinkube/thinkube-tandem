@@ -27,9 +27,10 @@ function slugifySpaceName(name: string): string {
 
 /** The directory holding one owner's spaces. A repository's spaces live
  *  under spaces/<id>/; a work-project's live in its own projects/<id>/ dir
- *  (Amendment 1 layout). */
+ *  (Amendment 1 layout). What belongs to the owner rather than to one
+ *  space — its TEP counter, its readiness answers — is a file beside them. */
 export type SpaceOwnerKind = "repository" | "project";
-function spacesHome(storeRoot: string, ownerId: string, kind: SpaceOwnerKind): string {
+export function spacesHome(storeRoot: string, ownerId: string, kind: SpaceOwnerKind): string {
   return path.join(storeRoot, kind === "project" ? "projects" : "spaces", ownerId);
 }
 

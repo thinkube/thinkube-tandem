@@ -26,7 +26,7 @@ import { repairWhatDidNotHold, whatDidNotHold } from "./repairOnTheProduct";
 import { landDelivery } from "./land";
 import { deployedAddress, knock, pageRoots as pageRootsOf, readLive, whyItFailed } from "./live";
 import { stampPending } from "./harvest";
-import { goLiveAndJudge } from "./goingLive";
+import { goLiveAndJudge, liveWhenAlreadyThere } from "./goingLive";
 import { templateGoesLive } from "./templateLive";
 import { downstreamOf } from "./survey";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
@@ -760,28 +760,12 @@ export async function dispatchTep(
             step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
             stop: st.stop.signal,
           });
-    if (!at) {
-      st.phase("live", "done", "this repository is not deployed by the platform");
-      noProduct("this repository is not deployed by the platform, so nothing can be driven");
-    } else if (d.alreadyThere) {
-      st.phase("live", "running", `the project already had this work — asking ${at}`);
-      const code = await knock(at);
-      const answering = code !== undefined && code < 500;
-      st.phase(
-        "live",
-        answering ? "done" : "failed",
-        answering ? `live at ${at}` : `${at} does not answer`,
-      );
-      if (!answering) noProduct(`${at} does not answer`);
-      outcome = answering
-        ? { ...outcome, delivery: { ...d, liveAt: at } }
-        : outcome;
-      if (answering) outcome = await judgeAndRepair(at, []);
-    } else {
-      await goLiveAndJudge({
+    /** The live phase that makes the work live and judges it there. */
+    const goLiveAt = (at: string, waiting: string): Promise<void> =>
+      goLiveAndJudge({
         at,
         delivery: d,
-        waiting: byDeploy ? "deploying it as the repository declares" : "waiting for the platform to notice the push",
+        waiting,
         goLive: () => goLive(producedAt),
         whyItFailed: () =>
           byDeploy ? byDeploy.whyItFailed() : whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
@@ -826,6 +810,25 @@ export async function dispatchTep(
           outcome = await judgeAndRepair(at, alsoMerged);
         },
       });
+    if (!at) {
+      st.phase("live", "done", "this repository is not deployed by the platform");
+      noProduct("this repository is not deployed by the platform, so nothing can be driven");
+    } else if (d.alreadyThere) {
+      await liveWhenAlreadyThere({
+        at,
+        ...(byDeploy
+          ? { deploy: () => goLiveAt(at, "the project already had this work — deploying it as the repository declares") }
+          : {}),
+        knock,
+        phase: (state, note) => st.phase("live", state, note),
+        noProduct,
+        answering: async () => {
+          outcome = { ...outcome, delivery: { ...d, liveAt: at } };
+          outcome = await judgeAndRepair(at, []);
+        },
+      });
+    } else {
+      await goLiveAt(at, byDeploy ? "deploying it as the repository declares" : "waiting for the platform to notice the push");
     }
   }
   return outcome;

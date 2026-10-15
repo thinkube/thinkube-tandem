@@ -25,7 +25,7 @@ import { execFileSync } from "node:child_process";
 import { allCards } from "../core/cards";
 import { catalogOf, controlReachedBy, createAppFromTemplate } from "../hostui/templateCore";
 import { requestStop } from "../run/record";
-import { lastReadiness, type Readiness } from "../run/readiness";
+import type { Readiness } from "../run/readiness";
 
 export interface ToolCall {
   session: TandemSession;
@@ -70,17 +70,24 @@ function gestureReport(c: ToolCall, r: { ok: boolean; reason?: string }): string
   return r.ok ? spaceReport(c) : `refused: ${r.reason ?? "no reason given"}`;
 }
 
-/** The repository the space builds into, where its readiness is asked. */
-function gitRootOf(c: ToolCall): string {
-  return c.session.deps.scope?.gitRoot ?? c.session.deps.round.repoRoot;
-}
-
 /** Each item of a readiness answer, on a line of its own. */
 function readinessLines(r: Readiness): string[] {
   return [
     `readiness of ${r.repoRoot} at ${r.head.slice(0, 8)} (${r.at}): ${r.items.every((i) => i.ready) ? "ready" : "NOT ready"}`,
     ...r.items.map((i) => `  ${i.ready ? "ready    " : "NOT ready"} ${i.name} — ${i.say}`),
   ];
+}
+
+/** The readiness answers the store keeps for the space's repositories at
+ *  their HEAD now; a HEAD that cannot be read is said in git's words. */
+function keptReadinessLines(c: ToolCall): string[] {
+  const kept = c.session.deps.readinessKept;
+  if (!kept) return [];
+  try {
+    return kept().flatMap(readinessLines);
+  } catch (e) {
+    return [`readiness: the kept answer could not be read — ${e instanceof Error ? e.message : String(e)}`];
+  }
 }
 
 /** The space as a person would want it summarised: what was asked, what
@@ -119,8 +126,7 @@ function spaceReport(c: ToolCall): string {
       lines.push(`approval: ${a.approved ? "valid" : `refused — ${a.reason}`}`);
     }
   }
-  const ready = lastReadiness(gitRootOf(c));
-  if (ready) lines.push(...readinessLines(ready));
+  lines.push(...keptReadinessLines(c));
   lines.push("");
   lines.push("asks:");
   for (const a of s.space.asks) lines.push(`  · ${a.text}`);

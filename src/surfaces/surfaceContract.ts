@@ -210,6 +210,12 @@ export interface SpacePush {
   pendingCheck?: { changeId: string; text: string; kind: "probe" | "assessment" };
   /** Why the last build did not start — rendered on the flow tab. */
   runNote?: string;
+  /** The readiness the store keeps for each repository this space builds
+   *  into, at the HEAD it stands at now, whichever process answered it; or
+   *  why it could not be read. Absent when the session checks no readiness. */
+  readiness?:
+    | { kept: { repoRoot: string; head: string; at: string; items: { name: string; ready: boolean; say: string }[] }[] }
+    | { unread: string };
   /** Work that was signed and never delivered — it can be run again. */
   unrun?: { id: string; tepId?: string };
   /** The one notice for signed work that has not delivered — its heading,

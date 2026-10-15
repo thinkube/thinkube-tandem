@@ -17,9 +17,12 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { checkReadiness, lastReadiness, readinessRefusal } from "./readiness";
+import { checkReadiness, readinessNow, readinessRefusal } from "./readiness";
 
 const HEAD = "a".repeat(40);
+/** One store for every test: answers are keyed by checkout, and each test
+ *  makes its own. */
+const HOME = { storeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-store-")), repoId: "svc-abc123" };
 const FILES = ["app/main.py", "app/store.py", "tests/test_main.py", "run_tests.sh", "thinkube.yaml", "manifest.yaml"];
 
 function thinkubeYaml(o: { version?: string; deploy?: boolean; health?: boolean } = {}): string {
@@ -139,14 +142,19 @@ test("a template whose setup holds, whose checks land in its tests, declared, ta
   const d = door();
   const w = web();
   const live = deployer();
-  const r = await checkReadiness({ repoRoot: root, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {} });
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {} });
   assert.deepEqual(
     r.items.map((i) => [i.name, i.ready]),
     [["setup", true], ["check homes", true], ["deploy declared", true], ["release", true], ["secrets", true], ["deploy works", true]],
     r.items.map((i) => `${i.name}: ${i.say}`).join("\n"),
   );
   assert.equal(readinessRefusal([r]), undefined);
-  assert.ok(d.ran.includes("python3 -m compileall -q app"), "the product build was proved on the copy");
+  assert.ok(d.ran.includes("python3 -m compileall -q app"), "the declared build was proved on the copy");
+  assert.match(
+    item(r, "setup").say,
+    /the declared build \(python3 -m compileall -q app\) passes; that is not the image: the image is built, and its tests run, only by the platform's deploy/,
+  );
+  assert.doesNotMatch(item(r, "setup").say, /product build/, "a template's declared build is not said to build the product");
   assert.ok(g.calls.some((c) => /^git worktree add --detach .* a{40}$/.test(c)), "the setup ran on a copy of HEAD");
   assert.ok(g.calls.some((c) => /^git worktree remove --force /.test(c)), "and the copy was removed");
   assert.match(item(r, "check homes").say, /tests\/main_AC-1_test\.py/);
@@ -155,12 +163,12 @@ test("a template whose setup holds, whose checks land in its tests, declared, ta
   assert.ok(w.asked.includes("https://svc.example.com/health"), "the deployed health path was asked");
   assert.equal(fs.readFileSync(path.join(g.state.common, "tandem", "deployed"), "utf8").trim(), HEAD, "the deployed commit is recorded in git's common directory");
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".tandem", "setup.json"), "utf8")).deployedAt, undefined, "and nothing is written into the tracked tree");
-  assert.equal(lastReadiness(root), r, "the answer is kept for whoever reads it next");
+  assert.deepEqual(readinessNow(HOME, root, () => HEAD), r, "the answer is kept for whoever reads it next");
 
   // The same tree asked again: neither the setup nor the deploy runs again.
   const doorRuns = d.ran.length;
-  const again = await checkReadiness({ repoRoot: root, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {} });
-  assert.equal(again, r);
+  const again = await checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {} });
+  assert.deepEqual(again, r);
   assert.equal(d.ran.length, doorRuns, "the door did not run again");
   assert.equal(live.ran.length, 1, "nothing was deployed again");
 });
@@ -169,6 +177,7 @@ test("a setup that does not hold on a clean copy is not ready, in the door's wor
   const root = template();
   const r = await checkReadiness({
     repoRoot: root,
+    home: HOME,
     exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` }).exec,
     boundedExec: door({ cmd: "python3 -m compileall -q app", output: "SyntaxError: invalid syntax (main.py, line 3)" }).boundedExec,
     invoke: deployer().invoke,
@@ -187,6 +196,7 @@ test("a check that would be minted where the repository runs no test is not read
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-plain-"));
   const r = await checkReadiness({
     repoRoot: root,
+    home: HOME,
     exec: git({ files: ["src/score.py", "web/view.test.ts", "web/view.ts"] }).exec,
     boundedExec: door().boundedExec,
   });
@@ -202,6 +212,7 @@ test("a template that declares no deploy is not ready, and its deploy is not tri
   const live = deployer();
   const r = await checkReadiness({
     repoRoot: root,
+    home: HOME,
     exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` }).exec,
     boundedExec: door().boundedExec,
     invoke: live.invoke,
@@ -219,6 +230,7 @@ test("a release tag that is not the declared version is not ready, naming both",
   const root = template({ yaml: thinkubeYaml({ version: "0.1.0" }) });
   const r = await checkReadiness({
     repoRoot: root,
+    home: HOME,
     exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n${HEAD}\trefs/tags/v0.1.2\n${HEAD}\trefs/tags/latest\n` }).exec,
     boundedExec: door().boundedExec,
     invoke: deployer().invoke,
@@ -231,11 +243,11 @@ test("a release tag that is not the declared version is not ready, naming both",
   assert.match(release.say, /newest release tag is v0\.1\.2, but thinkube\.yaml metadata\.version is 0\.1\.0/);
 
   const untagged = template();
-  const none = await checkReadiness({ repoRoot: untagged, exec: git({ tags: "" }).exec, boundedExec: door().boundedExec, control, http: web().http });
+  const none = await checkReadiness({ repoRoot: untagged, home: HOME, exec: git({ tags: "" }).exec, boundedExec: door().boundedExec, control, http: web().http });
   assert.match(item(none, "release").say, /origin has no vMAJOR\.MINOR\.PATCH tag — tag the release v0\.1\.0/);
 
   const unreachable = template();
-  const failed = await checkReadiness({ repoRoot: unreachable, exec: git().exec, boundedExec: door().boundedExec, control, http: web().http });
+  const failed = await checkReadiness({ repoRoot: unreachable, home: HOME, exec: git().exec, boundedExec: door().boundedExec, control, http: web().http });
   assert.equal(item(failed, "release").ready, false);
   assert.match(item(failed, "release").say, /could not read from remote repository/, "git's own words");
 });
@@ -244,6 +256,7 @@ test("a secret the manifest declares and control does not hold is not ready; con
   const root = template({ secrets: ["DB_URL", "API_KEY"] });
   const r = await checkReadiness({
     repoRoot: root,
+    home: HOME,
     exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` }).exec,
     boundedExec: door().boundedExec,
     invoke: deployer().invoke,
@@ -257,6 +270,7 @@ test("a secret the manifest declares and control does not hold is not ready; con
   const away = template();
   const out = await checkReadiness({
     repoRoot: away,
+    home: HOME,
     exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` }).exec,
     boundedExec: door().boundedExec,
     invoke: deployer().invoke,
@@ -273,6 +287,7 @@ test("a deploy that fails is not ready in its own words; one already recorded fo
   const broken = deployer("Error: release v0.1.0 not found in the catalog");
   const r = await checkReadiness({
     repoRoot: root,
+    home: HOME,
     exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` }).exec,
     boundedExec: door().boundedExec,
     invoke: broken.invoke,
@@ -292,6 +307,7 @@ test("a deploy that fails is not ready in its own words; one already recorded fo
   let waits = 0;
   const sick = await checkReadiness({
     repoRoot: deployed,
+    home: HOME,
     exec: recorded.exec,
     boundedExec: door().boundedExec,
     invoke: live.invoke,
@@ -313,7 +329,7 @@ test("the commit recorded is the one the deploy left, and asking again at that H
   const g = git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` });
   const live = deployer(undefined, { state: g.state, to: RELEASE });
   const ask = () =>
-    checkReadiness({ repoRoot: root, exec: g.exec, boundedExec: door().boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {} });
+    checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: door().boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {} });
   const first = await ask();
   assert.equal(item(first, "deploy works").ready, true, item(first, "deploy works").say);
   assert.match(item(first, "deploy works").say, /deployed dddddddd \(the deploy moved HEAD from aaaaaaaa\)/);
@@ -360,7 +376,7 @@ const SPLIT_YAML = [
 test("a repository that declares parts is judged by code inside them, not by a script outside every part", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-split-"));
   fs.writeFileSync(path.join(root, "thinkube.yaml"), SPLIT_YAML);
-  const r = await checkReadiness({ repoRoot: root, exec: git({ files: SPLIT }).exec, boundedExec: door().boundedExec });
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: git({ files: SPLIT }).exec, boundedExec: door().boundedExec });
   const homes = item(r, "check homes");
   assert.equal(homes.ready, true, homes.say);
   assert.match(homes.say, /a check for backend\/app\/config\.py is minted at backend\/tests\/config_AC-1_test\.py/);
@@ -370,6 +386,7 @@ test("with no thinkube.yaml the whole repository is read, as before", async () =
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-split-plain-"));
   const r = await checkReadiness({
     repoRoot: root,
+    home: HOME,
     exec: git({ files: SPLIT.filter((f) => f !== "thinkube.yaml") }).exec,
     boundedExec: door().boundedExec,
   });
@@ -399,7 +416,7 @@ test("a container built from \".\" that says how one test runs is the command th
   fs.mkdirSync(path.join(root, ".tandem"));
   fs.writeFileSync(path.join(root, ".tandem", "setup.json"), JSON.stringify({ runOne: "pytest <file>", suite: "pytest -q" }));
   const d = door();
-  const r = await checkReadiness({ repoRoot: root, exec: git().exec, boundedExec: d.boundedExec });
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: git().exec, boundedExec: d.boundedExec });
   const setup = item(r, "setup");
   assert.equal(setup.ready, true, setup.say);
   assert.match(setup.say, /one test runs with: \.\/run_tests\.sh <file>/);
@@ -408,4 +425,50 @@ test("a container built from \".\" that says how one test runs is the command th
   assert.ok(!d.ran.includes("pytest -q"), "the remembered suite gives way to the declared one");
   const homes = item(r, "check homes");
   assert.equal(homes.ready, true, homes.say);
+});
+
+test("a repository that is not a template says its declared build builds the product", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-plain-"));
+  fs.mkdirSync(path.join(root, ".tandem"));
+  fs.writeFileSync(
+    path.join(root, ".tandem", "setup.json"),
+    JSON.stringify({ provision: "pip install -r requirements.txt", prepare: "", runOne: "./run_tests.sh <file>", suite: "./run_tests.sh", build: "python3 -m compileall -q app" }),
+  );
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: git().exec, boundedExec: door().boundedExec });
+  const setup = item(r, "setup");
+  assert.equal(setup.ready, true, setup.say);
+  assert.match(setup.say, /the product build \(python3 -m compileall -q app\) builds as shipped/);
+  assert.doesNotMatch(setup.say, /image/);
+});
+
+test("an answer kept by one process is read by a fresh one for the same checkout and HEAD, and not for another HEAD", async () => {
+  const home = { storeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-store-")), repoId: "svc-abc123" };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-kept-"));
+  const g = git();
+  const d = door();
+  /** Each answer given makes one clean copy of HEAD. */
+  const copies = () => g.calls.filter((c) => c.startsWith("git worktree add")).length;
+  const r = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec });
+  assert.equal(copies(), 1);
+  const kept = fs.readdirSync(path.join(home.storeRoot, "spaces", home.repoId));
+  assert.equal(kept.length, 1, kept.join(", "));
+  assert.match(kept[0], /^readiness-[0-9a-f]{64}\.json$/, "kept beside the repository's spaces");
+
+  // A fresh instance of the module holds nothing in memory: what it reads
+  // comes from the store.
+  delete require.cache[require.resolve("./readiness")];
+  const fresh = require("./readiness") as typeof import("./readiness");
+  assert.deepEqual(fresh.readinessNow(home, root, () => HEAD), r);
+  assert.equal(fresh.readinessNow(home, root, () => "b".repeat(40)), undefined, "another HEAD has no answer");
+  assert.equal(fresh.readinessNow({ ...home, repoId: "other-123456" }, root, () => HEAD), undefined, "another repository has none");
+
+  const again = await fresh.checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec });
+  assert.deepEqual(again, r);
+  assert.equal(copies(), 1, "the fresh instance ran nothing for a tree already answered");
+
+  g.state.head = "b".repeat(40);
+  const moved = await fresh.checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec });
+  assert.equal(moved.head, "b".repeat(40));
+  assert.equal(copies(), 2, "a new HEAD is a new question");
+  assert.deepEqual(fresh.readinessNow(home, root, () => "b".repeat(40)), moved);
 });

@@ -30,7 +30,7 @@ import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { configureDocsRoots, docsRootsOf } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
 import { startRunElsewhere } from "../run/spawnDriver";
-import { checkReadiness } from "../run/readiness";
+import { checkReadiness, readinessNow } from "../run/readiness";
 
 /** Where the editor keeps approvals and the signing key. A session that
  *  reads anywhere else sees every signed cut as unapproved. */
@@ -125,7 +125,17 @@ export async function attach(args: AttachArgs): Promise<Attached> {
     docsGateMode: "blocking",
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     ...(args.onChanged ? { onChanged: args.onChanged } : {}),
-    readiness: async () => [await checkReadiness({ repoRoot: project.gitRoot, log: (l) => args.onChanged?.(l) })],
+    readiness: async () => [
+      await checkReadiness({
+        repoRoot: project.gitRoot,
+        home: { storeRoot, repoId: project.card.id },
+        log: (l) => args.onChanged?.(l),
+      }),
+    ],
+    readinessKept: () => {
+      const kept = readinessNow({ storeRoot, repoId: project.card.id }, project.gitRoot);
+      return kept ? [kept] : [];
+    },
     ...(args.driveHere
       ? {}
       : {
