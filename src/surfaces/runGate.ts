@@ -456,18 +456,16 @@ export async function executeRun(
       // under the repo stamp, so after a derivation this costs nothing. A
       // reading that fails stops the run with its own error.
       const known = await s.knowledge();
-      const digest = known?.digest;
+      const digest = known.digest;
       // A promise-level need that exists only because a test home imports
       // another promise's code belongs to the maintain slice, not the plan:
       // dropped before planning, so it forces no ring into one slice.
-      if (known) {
-        const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id)).map((n) => ({ ...n, needs: [...n.needs] }));
-        const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p));
-        if (dropped.length) {
-          const byId = new Map(members.map((n) => [n.id, n]));
-          s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
-          s.runState?.log(`plan: ${dropped.length} need(s) explained only by a test-home import moved to the maintain slice`);
-        }
+      const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id)).map((n) => ({ ...n, needs: [...n.needs] }));
+      const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p));
+      if (dropped.length) {
+        const byId = new Map(members.map((n) => [n.id, n]));
+        s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
+        s.runState?.log(`plan: ${dropped.length} need(s) explained only by a test-home import moved to the maintain slice`);
       }
       const plan = planScopes(s.space, cut);
       if (!plan.ok) {
@@ -483,19 +481,19 @@ export async function executeRun(
       }
       // The check-setup facts: the machine's own reading of the repo,
       // unless the human explicitly overrode the build step in settings.
-      const prepare = s.deps.prepareCommand || known?.prepare || undefined;
-      const provision = known?.provision || undefined;
-      const runOne = known?.runOne || undefined;
+      const prepare = s.deps.prepareCommand || known.prepare || undefined;
+      const provision = known.provision || undefined;
+      const runOne = known.runOne || undefined;
       // The product build — proved at the door, red at the gate — from the
       // repository's own facts first, the reading second.
-      const build = factsOf(s.deps.round.repoRoot)?.build || known?.build || undefined;
-      const suiteReds = known?.suiteReds;
-      const rememberSuiteReds = known?.rememberSuiteReds;
-      const resetup = known?.resetup;
-      const proveSetup = known?.proveSetup;
+      const build = factsOf(s.deps.round.repoRoot)?.build || known.build || undefined;
+      const suiteReds = known.suiteReds;
+      const rememberSuiteReds = known.rememberSuiteReds;
+      const resetup = known.resetup;
+      const proveSetup = known.proveSetup;
       // The graph's importer listing: the run reads it to order each slice's
       // test-home work after the production code those tests import.
-      const affected = known ? (p: string) => known.affected(p) : undefined;
+      const affected = (p: string) => known.affected(p);
       let last;
       last = await dispatchScopePlan({
         plan,
@@ -511,10 +509,10 @@ export async function executeRun(
         ...(provision ? { provision } : {}),
         ...(runOne ? { runOne } : {}),
         ...(suiteReds ? { suiteReds } : {}),
-        ...(rememberSuiteReds ? { rememberSuiteReds } : {}),
-        ...(resetup ? { resetup } : {}),
-        ...(proveSetup ? { proveSetup } : {}),
-        ...(affected ? { affected } : {}),
+        rememberSuiteReds,
+        resetup,
+        proveSetup,
+        affected,
         onDelivery: (delivery, note) => {
           // One delivery per cut, replaced by the newest run. A cut run four
           // times used to leave four rows on the page, three of them stale
