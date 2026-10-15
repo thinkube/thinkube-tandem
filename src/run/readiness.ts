@@ -37,7 +37,7 @@ import { missing } from "./proved";
 import { openTheDoor, type BoundedExec } from "./setup";
 import { downstreamOf } from "./survey";
 import { headOf, validationDeploy, type ReachControl } from "./validationDeploy";
-import { canJudgeOne, declaredPartCommands } from "./whatWeKnow";
+import { canJudgeOne, knownUnderDeclaration, toldByDeclaration } from "./whatWeKnow";
 
 interface ReadinessItem {
   name: string;
@@ -189,17 +189,18 @@ async function setupHolds(a: ReadinessArgs & { exec: Exec }, head: string): Prom
   }
   let found: Omit<ReadinessItem, "name">;
   try {
-    const known = factsOf(root);
-    const parts = declaredPartCommands(root);
+    // What the repository declares wins over what an earlier run proved,
+    // as in a run: each part's own command, and the whole repository's
+    // when a part is built from ".".
+    const declared = toldByDeclaration(root);
+    const known = knownUnderDeclaration(factsOf(root), declared.suite);
     const told = {
       ...(known?.provision ? { provision: known.provision } : {}),
       ...(known?.prepare ? { prepare: known.prepare } : {}),
       ...(known?.build ? { build: known.build } : {}),
       ...(known?.runOne ? { runOne: known.runOne } : {}),
       ...(known?.suite ? { suite: known.suite } : {}),
-      // Parts that say how one of their tests runs need nothing wider, as
-      // in a run.
-      ...(Object.keys(parts).length ? { parts, runOne: "" } : {}),
+      ...declared,
     };
     const ready = await openTheDoor({
       worktree: copy,
@@ -235,10 +236,22 @@ async function setupHolds(a: ReadinessArgs & { exec: Exec }, head: string): Prom
   return found;
 }
 
-/** The file a check would be minted beside: code in the language most of
- *  the repository's code is written in, nearest the root. */
-function representative(files: readonly string[]): string | undefined {
-  const code = files.filter(isCodePath);
+/**
+ * The file a check would be minted beside: code in the language most of
+ * the code is written in, nearest the root.
+ *
+ * A repository that declares parts is read inside them: the parts other
+ * than "." when it has any, else the whole repository a "." part is. Code
+ * outside every part — a script that lints the documentation — is not
+ * where its work lands, and judging the repository by it refuses a
+ * repository whose parts are ready.
+ */
+function representative(files: readonly string[], partRoots: readonly string[] = []): string | undefined {
+  const owned = partRoots.filter((r) => r !== ".");
+  const within = owned.length
+    ? files.filter((f) => owned.some((r) => f === r || f.startsWith(`${r}/`)))
+    : files;
+  const code = within.filter(isCodePath);
   const ext = (f: string): string => path.extname(f).toLowerCase();
   const counted = new Map<string, number>();
   for (const f of code) counted.set(ext(f), (counted.get(ext(f)) ?? 0) + 1);
@@ -258,9 +271,13 @@ async function checksLandWhereTestsRun(root: string, exec: Exec): Promise<Omit<R
   if (listed.code !== 0) throw new Error(`git could not list the repository's files: ${listed.out.trim().slice(0, 300)}`);
   const repoFiles = listed.out.split("\n").map((l) => l.trim()).filter(Boolean);
   const declared = thinkubeDeclaration(root);
-  const partRoots = declared && "declared" in declared ? partsDeclared(declared.declared).map((p) => p.root) : [];
-  const subject = representative(repoFiles);
-  if (!subject) return { ready: true, say: "the repository holds no code file, so no check is minted beside code" };
+  const parts = declared && "declared" in declared ? partsDeclared(declared.declared) : [];
+  const subject = representative(repoFiles, parts.map((p) => p.root));
+  if (!subject)
+    return {
+      ready: true,
+      say: `${parts.some((p) => p.root !== ".") ? "the declared parts hold" : "the repository holds"} no code file, so no check is minted beside code`,
+    };
   const slices = [
     {
       handle: "readiness",
@@ -270,9 +287,9 @@ async function checksLandWhereTestsRun(root: string, exec: Exec): Promise<Omit<R
       ],
     },
   ];
-  rehouseChecks(slices, repoFiles, new Set(), partRoots);
+  rehouseChecks(slices, repoFiles, new Set(), parts);
   const minted = slices[0].workUnits[1].footprint[0];
-  const stranded = unreachableCheckHomes(slices, repoFiles, partRoots);
+  const stranded = unreachableCheckHomes(slices, repoFiles, parts);
   if (stranded.where.length)
     return {
       ready: false,

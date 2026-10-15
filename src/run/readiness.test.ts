@@ -328,3 +328,84 @@ test("the commit recorded is the one the deploy left, and asking again at that H
   assert.match(item(second, "deploy works").say, /^already deployed dddddddd/);
   assert.equal(live.ran.length, 1, "nothing was deployed again, so the version is not raised again");
 });
+
+/** A backend and a front end built from the whole repository, whose module
+ *  screens live in the backend's tree, beside a documentation linter that
+ *  belongs to neither. */
+const SPLIT = [
+  "backend/app/main.py",
+  "backend/app/config.py",
+  "backend/app/modules/agenda/service.py",
+  "backend/app/modules/agenda/frontend/pages/Agenda.vue",
+  "backend/tests/conftest.py",
+  "backend/tests/test_main.py",
+  "frontend/app/app.vue",
+  "frontend/tests/utils/format.test.ts",
+  "scripts/check_docs_layout.py",
+  "thinkube.yaml",
+];
+
+const SPLIT_YAML = [
+  "apiVersion: thinkube.io/v1",
+  "kind: ThinkubeDeployment",
+  "spec:",
+  "  containers:",
+  "    - name: backend",
+  "      build: ./backend",
+  "    - name: frontend",
+  "      build: .",
+  "",
+].join("\n");
+
+test("a repository that declares parts is judged by code inside them, not by a script outside every part", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-split-"));
+  fs.writeFileSync(path.join(root, "thinkube.yaml"), SPLIT_YAML);
+  const r = await checkReadiness({ repoRoot: root, exec: git({ files: SPLIT }).exec, boundedExec: door().boundedExec });
+  const homes = item(r, "check homes");
+  assert.equal(homes.ready, true, homes.say);
+  assert.match(homes.say, /a check for backend\/app\/config\.py is minted at backend\/tests\/config_AC-1_test\.py/);
+});
+
+test("with no thinkube.yaml the whole repository is read, as before", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-split-plain-"));
+  const r = await checkReadiness({
+    repoRoot: root,
+    exec: git({ files: SPLIT.filter((f) => f !== "thinkube.yaml") }).exec,
+    boundedExec: door().boundedExec,
+  });
+  const homes = item(r, "check homes");
+  assert.equal(homes.ready, false, homes.say);
+  assert.match(homes.say, /a check for scripts\/check_docs_layout\.py would be minted at scripts\/check_docs_layout_AC-1_test\.py/);
+});
+
+test("a container built from \".\" that says how one test runs is the command the door proves, over a remembered one", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-root-built-"));
+  fs.writeFileSync(
+    path.join(root, "thinkube.yaml"),
+    [
+      "apiVersion: thinkube.io/v1",
+      "kind: ThinkubeDeployment",
+      "spec:",
+      "  containers:",
+      "    - name: db",
+      "      build: .",
+      "      test:",
+      "        enabled: true",
+      '        command: "./run_tests.sh"',
+      '        one: "./run_tests.sh <file>"',
+      "",
+    ].join("\n"),
+  );
+  fs.mkdirSync(path.join(root, ".tandem"));
+  fs.writeFileSync(path.join(root, ".tandem", "setup.json"), JSON.stringify({ runOne: "pytest <file>", suite: "pytest -q" }));
+  const d = door();
+  const r = await checkReadiness({ repoRoot: root, exec: git().exec, boundedExec: d.boundedExec });
+  const setup = item(r, "setup");
+  assert.equal(setup.ready, true, setup.say);
+  assert.match(setup.say, /one test runs with: \.\/run_tests\.sh <file>/);
+  assert.ok(d.ran.includes("./run_tests.sh tests/test_main.py"), d.ran.join("\n"));
+  assert.ok(d.ran.includes("./run_tests.sh"), "the declared suite is proved");
+  assert.ok(!d.ran.includes("pytest -q"), "the remembered suite gives way to the declared one");
+  const homes = item(r, "check homes");
+  assert.equal(homes.ready, true, homes.say);
+});

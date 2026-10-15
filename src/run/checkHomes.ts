@@ -26,6 +26,10 @@
 import * as path from "node:path";
 import { isProbePath, isTestPath } from "./testHomes";
 import { checkOrdinalOf } from "../core/testShape";
+import type { ThinkubePart } from "../core/thinkubeYaml";
+
+/** A declared part, as placement reads it: where it is, and how its tests run. */
+type PartAt = Pick<ThinkubePart, "root" | "test">;
 
 /** Files a check can sit beside and import — source, in any language here. */
 const CODE = /\.(m|c)?[jt]sx?$|\.(vue|svelte)$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|lua)$/i;
@@ -117,6 +121,79 @@ function sharedTestDirFor(files: readonly string[], subject: string): TestIdiom 
   return ext(repo.suffix) === ext(subject) ? repo : undefined;
 }
 
+/** The language a file is written in, by the family its runners share: a
+ *  `.vue` view and a `.test.ts` file are both JavaScript's. */
+function languageOf(f: string): string {
+  const ext = /\.([^./]+)$/.exec(f)?.[1]?.toLowerCase() ?? "";
+  return /^(m|c)?[jt]sx?$|^(vue|svelte)$/.test(ext) ? "js" : ext;
+}
+
+/** The deepest declared part whose root holds this file; "." holds every file. */
+function ownerOf(f: string, roots: readonly string[]): string | undefined {
+  return roots
+    .filter((r) => r === "." || f === r || f.startsWith(`${r}/`))
+    .sort((a, b) => (b === "." ? -1 : b.length) - (a === "." ? -1 : a.length))[0];
+}
+
+/**
+ * Where a subject's check goes when its own part tests in another language.
+ *
+ * A front end whose module screens live inside the backend's tree keeps
+ * their tests in its own test directory, run by its own runner. A check
+ * for such a screen minted in the backend's idiom is a Python test for a
+ * Vue view, run by pytest. So it goes to the declared part whose tests are
+ * in the subject's language, into the one directory that part keeps them
+ * in — the place that part's runner collects. A part whose tests in that
+ * language have no one directory gives no place outside the subject's own
+ * tree, so it is not chosen.
+ */
+function testHomeInPartOfLanguage(files: readonly string[], roots: readonly string[], subject: string): TestIdiom | undefined {
+  const lang = languageOf(subject);
+  const owner = ownerOf(subject, roots);
+  let best: { idiom: TestIdiom; n: number } | undefined;
+  for (const root of roots) {
+    if (root === owner) continue;
+    const tests = files.filter(
+      (f) => f && isTestPath(f) && !isProbePath(f) && languageOf(f) === lang && ownerOf(f, roots) === root,
+    );
+    const counted = new Map<string, number>();
+    for (const t of tests) {
+      const sfx = suffixOf(t);
+      if (sfx) counted.set(sfx, (counted.get(sfx) ?? 0) + 1);
+    }
+    const suffix = [...counted.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const dir = commonTestDirOf(tests);
+    if (suffix && dir && (!best || tests.length > best.n)) best = { idiom: { suffix, dir }, n: tests.length };
+  }
+  return best?.idiom;
+}
+
+/** The test directory every one of these tests sits under — the first
+ *  `tests`, `test`, `spec` or `__tests__` on their common path — or "". */
+function commonTestDirOf(tests: readonly string[]): string {
+  if (!tests.length) return "";
+  let common = tests[0].split("/").slice(0, -1);
+  for (const t of tests.slice(1)) {
+    const segs = t.split("/").slice(0, -1);
+    let i = 0;
+    while (i < common.length && i < segs.length && common[i] === segs[i]) i++;
+    common = common.slice(0, i);
+  }
+  const at = common.findIndex((seg) => /^(tests?|spec|__tests__)$/.test(seg));
+  return at < 0 ? "" : `${common.slice(0, at + 1).join("/")}/`;
+}
+
+/**
+ * The roots where a check can be run: wherever the repository keeps a test
+ * of its own, every declared part other than ".", and "." itself when the
+ * part built from it says how its tests run — then the whole repository is
+ * a place where tests run.
+ */
+function runnableRootsOf(repoFiles: readonly string[], parts: readonly PartAt[]): string[] {
+  const declared = parts.filter((p) => p.root !== "." || p.test?.one || p.test?.command).map((p) => p.root);
+  return [...new Set([...testRootsOf(repoFiles), ...declared])].sort();
+}
+
 /**
  * The path a check is born at: beside the module it drives, named for the
  * criterion it proves, in the repository's own idiom.
@@ -181,13 +258,14 @@ export function rehouseChecks(
    *  criteria red for exactly that — every check present, every one at the
    *  address the plan no longer used. */
   alreadyWritten: ReadonlySet<string> = new Set(),
-  /** The repository's declared parts, by root. A file under a part is
-   *  placed by that part's idiom, and a declared part is a tree that runs
-   *  tests whether or not it holds one yet. */
-  partRoots: readonly string[] = [],
+  /** The repository's declared parts. A file under a part is placed by
+   *  that part's idiom, and a declared part is a tree that runs tests
+   *  whether or not it holds one yet. */
+  parts: readonly PartAt[] = [],
 ): { from: string; to: string }[] {
+  const partRoots = parts.map((p) => p.root);
   if (!inferTestIdiom(repoFiles) && !partRoots.length) return [];
-  const runnable = [...new Set([...testRootsOf(repoFiles), ...partRoots.filter((r) => r !== ".")])];
+  const runnable = runnableRootsOf(repoFiles, parts);
   const treeOf = (f: string): string =>
     [...partRoots].filter((r) => r !== "." && (f === r || f.startsWith(`${r}/`))).sort((a, b) => b.length - a.length)[0] ??
     f.split("/")[0];
@@ -215,7 +293,7 @@ export function rehouseChecks(
       .filter((u) => (u.role ?? "code") === "code")
       .flatMap((u) => u.footprint)
       .filter((f) => !isTestPath(f));
-    const inRunnable = files.filter((f) => runnable.includes(treeOf(f)));
+    const inRunnable = files.filter((f) => runnable.includes(".") || runnable.includes(treeOf(f)));
     // Code in a runnable tree first; failing that, anything in a runnable
     // tree — a view's locale file still sits where the tree's tests run;
     // failing that, code anywhere.
@@ -223,12 +301,16 @@ export function rehouseChecks(
     if (!subject) continue;
     // The idiom of the subject's own tree, so a Python module gets a Python
     // test and a Vue view a vitest one, whatever the rest of the repository
-    // does.
-    // The tree's own idiom; failing that, the idiom the subject's language
-    // wears everywhere — never another tree's, which minted Python checks
-    // beside a Vue view.
+    // does. When parts are declared and that tree tests in another
+    // language, the declared part that tests in the subject's language
+    // takes the check. Failing both, the idiom the subject's language
+    // wears everywhere — never another language's, which minted Python
+    // checks beside a Vue view.
+    const own = inferTestIdiom(repoFiles, treeOf(subject));
+    const ownSpeaks = !!own && (!partRoots.length || languageOf(own.suffix) === languageOf(subject));
     const idiom =
-      inferTestIdiom(repoFiles, treeOf(subject)) ??
+      (ownSpeaks ? own : undefined) ??
+      (own && partRoots.length ? testHomeInPartOfLanguage(repoFiles, partRoots, subject) : undefined) ??
       sharedTestDirFor(repoFiles, subject) ??
       idiomOfLanguage(subject) ??
       inferTestIdiom(repoFiles);
@@ -332,11 +414,11 @@ function testRootsOf(repoFiles: readonly string[]): string[] {
 export function unreachableCheckHomes(
   slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
   repoFiles: readonly string[],
-  partRoots: readonly string[] = [],
+  parts: readonly PartAt[] = [],
 ): { where: string[]; roots: string[] } {
-  const roots = [...new Set([...testRootsOf(repoFiles), ...partRoots.filter((r) => r !== ".")])].sort();
+  const roots = runnableRootsOf(repoFiles, parts);
   if (!roots.length) return { where: [], roots };
-  const under = (f: string): boolean => roots.some((r) => f === r || f.startsWith(`${r}/`));
+  const under = (f: string): boolean => roots.some((r) => r === "." || f === r || f.startsWith(`${r}/`));
   const where: string[] = [];
   for (const s of slices)
     for (const u of s.workUnits ?? [])

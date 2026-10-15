@@ -223,12 +223,12 @@ export async function refusedBeforeDispatch(a: {
   // born is decided by the tree its subject lives in, never by one idiom
   // read over the whole repository.
   const declared = thinkubeDeclaration(a.repoRoot);
-  const partRoots = declared && "declared" in declared ? partsDeclared(declared.declared).map((p) => p.root) : [];
+  const parts = declared && "declared" in declared ? partsDeclared(declared.declared) : [];
   const rehoused = rehouseChecks(
     a.slices,
     repoFiles,
     new Set([...onBranch, ...(a.recordedChecks ?? [])]),
-    partRoots,
+    parts,
   );
   if (rehoused.length)
     a.log(`${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
@@ -257,7 +257,7 @@ export async function refusedBeforeDispatch(a: {
   // it never runs — and the unit holding it is failed for work that was
   // correct. The fix is a build configuration no worker is cleared for, so
   // the placement is refused here, before anybody spends a round on it.
-  const stranded = unreachableCheckHomes(a.slices, repoFiles, partRoots);
+  const stranded = unreachableCheckHomes(a.slices, repoFiles, parts);
   if (stranded.where.length)
     return {
       dag,

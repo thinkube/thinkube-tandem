@@ -402,7 +402,8 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   const ranOne = one.held;
   // Each part's own command, proved in its own tree on one of its own
   // tests. A part with nothing to prove it on yet keeps what it was told —
-  // the first check written there proves it in use.
+  // the first check written there proves it in use. "." is the whole
+  // repository: its command is the repository-wide one, proved above.
   const parts: Record<string, { provision?: string; prepare?: string; runOne?: string }> = {};
   for (const [root, told] of Object.entries(args.partCommands ?? {})) {
     if (root === "." || !told.runOne) continue;

@@ -290,15 +290,17 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // The suites the pipeline runs, run here on the delivered tree, so a
   // standing test the work broke is a red before the merge, not after. A
   // suite whose runner does not answer — it needs the cluster this machine
-  // is not — is left to the pipeline, never counted as a red.
+  // is not — is left to the pipeline, never counted as a red. A part built
+  // from "." is the whole repository, so its suite runs at the root.
   const app = path.basename(deps.repoRoot).replace(/-/g, "_");
   const partSuites = (() => {
     const read = thinkubeDeclaration(worktree);
     if (!read || !("declared" in read)) return [] as { root: string; cmd: string }[];
     return partsDeclared(read.declared)
-      .filter((p) => p.root !== "." && p.test?.enabled && p.test.command)
+      .filter((p) => p.test?.enabled && p.test.command)
       .map((p) => ({ root: p.root, cmd: p.test!.command! }));
   })();
+  const suiteName = (root: string): string => (root === "." ? "the repository's" : `the ${root}`);
   const runSuitesLocally = async (cwd: string): Promise<{ code: number | null; output: string }> => {
     const parts: string[] = [];
     if (deps.build) {
@@ -313,11 +315,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       const at = path.join(cwd, p.root);
       const r = await boundedExec(`TEST_DATABASE_NAME=test_${app} ${p.cmd}`, at);
       if (r.code === 0) {
-        parts.push(`ok 1 - ${p.root} suite passes`);
+        parts.push(`ok 1 - ${suiteName(p.root)} suite passes`);
       } else if (aRunnerAnswered(r.code, r.output)) {
-        parts.push(`not ok 0 - the ${p.root} suite fails on the delivered tree\n${r.output.slice(-3000)}`);
+        parts.push(`not ok 0 - ${suiteName(p.root)} suite fails on the delivered tree\n${r.output.slice(-3000)}`);
       } else {
-        say(`${tep}: the ${p.root} suite does not run here — the platform settles it`);
+        say(`${tep}: ${suiteName(p.root)} suite does not run here — the platform settles it`);
       }
     }
     if (!parts.length) return { code: 0, output: "no build and no runnable suite here" };

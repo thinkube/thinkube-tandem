@@ -29,16 +29,50 @@ import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 /**
  * Each declared part's own single-test command, as `thinkube.yaml` says it:
  * `test.one` with `<file>` relative to the part's root. Declared beats
- * guessed, so a part that says how one test runs is never inferred.
+ * guessed, so a part that says how one test runs is never inferred. A part
+ * built from "." is the whole repository: its command is keyed ".".
  */
 export function declaredPartCommands(repoRoot: string): Record<string, { runOne: string; suite?: string }> {
   const d = thinkubeDeclaration(repoRoot);
   if (!d || !("declared" in d)) return {};
   const out: Record<string, { runOne: string; suite?: string }> = {};
   for (const p of partsDeclared(d.declared))
-    if (p.root !== "." && p.test?.one)
-      out[p.root] = { runOne: p.test.one, ...(p.test.command ? { suite: p.test.command } : {}) };
+    if (p.test?.one) out[p.root] = { runOne: p.test.one, ...(p.test.command ? { suite: p.test.command } : {}) };
   return out;
+}
+
+/**
+ * What the declaration tells the door, in the door's terms.
+ *
+ * "." has one meaning: the whole repository. A check no deeper part owns is
+ * run by the repository-wide command, so a part built from "." that says how
+ * one of its tests runs IS that command, and its suite command is the
+ * repository's suite. The other parts keep their own commands. When parts
+ * declare commands and "." declares none, nothing repository-wide is wanted.
+ */
+export function toldByDeclaration(repoRoot: string): {
+  parts?: Record<string, { runOne: string; suite?: string }>;
+  runOne?: string;
+  suite?: string;
+} {
+  const { ".": wide, ...parts } = declaredPartCommands(repoRoot);
+  const owned = Object.keys(parts).length > 0;
+  return {
+    ...(owned ? { parts } : {}),
+    ...(wide ? { runOne: wide.runOne } : owned ? { runOne: "" } : {}),
+    ...(wide?.suite ? { suite: wide.suite } : {}),
+  };
+}
+
+/**
+ * What an earlier run proved, under what the repository declares now. A
+ * remembered suite that is not the declared one gives way to it, so the
+ * door proves the declared suite instead of taking the remembered one.
+ */
+export function knownUnderDeclaration<K extends { suite?: string }>(known: K | undefined, suite: string | undefined): K | undefined {
+  if (!known || !suite || known.suite === undefined || known.suite === suite) return known;
+  const { suite: _remembered, ...rest } = known;
+  return rest as K;
 }
 import type { DispatchDeps } from "./deps";
 import type { Cut, Space } from "../core/schema";
@@ -102,10 +136,18 @@ export async function whatWeKnow(a: {
   // them can act on.
   const moved = await groundThatMoved({ worktree: a.worktree, space: a.space, cut: a.cut });
   if (moved.length) return { ok: false, refusal: regroundingNeeded(moved) };
+  // What the repository declares beats what was read or remembered: each
+  // part's own command, and the whole repository's when a part is built
+  // from ".". When parts declare commands and "." does not, nothing
+  // repository-wide is told: a guessed wide command that no test outside a
+  // part can prove was carried anyway, and every check that fell to it ran
+  // with the wrong part's runner.
+  const declared = toldByDeclaration(deps.repoRoot);
   // What this repository already proved about itself, in an earlier run.
   // Candidates, not facts: the door runs each one again here, so a file
   // somebody edited by hand fails now rather than at a judgement.
-  const known: RepositoryFacts | undefined = factsOf(deps.repoRoot);
+  const known: RepositoryFacts | undefined = knownUnderDeclaration(factsOf(deps.repoRoot), declared.suite);
+  const toldOne = declared.runOne || deps.told?.runOne;
   const ready = await openTheDoor({
     worktree: a.worktree,
     repoRoot: deps.repoRoot,
@@ -113,15 +155,7 @@ export async function whatWeKnow(a: {
     ...(known ? { known } : {}),
     told: {
       ...deps.told,
-      ...((): { parts?: Record<string, { runOne: string; suite?: string }>; runOne?: string } => {
-        const parts = declaredPartCommands(deps.repoRoot);
-        if (!Object.keys(parts).length) return {};
-        // Each part says how one of its tests runs, so nothing repository-
-        // wide is wanted: a guessed wide command that no test outside a
-        // part can prove was carried anyway, and every check that fell to
-        // it ran with the wrong part's runner.
-        return { parts, runOne: "" };
-      })(),
+      ...declared,
       ...(deps.resetup ? { resetup: deps.resetup } : {}),
       ...(deps.proveSetup ? { proveSetup: deps.proveSetup } : {}),
     },
@@ -156,18 +190,18 @@ export async function whatWeKnow(a: {
           ? "; its declared tests run in the platform pipeline, after the merge"
           : ""),
     );
-  if (!canJudgeOne(ready, deps.told)) return { ok: false, refusal: missing("runOne") };
+  if (!canJudgeOne(ready, toldOne ? { runOne: toldOne } : undefined)) return { ok: false, refusal: missing("runOne") };
   rememberWhatHeld(deps.repoRoot, known, { ...ready, downstream }, deps.told ?? {}, new Date().toISOString());
   const runOne =
     ready.runOne ??
-    (deps.told?.runOne
+    (toldOne
       ? provisional(
-          deps.told.runOne,
+          toldOne,
           "no test exists yet to prove it on — the first check the tester writes proves it in use",
           a.log,
         )
       : partsRunOne(ready));
-  if (!ready.runOne && !deps.told?.runOne)
+  if (!ready.runOne && !toldOne)
     a.log("no repository-wide single-test command: every check runs with the command of the part it lives in");
   return {
     ok: true,
