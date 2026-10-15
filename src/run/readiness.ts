@@ -21,7 +21,10 @@
  * reads (`thinkube.yaml`, `manifest.yaml`, `.tandem/setup.json`). Asking
  * twice about the same tree runs neither the setup nor a deploy again, and
  * every process that reads the store — the editor, the MCP server, a run's
- * driver — reads the same answer.
+ * driver — reads the same answer. Only what the tree decides is reused
+ * that way: an item that depends on something outside it — the secrets
+ * Thinkube Control holds, the tags on origin, whether a deploy goes live —
+ * or whose check could not run is asked again until it is ready.
  */
 import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
@@ -49,6 +52,19 @@ interface ReadinessItem {
   ready: boolean;
   /** What is wrong and what to do, for a person; what was found, when ready. */
   say: string;
+  /** The item's own check failed to run, so this is no answer about the tree. */
+  unchecked?: true;
+}
+
+/** Items whose answer the tree under the key decides alone. */
+const DECIDED_BY_THE_TREE = new Set(["setup", "check homes", "deploy declared"]);
+
+/** What a kept answer still says for the tree it was asked about: every
+ *  ready item, and every not-ready item the tree alone decides. */
+function stillAnswered(kept: Readiness): Map<string, ReadinessItem> {
+  return new Map(
+    kept.items.filter((i) => i.ready || (DECIDED_BY_THE_TREE.has(i.name) && !i.unchecked)).map((i) => [i.name, i]),
+  );
 }
 
 export interface Readiness {
@@ -175,10 +191,11 @@ export async function checkReadiness(a: ReadinessArgs): Promise<Readiness> {
   const head = await headOf(root, exec);
   const key = keyOf(root, head);
   const kept = readKept(a.home, key);
-  if (kept) return kept;
+  const still = kept ? stillAnswered(kept) : new Map<string, ReadinessItem>();
+  if (kept && kept.items.every((i) => still.has(i.name))) return kept;
   const flying = asking.get(`${root}\0${key}`);
   if (flying) return flying;
-  const asked = answer({ ...a, repoRoot: root, exec }, head).then((result) => {
+  const asked = answer({ ...a, repoRoot: root, exec }, head, still).then((result) => {
     // Kept under the HEAD it was asked about. A deploy that commits a
     // release moves HEAD, so a question about the new commit is a new
     // question: its tree is answered again, and its deploy is not run
@@ -194,10 +211,16 @@ export async function checkReadiness(a: ReadinessArgs): Promise<Readiness> {
   }
 }
 
-async function answer(a: ReadinessArgs & { exec: Exec }, head: string): Promise<Readiness> {
+async function answer(
+  a: ReadinessArgs & { exec: Exec },
+  head: string,
+  answered: ReadonlyMap<string, ReadinessItem>,
+): Promise<Readiness> {
   const root = a.repoRoot;
   const template = downstreamOf(root) === "template";
   const items: ReadinessItem[] = [];
+  const attempt = async (name: string, check: () => Promise<Omit<ReadinessItem, "name">>): Promise<ReadinessItem> =>
+    answered.get(name) ?? checkItem(name, check);
   items.push(await attempt("setup", () => setupHolds(a, head, template)));
   items.push(await attempt("check homes", () => checksLandWhereTestsRun(root, a.exec)));
   if (template) {
@@ -222,11 +245,11 @@ async function answer(a: ReadinessArgs & { exec: Exec }, head: string): Promise<
 }
 
 /** An item whose own check failed to run is not ready, in the failure's words. */
-async function attempt(name: string, check: () => Promise<Omit<ReadinessItem, "name">>): Promise<ReadinessItem> {
+async function checkItem(name: string, check: () => Promise<Omit<ReadinessItem, "name">>): Promise<ReadinessItem> {
   try {
     return { name, ...(await check()) };
   } catch (e) {
-    return { name, ready: false, say: `could not be checked: ${e instanceof Error ? e.message : String(e)}` };
+    return { name, ready: false, say: `could not be checked: ${e instanceof Error ? e.message : String(e)}`, unchecked: true };
   }
 }
 

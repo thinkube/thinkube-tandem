@@ -472,3 +472,46 @@ test("an answer kept by one process is read by a fresh one for the same checkout
   assert.equal(copies(), 2, "a new HEAD is a new question");
   assert.deepEqual(fresh.readinessNow(home, root, () => "b".repeat(40)), moved);
 });
+
+test("a kept answer reuses what the tree decided and asks again what depends on the platform", async () => {
+  const home = { storeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-reask-")), repoId: "svc-reask" };
+  const root = template();
+  const g = git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` });
+  const d = door();
+  const down = { http: async () => new Response("", { status: 503 }) };
+  const first = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: deployer().invoke, http: down.http, control, wait: async () => {} });
+  assert.match(item(first, "secrets").say, /answered 503/);
+  assert.equal(item(first, "setup").ready, true);
+  const setupRuns = d.ran.length;
+
+  const live = deployer();
+  const again = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {} });
+  assert.equal(item(again, "secrets").ready, true, item(again, "secrets").say);
+  assert.equal(item(again, "deploy works").ready, true, item(again, "deploy works").say);
+  assert.equal(d.ran.length, setupRuns, "the setup the tree decided is not run again");
+
+  const third = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: down.http, control, wait: async () => {} });
+  assert.equal(third.at, again.at, "an answer with nothing to ask again is kept whole");
+});
+
+test("a setup whose check could not run is asked again", async () => {
+  const home = { storeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-unchecked-")), repoId: "svc-unchecked" };
+  const root = template();
+  const g = git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` });
+  let broken = true;
+  const flaky = {
+    ran: [] as string[],
+    boundedExec: async (cmd: string) => {
+      flaky.ran.push(cmd);
+      if (broken) throw new Error("the door could not start a shell");
+      return { code: 0, output: "1 passed" };
+    },
+  };
+  const args = { repoRoot: root, home, exec: g.exec, boundedExec: flaky.boundedExec, invoke: deployer().invoke, http: web().http, control, wait: async () => {} };
+  const first = await checkReadiness(args);
+  assert.equal(item(first, "setup").ready, false);
+  assert.match(item(first, "setup").say, /^could not be checked: /);
+  broken = false;
+  const again = await checkReadiness(args);
+  assert.equal(item(again, "setup").ready, true, item(again, "setup").say);
+});
