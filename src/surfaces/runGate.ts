@@ -59,16 +59,22 @@ export type GestureResult = { ok: true } | { ok: false; reason: string };
  * The verdict is watched from the accept that started it, so a window
  * closed, reloaded or opened elsewhere never heard the answer, and a
  * delivery whose merged tree broke stayed green for ever. Asked again
- * here, once per accepted delivery that has no answer yet.
+ * here, once per accepted delivery that has no answer yet. A delivery the
+ * platform could not be asked about is said in the space, in the failure's
+ * own words, and the others are still asked. `watch` is injectable so a
+ * test drives a failure without a platform.
  */
-export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
+export async function catchUpOnMergedWork(
+  s: TandemSession,
+  watch: typeof watchGitopsAfterAccept = watchGitopsAfterAccept,
+): Promise<void> {
   const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
   if (downstreamOf(gitRoot) !== "gitops-app") return;
   // Merged is enough. The hand-over puts the work in the project before
   // anyone decides, so a delivery waiting for a decision is exactly the
   // one whose build the person wants read again.
   for (const d of s.space.deliveries.filter((x) => (x.acceptedAt || x.mergedAt) && !x.afterMerge && !x.rejectedAt)) {
-    await watchGitopsAfterAccept({
+    await watch({
       gitRoot,
       app: path.basename(gitRoot),
       delivery: d,
@@ -83,7 +89,9 @@ export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
         s.changed(note);
       },
       log: (l) => s.changed(l),
-    }).catch(() => undefined);
+    }).catch((e: unknown) =>
+      s.changed(`${d.id}: the platform could not be asked what it did with the merged work — ${e instanceof Error ? e.message : String(e)}`),
+    );
   }
 }
 

@@ -237,7 +237,9 @@ async function ensureSession(
   sessions.set(sessionKey, s);
   // What the platform did with work merged earlier — a verdict this window
   // was not open to hear. Asked once, on the way in.
-  void catchUpOnMergedWork(s).catch(() => undefined);
+  void catchUpOnMergedWork(s).catch((e: unknown) =>
+    s.changed(`what the platform did with merged work could not be asked: ${e instanceof Error ? e.message : String(e)}`),
+  );
   // The space follows what is written to it, whoever wrote: a server
   // acting on the person's behalf, or a run started outside this window.
   followFor(vscode, watches, sessionKey, {
