@@ -25,6 +25,7 @@ import {
 } from "../engine/verifyOracle";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
+import type { RoundPulse } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import { runScopedSuite, withSuite } from "./suite";
 import { linkProvisioned } from "./linkProvisioned";
@@ -209,6 +210,9 @@ export interface OracleFactoryArgs {
   model: string;
   workerModel?: WorkerModelConfig;
   supervisorRound?: typeof runReadRound;
+  /** Opens the run's listener on a supervisor round working for `who`, so
+   *  a round that streams without writing a line still counts as movement. */
+  pulse?: (who: string) => RoundPulse;
   exec: Exec;
   boundedExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   /** Build/typecheck command the runner needs before probes can run. */
@@ -303,6 +307,12 @@ async function applyClearance(a: OracleFactoryArgs, slice: string, unit: string,
  *  grounded in what it printed, never in argument alone. Counted per check
  *  (not per slice): a coder that questioned two other checks must still be
  *  able to question the one that is actually wrong. */
+/** The pulse a supervisor round for `who` streams into, when the run listens. */
+export function pulseOf(a: Pick<OracleFactoryArgs, "pulse">, who: string): { pulse?: () => RoundPulse } {
+  const open = a.pulse;
+  return open ? { pulse: () => open(who) } : {};
+}
+
 export function sliceOracleFactory(
   a: OracleFactoryArgs,
 ): (slice: string) => VerifyOracle | undefined {
@@ -369,6 +379,7 @@ export function sliceOracleFactory(
           model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
           repoRoot: a.worktree,
           log: logFor(slice),
+          ...pulseOf(a, a.acting?.(slice)?.unit ?? slice),
         },
         prompt,
       );

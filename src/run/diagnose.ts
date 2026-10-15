@@ -24,6 +24,7 @@ import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
+import { pulseOf } from "./oracle";
 import { isCheckOf } from "../core/testShape";
 
 /** Evidence a coder cannot act on: an assertion that compared nothing it
@@ -78,6 +79,7 @@ export function makeDiagnoser(
         model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
         repoRoot: runnerDir,
         log,
+        ...pulseOf(a, unit ?? slice),
       },
       [
         "You are the ORACLE. A check keeps failing and its evidence tells the coder nothing.",

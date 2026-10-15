@@ -18,6 +18,7 @@ import { sliceSuiteArgs } from "./suite";
 import type { OracleFactoryArgs, Exec } from "./oracle";
 import type { DispatchDeps } from "./dispatch";
 import type { OracleAcResult } from "../engine/verifyOracle";
+import type { RoundPulse } from "../derive/round";
 
 export function buildOracleArgs(a: {
   deps: DispatchDeps;
@@ -35,6 +36,8 @@ export function buildOracleArgs(a: {
   boundedExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   log: (line: string, step?: string) => void;
+  /** The run's listener on a supervisor round working for `who`. */
+  pulse: (who: string) => RoundPulse;
   defect: OracleFactoryArgs["defect"];
   provisioned: string[];
   built: string[];
@@ -73,6 +76,7 @@ export function buildOracleArgs(a: {
     model: deps.model,
     workerModel: deps.workerModel,
     supervisorRound: deps.supervisorRound,
+    pulse: a.pulse,
     exec: a.exec,
     boundedExec: a.boundedExec,
     log: a.log,

@@ -18,6 +18,7 @@ import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import type { OracleFactoryArgs } from "./oracle";
+import { pulseOf } from "./oracle";
 import { isCheckOf } from "../core/testShape";
 
 const CHALLENGE_BUDGET = 2;
@@ -53,7 +54,7 @@ export function makeChallenge(
       }
       const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
       const reply = await (a.supervisorRound ?? runReadRound)(
-        { model: judge, repoRoot: a.testerWt, log: a.log },
+        { model: judge, repoRoot: a.testerWt, log: a.log, ...pulseOf(a, a.acting?.(slice)?.unit ?? slice) },
         [
           "You are the ORACLE ruling on a coder's CHALLENGE to one check. You see",
           "everything; the coder saw only its own failures. Judge ONE question:",

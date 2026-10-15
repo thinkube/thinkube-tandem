@@ -21,7 +21,7 @@ import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
-import { clearedPaths } from "./oracle";
+import { clearedPaths, pulseOf } from "./oracle";
 import { clearanceNote } from "./clearance";
 
 /** Repo-relative file paths an answer names, in the forms an answer writes
@@ -101,6 +101,7 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
           model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
           repoRoot: a.worktree,
           log: (line) => a.log(line, unit),
+          ...pulseOf(a, unit),
         },
         prompt,
       ).catch(() => null);
@@ -211,6 +212,7 @@ export function makeEndAnswerer(a: OracleFactoryArgs) {
           model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
           repoRoot: a.testerWt,
           log: (line) => a.log(line, unit),
+          ...pulseOf(a, unit),
         },
         [
           "You are the RUN SUPERVISOR. A worker finished its unit and left this line, which",

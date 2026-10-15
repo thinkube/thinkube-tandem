@@ -264,6 +264,7 @@ export async function dispatchTep(
     commitBeforeWaiting: (id, w) => waits.door.commitBeforeWaiting(id, w),
     halted: () => st.halted,
     stop: st.stop.signal,
+    pulse: (who) => watch.round(who),
     // The audit card's own account: which criteria passed, per slice, from
     // the oracle's own verdicts — replaced whole on every re-grade.
     onGrade: (slice, results) => {
@@ -408,6 +409,7 @@ export async function dispatchTep(
           // units in one run hit the fence, none was granted anything, and
           // one died for a change it was entitled to make.
           ...(oracleArgs.clearance ? { clearFor: (p: string[]) => oracleArgs.clearance!(next.slice, next.id, p) } : {}),
+          pulse: () => watch.round(next.id),
           abort,
           // A worker's question goes to the machine first; the human sees
           // only an intent-level question, in the human's words.
@@ -457,6 +459,7 @@ export async function dispatchTep(
                 alsoAllowed: () => unionFor(tree, next.id)(),
                 baseline,
                 ...(oracleArgs.clearance ? { clearFor: (p: string[]) => oracleArgs.clearance!(next.slice, next.id, p) } : {}),
+                pulse: () => watch.round(next.id),
                 abort,
                 onPark: (q, answer) => void parkFor(next.slice, next.id)(q, answer),
                 log: (line: string) => log(line, next.id),

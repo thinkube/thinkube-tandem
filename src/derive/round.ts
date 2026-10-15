@@ -25,6 +25,17 @@ export interface RoundDeps {
   log?: (line: string) => void;
   /** Cancels the round mid-flight (the human pressed Cancel). */
   abort?: AbortController;
+  /** Opens a listener on this round's stream. Given one, the round streams
+   *  partial messages, so a model that thinks for minutes without calling a
+   *  tool is still heard moving. */
+  pulse?: () => RoundPulse;
+}
+
+/** What a listener hears of one running round: every event its stream
+ *  yields, and its end. */
+export interface RoundPulse {
+  heard: () => void;
+  ended: () => void;
 }
 
 /** The volume variant of a round's deps: cheap model, one turn, no tools,
@@ -91,9 +102,11 @@ export async function runReadRound(
             "ExitPlanMode",
           ],
           additionalDirectories: [deps.repoRoot],
+          ...(deps.pulse ? { includePartialMessages: true } : {}),
         },
       }),
     deps.log,
+    deps.pulse,
   );
 }
 
@@ -116,7 +129,9 @@ function describeUse(b: Record<string, unknown>): string {
 export async function collectText(
   stream: () => AsyncIterable<unknown>,
   log?: (line: string) => void,
+  pulse?: () => RoundPulse,
 ): Promise<string | null> {
+  const listening = pulse?.();
   let text = "";
   // What a round SPENDS, as it spends it: a round that takes minutes and
   // reports nothing cannot be made faster by anyone — every lever (fewer
@@ -127,6 +142,7 @@ export async function collectText(
   const at = (): string => `${((Date.now() - began) / 1000).toFixed(0)}s`;
   try {
     for await (const msg of stream()) {
+      listening?.heard();
       const rec = msg as Record<string, unknown>;
       if (rec.type === "assistant") {
         const m = rec.message as { content?: unknown } | undefined;
@@ -152,6 +168,8 @@ export async function collectText(
     }
     log?.(`round errored: ${why}`);
     return null;
+  } finally {
+    listening?.ended();
   }
   return text;
 }

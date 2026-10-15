@@ -12,6 +12,7 @@
  * the human answers through the run view — the oracle lesson's door.
  */
 import { theModel } from "../engine/theModel";
+import type { RoundPulse } from "../derive/round";
 import { workerEnv } from "./oracle";
 import { execFile } from "node:child_process";
 import { extractNeedsInput } from "../engine/core/preflight";
@@ -65,6 +66,9 @@ export interface RunWorkerDeps {
   abort: AbortController;
   onPark: (question: string, answer: (a: string) => void) => void;
   log: (line: string) => void;
+  /** Opens the run's listener on this session's stream: every event it
+   *  yields is movement, including a long stretch with no line written. */
+  pulse?: () => RoundPulse;
   /** In-loop black-box check: runs the slice's acceptance checks against the
    *  current work and returns the oracle's formatted verdict. */
   verifyTool?: () => Promise<string>;
@@ -378,6 +382,7 @@ export async function runUnitWorker(
   /** The first uncleared write teaches; the second ends the unit. */
   let warned = false;
   let sessionId: string | undefined;
+  const listening = deps.pulse?.();
   try {
     const stream = query({
       prompt: input(),
@@ -392,6 +397,7 @@ export async function runUnitWorker(
         thinking: { type: "disabled" },
         maxTurns: deps.maxTurns ?? 80,
         abortController: deps.abort,
+        ...(listening ? { includePartialMessages: true } : {}),
         ...(mcpServers ? { mcpServers } : {}),
         // A tool that moves the session's working directory would let a
         // relative write land outside the footprint: none of those, ever.
@@ -474,6 +480,7 @@ export async function runUnitWorker(
       },
     });
     for await (const msg of stream) {
+      listening?.heard();
       const rec = msg as Record<string, unknown>;
       if (typeof rec.session_id === "string") sessionId = rec.session_id;
       if (rec.type === "assistant") {
@@ -517,6 +524,8 @@ export async function runUnitWorker(
       ],
       ...(sessionId ? { sessionId } : {}),
     };
+  } finally {
+    listening?.ended();
   }
   if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}) };
   const undelivered = realUndelivered(text);
