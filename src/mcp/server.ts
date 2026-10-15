@@ -24,12 +24,25 @@ import { attach } from "./attach";
 import type { Attached } from "./attach";
 import { machineMay } from "./boundary";
 import { toolTable } from "./tools";
+import { appendWorkingOut } from "../run/runLog";
 import type { ToolCall } from "./tools";
 
 /** One line of what the server is bound to, on stderr — stdout is the
  *  protocol and anything written there corrupts it. */
 function say(line: string): void {
   process.stderr.write(`${line}\n`);
+}
+
+/** A line of work done in a space: said, and kept in the space's
+ *  working-out log beside its run logs, so work this server started is
+ *  readable by someone who is not reading its stderr. */
+function sayIn(storeDir: string, line: string): void {
+  say(line);
+  try {
+    appendWorkingOut(storeDir, line);
+  } catch (e) {
+    say(`the working-out log in ${storeDir} cannot be written: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -51,10 +64,10 @@ export async function main(argv: readonly string[]): Promise<number> {
       held.session.reloadFromStore();
       return held;
     }
-    const r = await attach({ repo, space, onChanged: (m) => m && say(`· ${m}`) });
+    const r = await attach({ repo, space, onChanged: (m, storeDir) => m && sayIn(storeDir, `· ${m}`) });
     if (r.ok) {
       sessions.set(key, r);
-      say(`attached to ${r.project.card.label} / ${space} as ${r.session.author}`);
+      sayIn(r.storeDir, `attached to ${r.project.card.label} / ${space} as ${r.session.author}`);
     }
     return r;
   };

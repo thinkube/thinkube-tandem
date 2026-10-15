@@ -55,7 +55,9 @@ export interface AttachArgs {
   space: string;
   storeRoot?: string;
   storageDir?: string;
-  onChanged?: (message?: string) => void;
+  /** Hears every change the session announces, with the directory of the
+   *  space it was announced in. */
+  onChanged?: (message: string | undefined, storeDir: string) => void;
   /** Drive runs in this process. Only the driver itself says so; every
    *  other caller hands a run to a driver process and follows its record. */
   driveHere?: boolean;
@@ -124,12 +126,12 @@ export async function attach(args: AttachArgs): Promise<Attached> {
     maxConcurrent: 4,
     docsGateMode: "blocking",
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
-    ...(args.onChanged ? { onChanged: args.onChanged } : {}),
+    ...(args.onChanged ? { onChanged: (m?: string) => args.onChanged!(m, dirs.storeDir) } : {}),
     readiness: async () => [
       await checkReadiness({
         repoRoot: project.gitRoot,
         home: { storeRoot, repoId: project.card.id },
-        log: (l) => args.onChanged?.(l),
+        log: (l) => args.onChanged?.(l, dirs.storeDir),
       }),
     ],
     readinessKept: () => {
@@ -152,7 +154,7 @@ export async function attach(args: AttachArgs): Promise<Attached> {
         }),
   });
   session.load();
-  if (foreign) args.onChanged?.(foreign);
+  if (foreign) args.onChanged?.(foreign, dirs.storeDir);
   return { ok: true, session, project, storeDir: dirs.storeDir };
 }
 

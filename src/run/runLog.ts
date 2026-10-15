@@ -21,6 +21,22 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+/** Where a space's working-out log lives: the work a server does in the
+ *  space outside any run — reading a draft, thinking, choosing a set. */
+function workingOutLogPath(storeDir: string): string {
+  return path.join(storeDir, "runs", "working-out.log");
+}
+
+/**
+ * Append one line of working out, stamped like a run's lines. A line that
+ * cannot be written throws, for the caller to say so.
+ */
+export function appendWorkingOut(storeDir: string, line: string): void {
+  const file = workingOutLogPath(storeDir);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${new Date().toISOString()} [working-out] ${line}\n`);
+}
+
 /** Where a run's own log lives. */
 function runLogPath(storeDir: string, tep: string): string {
   return path.join(storeDir, "runs", `${tep}.log`);

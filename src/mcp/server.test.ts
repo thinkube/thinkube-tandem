@@ -23,6 +23,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { putCard } from "../core/cards";
+import { emptySpace } from "../core/schema";
+import { persistSpace } from "../surfaces/sessionStore";
 
 /** A speaking client: writes framed JSON-RPC, reads replies by id. */
 function client(proc: ReturnType<typeof spawn>) {
@@ -95,7 +97,7 @@ function world(): { repo: string; store: string; space: string } {
  * suite — and the suite is what a closing gate runs, so a leak here stops
  * a delivery for as long as anyone is patient.
  */
-async function serverFor(w: ReturnType<typeof world>) {
+async function serverFor(w: ReturnType<typeof world>, env: NodeJS.ProcessEnv = {}) {
   const proc = spawn(
     process.execPath,
     [path.join(__dirname, "server.js"), "--repo", w.repo],
@@ -107,6 +109,7 @@ async function serverFor(w: ReturnType<typeof world>) {
         TANDEM_AUTONOMOUS: "",
         GIT_AUTHOR_EMAIL: "tester@example.com",
         EMAIL: "tester@example.com",
+        ...env,
       },
     },
   );
@@ -228,4 +231,46 @@ test("a repository is enabled under a product the store knows, and only under on
   assert.match(await text("new_space", { repo, name: "first" }), /space "first" made under Other/);
   const plain = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-plain-"));
   assert.match(await text("enable_repo", { repo: plain, product: "Widgets", label: "Plain" }), /not a git repository/);
+});
+
+/**
+ * Work a server starts in a space is readable outside its stderr: every
+ * line it says about the space lands in the space's working-out log,
+ * beside the run logs.
+ */
+test("choosing a set through the server writes its working out into the space", { timeout: 30_000 }, async () => {
+  const w = world();
+  const storeDir = path.join(w.store, "spaces", "thing-1", w.space, "tester");
+  persistSpace({
+    storeDir,
+    author: "tester",
+    now: () => new Date().toISOString(),
+    space: {
+      ...emptySpace(),
+      asks: [{ id: "a1", text: "the tab row should stay put" }],
+      subjects: [{ id: "s1", name: "the tab row", from: ["a1"] }],
+      nodes: [{ id: "n1", serves: ["a1"], sentence: "the row holds still", needs: [], acceptance: [] }],
+      specs: [{ id: "spec-1", name: "the layout is stable", subjectIds: ["s1"] }],
+    } as never,
+    cut: [],
+    lastWritten: "",
+    onRefused: (m) => assert.fail(m),
+  });
+  const { c } = await serverFor(w, { TANDEM_AUTONOMOUS: "1", GITHUB_USERNAME: "tester" });
+  const res = (await c.call("tools/call", { name: "choose_set", arguments: { space: w.space, set: "spec-1" } })) as {
+    result?: { isError?: boolean; content?: { text: string }[] };
+  };
+  assert.notEqual(res.result?.isError, true, res.result?.content?.[0].text);
+
+  const log = path.join(storeDir, "runs", "working-out.log");
+  assert.ok(fs.existsSync(log), "the space holds a working-out log");
+  const lines = fs.readFileSync(log, "utf8").split("\n").filter(Boolean);
+  assert.ok(
+    lines.some((l) => /^\d{4}-\d\d-\d\dT[\d:.]+Z \[working-out\] attached to Thing \/ a-space as tester$/.test(l)),
+    `the attach is there, stamped:\n${lines.join("\n")}`,
+  );
+  assert.ok(
+    lines.some((l) => l.includes("[working-out] · \"the layout is stable\"")),
+    `the set's working out is there:\n${lines.join("\n")}`,
+  );
 });
