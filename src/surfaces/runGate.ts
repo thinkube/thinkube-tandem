@@ -134,14 +134,21 @@ function worldRefused(space: TandemSession["space"], d: Delivery): TandemSession
 export async function settleMergedTemplates(s: TandemSession): Promise<void> {
   const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
   if (downstreamOf(gitRoot) !== "template") return;
-  const waiting = s.space.deliveries.filter(
-    (d) =>
-      d.acceptedAt &&
-      !d.rejectedAt &&
-      !d.afterMerge &&
-      d.proofs.some((p) => p.settledBy && (p.verdict === "pending" || p.verdict === "red")),
-  );
-  for (const d of waiting) await settleTemplate(s, gitRoot, d);
+  const d = templateDeliveryToSettle(s.space.deliveries);
+  if (d) await settleTemplate(s, gitRoot, d);
+}
+
+/**
+ * The template delivery a validation deployment answers for: the latest
+ * accepted one, when it has no answer yet. A deploy puts the project's head
+ * live, which holds every accepted delivery's work, so the latest stands for
+ * them all. It is deployed whether or not a proof waits on it: a deploy that
+ * failed is a fact about the merged work, and asking again must reach it.
+ */
+export function templateDeliveryToSettle(deliveries: readonly Delivery[]): Delivery | undefined {
+  const accepted = deliveries.filter((d) => d.acceptedAt && !d.rejectedAt);
+  const latest = accepted[accepted.length - 1];
+  return latest && !latest.afterMerge ? latest : undefined;
 }
 
 /** One template delivery settled, persisted, and — when it went live —
