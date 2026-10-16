@@ -44,6 +44,7 @@ import { proved, type Proved } from "./proved";
 import { linkProvisioned } from "./linkProvisioned";
 import { tail } from "./toolWords";
 import { repairStandingTree } from "./refresh";
+import { treeFromProof, type SetupProof } from "./setupProof";
 
 export type BoundedExec = (
   cmd: string,
@@ -170,6 +171,10 @@ export interface SetupArgs {
   suiteProvenBefore?: boolean;
   /** Told the answer that held on the untouched tree — the only one worth remembering. */
   proven?: (s: { provision: string; prepare: string; runOne: string }) => void;
+  /** Readiness's proof of this commit's setup (src/run/setupProof.ts): the
+   *  tree is still provisioned and built here, and the product build, the
+   *  single-test commands and the suite are taken from it, not run again. */
+  taken?: SetupProof;
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -226,7 +231,8 @@ async function correctAndRetry(args: SetupArgs, first: TreeSetup): Promise<TreeS
   // The store already borrowed did not build; the corrected answer is
   // tried on a tree of its own, never over that store again.
   const runOne = args.runOneDeclared ? args.runOne : (again.runOne ?? args.runOne);
-  const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare, ...(runOne ? { runOne } : {}) }, false);
+  const { taken: _proofOfOtherCommands, ...untaken } = args;
+  const second = await proveTree({ ...untaken, provision: again.provision, prepare: again.prepare, ...(runOne ? { runOne } : {}) }, false);
   if (!second.refusal)
     args.proven?.({ provision: again.provision, prepare: again.prepare, runOne: second.runOne ?? "" });
   return second.refusal ? second : { ...second, corrected: { provision: again.provision, prepare: again.prepare } };
@@ -377,6 +383,16 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // Nothing the door lent or watched appear may ever be staged: the gate
   // stages every file the ignore rules leave visible in this tree.
   await excludeFromGit(args.worktree, [...provisioned, ...built], args.exec);
+  if (args.taken) {
+    const tree = treeFromProof(args.taken, {
+      provisioned,
+      built,
+      ...(args.provision ? { provision: args.provision } : {}),
+      ...(args.prepare ? { prepare: args.prepare } : {}),
+    });
+    await excludeFromGit(args.worktree, tree.built, args.exec);
+    return tree;
+  }
   if (args.build) {
     // Watched exactly like the test build. It was not, so what the PRODUCT
     // build makes was never on the list of things a run must not lend —
@@ -629,6 +645,7 @@ function setupArgsFor(a: {
   log: (line: string) => void;
   resetup?: SetupArgs["resetup"];
   proven?: SetupArgs["proven"];
+  taken?: SetupProof;
 }): SetupArgs {
   const suite = a.known?.suite ?? a.told.suite ?? "";
   return {
@@ -650,6 +667,7 @@ function setupArgsFor(a: {
     ...(a.told.plainRunOne ? { plainRunOne: a.told.plainRunOne } : {}),
     ...(a.resetup ? { resetup: a.resetup } : {}),
     ...(a.proven ? { proven: a.proven } : {}),
+    ...(a.taken ? { taken: a.taken } : {}),
   };
 }
 
@@ -687,6 +705,8 @@ export async function openTheDoor(a: {
     resetup?: SetupArgs["resetup"];
     proveSetup?: SetupArgs["proven"];
   };
+  /** Readiness's proof of this commit's setup, which the door takes. */
+  taken?: SetupProof;
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -695,11 +715,13 @@ export async function openTheDoor(a: {
   halted: () => boolean;
 }): Promise<TreeSetup> {
   // Asked BEFORE the tree is proved, so a repository that cannot say how it
-  // runs its suite costs a minute rather than a whole run.
-  const suite =
-    a.known?.suite ||
-    a.told.suite ||
-    (await askForTheSuite({ ...(a.told.resetup ? { resetup: a.told.resetup } : {}), log: a.log }));
+  // runs its suite costs a minute rather than a whole run. A taken proof
+  // carries the suite readiness's door settled on.
+  const suite = a.taken
+    ? a.taken.held.suite
+    : a.known?.suite ||
+      a.told.suite ||
+      (await askForTheSuite({ ...(a.told.resetup ? { resetup: a.told.resetup } : {}), log: a.log }));
   const open = (): Promise<TreeSetup> =>
     setupRunTree(
       setupArgsFor({
@@ -716,6 +738,7 @@ export async function openTheDoor(a: {
         log: a.log,
         ...(a.told.resetup ? { resetup: a.told.resetup } : {}),
         ...(a.told.proveSetup ? { proven: a.told.proveSetup } : {}),
+        ...(a.taken ? { taken: a.taken } : {}),
       }),
     );
   const ready = await open();

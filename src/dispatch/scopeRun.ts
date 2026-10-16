@@ -10,6 +10,7 @@
  * open workspace. A scope that is not open, a refused adapter, or a
  * refused run stops the sequence with the reason spoken.
  */
+import * as path from "node:path";
 import { Cut, Delivery, Space } from "../core/schema";
 import { SessionDeps } from "../surfaces/session";
 import { tepSlices } from "./adapter";
@@ -134,6 +135,14 @@ export async function dispatchScopePlan(args: {
         ...(sc === "" && args.proveSetup ? { proveSetup: args.proveSetup } : {}),
         ...(sc === "" && args.affected ? { affected: args.affected } : {}),
         ...(sc === "" && args.digest ? { digest: args.digest } : {}),
+        // What readiness proved about each repository's setup, read from
+        // the store when the door asks, so a run in another process finds it.
+        ...(deps.readinessKept
+          ? {
+              setupProven: (root: string) =>
+                deps.readinessKept!().find((r) => path.resolve(r.repoRoot) === path.resolve(root))?.setupProof,
+            }
+          : {}),
       },
       args.space(),
       scopedCut,

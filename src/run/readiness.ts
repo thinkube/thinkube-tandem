@@ -25,6 +25,10 @@
  * that way: an item that depends on something outside it — the secrets
  * Thinkube Control holds, the tags on origin, whether a deploy goes live —
  * or whose check could not run is asked again until it is ready.
+ *
+ * The setup item keeps what its door proved (src/run/setupProof.ts), so a
+ * run that starts at the same commit with the same setup facts takes that
+ * proof at its own door instead of running it again.
  */
 import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
@@ -46,7 +50,9 @@ import { declaredBuildPassed } from "./buildWords";
 import { openTheDoor, type BoundedExec } from "./setup";
 import { downstreamOf } from "./survey";
 import { headOf, validationDeploy, type ReachControl } from "./validationDeploy";
-import { canJudgeOne, knownUnderDeclaration, toldByDeclaration } from "./whatWeKnow";
+import { canJudgeOne, firstSingleCheck, knownUnderDeclaration, toldByDeclaration } from "./whatWeKnow";
+import { singleCheckFor } from "./plainRunOne";
+import { setupFactsOf, setupProofOf, type SetupProof } from "./setupProof";
 
 interface ReadinessItem {
   name: string;
@@ -77,6 +83,9 @@ export interface Readiness {
   items: ReadinessItem[];
   /** The run setup it was proved with, when one was given. */
   reading?: RepositoryFacts;
+  /** What the setup item's door proved, which a run's door at the same
+   *  commit and setup facts takes instead of proving it again. */
+  setupProof?: SetupProof;
 }
 
 /** Where a repository's answers are kept: the store, beside its spaces. */
@@ -204,7 +213,7 @@ export async function checkReadiness(a: ReadinessArgs): Promise<Readiness> {
   if (kept && kept.items.every((i) => still.has(i.name))) return kept;
   const flying = asking.get(`${root}\0${key}`);
   if (flying) return flying;
-  const asked = answer({ ...a, repoRoot: root, exec }, head, still).then((result) => {
+  const asked = answer({ ...a, repoRoot: root, exec }, head, still, kept?.setupProof).then((result) => {
     // Kept under the HEAD it was asked about. A deploy that commits a
     // release moves HEAD, so a question about the new commit is a new
     // question: its tree is answered again, and its deploy is not run
@@ -224,13 +233,23 @@ async function answer(
   a: ReadinessArgs & { exec: Exec },
   head: string,
   answered: ReadonlyMap<string, ReadinessItem>,
+  keptProof: SetupProof | undefined,
 ): Promise<Readiness> {
   const root = a.repoRoot;
   const template = downstreamOf(root) === "template";
   const items: ReadinessItem[] = [];
   const attempt = async (name: string, check: () => Promise<Omit<ReadinessItem, "name">>): Promise<ReadinessItem> =>
     answered.get(name) ?? checkItem(name, check);
-  items.push(await attempt("setup", () => setupHolds(a, head, template)));
+  // The setup item's proof goes with the item: kept with a kept item, new
+  // with an item answered now.
+  let setupProof = answered.has("setup") ? keptProof : undefined;
+  items.push(
+    await attempt("setup", async () => {
+      const held = await setupHolds(a, head, template);
+      setupProof = held.proof;
+      return held.item;
+    }),
+  );
   items.push(await attempt("check homes", () => checksLandWhereTestsRun(root, a.exec)));
   items.push(await attempt("live checks", () => liveChecksDeclared(root, a.exec)));
   if (template) {
@@ -257,6 +276,7 @@ async function answer(
     at: (a.now ?? (() => new Date().toISOString()))(),
     items,
     ...(a.reading ? { reading: a.reading } : {}),
+    ...(setupProof ? { setupProof } : {}),
   };
 }
 
@@ -278,22 +298,37 @@ async function setupHolds(
   a: ReadinessArgs & { exec: Exec },
   head: string,
   template: boolean,
-): Promise<Omit<ReadinessItem, "name">> {
+): Promise<{ item: Omit<ReadinessItem, "name">; proof?: SetupProof }> {
   const root = a.repoRoot;
   const short = head.slice(0, 8);
+  // Read before the door runs: the facts the proof is made under.
+  const facts = setupFactsOf(root);
   const copy = fs.mkdtempSync(path.join(os.tmpdir(), "tandem-ready-"));
   const added = await a.exec("git", ["-C", root, "worktree", "add", "--detach", copy, head], root);
   if (added.code !== 0) {
     fs.rmSync(copy, { recursive: true, force: true });
     throw new Error(`a clean copy of ${short} could not be made: ${added.out.trim().slice(0, 300)}`);
   }
-  let found: Omit<ReadinessItem, "name">;
+  let found: { item: Omit<ReadinessItem, "name">; proof?: SetupProof };
   try {
     // What the repository declares wins over what an earlier run proved,
     // as in a run: each part's own command, and the whole repository's
     // when a part is built from ".".
     const declared = toldByDeclaration(root);
     const known = knownUnderDeclaration(a.reading ?? factsOf(root), declared.suite);
+    // The single-test command is chosen as the run's door chooses it, from
+    // the repository's own facts, so what is proved here is what a run
+    // proves first.
+    const recorded = factsOf(root);
+    const single = declared.runOne
+      ? singleCheckFor({
+          worktree: copy,
+          declared: declared.runOne,
+          ...(known?.provision ? { provision: known.provision } : {}),
+          ...(recorded?.runOne ? { facts: recorded.runOne } : {}),
+        })
+      : { kind: "declared" as const };
+    const plainRunOne = single.kind === "plain" ? single.plain : undefined;
     const told = {
       ...(known?.provision ? { provision: known.provision } : {}),
       ...(known?.prepare ? { prepare: known.prepare } : {}),
@@ -301,6 +336,8 @@ async function setupHolds(
       ...(known?.runOne ? { runOne: known.runOne } : {}),
       ...(known?.suite ? { suite: known.suite } : {}),
       ...declared,
+      ...(declared.runOne ? { runOneDeclared: true } : {}),
+      ...(plainRunOne ? { plainRunOne } : {}),
     };
     const ready = await openTheDoor({
       worktree: copy,
@@ -317,16 +354,30 @@ async function setupHolds(
       resumed: false,
       halted: () => false,
     });
+    const firstOne = firstSingleCheck(plainRunOne, declared, known?.runOne);
     found = ready.refusal
-      ? { ready: false, say: `on an untouched copy of ${short}, ${ready.refusal}` }
+      ? { item: { ready: false, say: `on an untouched copy of ${short}, ${ready.refusal}` } }
       : !canJudgeOne(ready, told)
-        ? { ready: false, say: missing("runOne") }
+        ? { item: { ready: false, say: missing("runOne") } }
         : {
-            ready: true,
-            say:
-              `the setup holds on an untouched copy of ${short}` +
-              (ready.build ? `, and ${declaredBuildPassed(ready.build, template)}` : "") +
-              (ready.runOne ? `, and one test runs with: ${ready.runOne}` : ""),
+            item: {
+              ready: true,
+              say:
+                `the setup holds on an untouched copy of ${short}` +
+                (ready.build ? `, and ${declaredBuildPassed(ready.build, template)}` : "") +
+                (ready.runOne ? `, and one test runs with: ${ready.runOne}` : ""),
+            },
+            proof: setupProofOf(
+              head,
+              facts,
+              {
+                ...(told.provision ? { provision: told.provision } : {}),
+                ...(told.prepare ? { prepare: told.prepare } : {}),
+                ...(told.build ? { build: told.build } : {}),
+                ...(firstOne ? { runOne: firstOne } : {}),
+              },
+              ready,
+            ),
           };
   } finally {
     const removed = await a.exec("git", ["-C", root, "worktree", "remove", "--force", copy], root);

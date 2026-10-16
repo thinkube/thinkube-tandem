@@ -26,6 +26,7 @@ import { missing, provisional, type Proved } from "./proved";
 import { downstreamOf, partsOf } from "./survey";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { singleCheckFor } from "./plainRunOne";
+import { setupFactsOf, takeSetupProof, type SetupProof } from "./setupProof";
 
 /**
  * Each declared part's own single-test command, as `thinkube.yaml` says it:
@@ -115,6 +116,54 @@ export function canJudgeOne(
   return Object.values(ready.parts ?? {}).some((p) => !!p.runOne);
 }
 
+/**
+ * The single-test command the door proves first: the repository's plain
+ * runner when it has one, else the declared command, else the told one. A
+ * declaration whose parts own every command declares "" for the whole
+ * repository, and that "" stands.
+ */
+export function firstSingleCheck(
+  plainRunOne: string | undefined,
+  declared: { runOne?: string },
+  told: string | undefined,
+): string | undefined {
+  return plainRunOne || ("runOne" in declared ? declared.runOne : told) || undefined;
+}
+
+/** Readiness's proof of the setup, when the door may take it; the log says
+ *  which, and why not. */
+async function provedByReadiness(
+  a: { deps: DispatchDeps; worktree: string; resumed: boolean; exec: Parameters<typeof openTheDoor>[0]["exec"]; log: (line: string) => void },
+  plainRunOne: string | undefined,
+  declared: { runOne?: string },
+): Promise<SetupProof | undefined> {
+  const { deps } = a;
+  const read = await a.exec("git", ["-C", a.worktree, "rev-parse", "HEAD"], a.worktree);
+  if (read.code !== 0) throw new Error(`git could not name the run tree's HEAD: ${read.out.trim().slice(0, 300)}`);
+  const head = read.out.trim();
+  const runOne = firstSingleCheck(plainRunOne, declared, deps.told?.runOne);
+  const answer = takeSetupProof(deps.setupProven!(deps.repoRoot), {
+    head,
+    facts: setupFactsOf(deps.repoRoot),
+    told: {
+      ...(deps.told?.provision ? { provision: deps.told.provision } : {}),
+      ...(deps.told?.prepare ? { prepare: deps.told.prepare } : {}),
+      ...(deps.told?.build ? { build: deps.told.build } : {}),
+      ...(runOne ? { runOne } : {}),
+    },
+    resumed: a.resumed,
+  });
+  if ("why" in answer) {
+    a.log(`proving the setup on this tree: ${answer.why}`);
+    return undefined;
+  }
+  a.log(
+    `readiness proved the setup of ${head.slice(0, 8)} on an untouched copy with these setup facts — the door takes its proof ` +
+      `of the build, the single-test command and the suite; it only installs and builds this tree for the workers`,
+  );
+  return answer.take;
+}
+
 export async function whatWeKnow(a: {
   deps: DispatchDeps;
   worktree: string;
@@ -162,6 +211,10 @@ export async function whatWeKnow(a: {
   if (single.kind !== "declared") a.log(single.why);
   const plainRunOne = single.kind === "plain" ? single.plain : undefined;
   const toldOne = plainRunOne || declared.runOne || deps.told?.runOne;
+  // Readiness may have proved this same setup on this same commit already,
+  // in another process; the door then takes that proof instead of running
+  // it again (src/run/setupProof.ts).
+  const taken = deps.setupProven ? await provedByReadiness(a, plainRunOne, declared) : undefined;
   const ready = await openTheDoor({
     worktree: a.worktree,
     repoRoot: deps.repoRoot,
@@ -175,6 +228,7 @@ export async function whatWeKnow(a: {
       ...(deps.resetup ? { resetup: deps.resetup } : {}),
       ...(deps.proveSetup ? { proveSetup: deps.proveSetup } : {}),
     },
+    ...(taken ? { taken } : {}),
     exec: a.exec,
     boundedExec: a.boundedExec,
     log: a.log,

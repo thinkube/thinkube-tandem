@@ -19,6 +19,7 @@ import type { OracleFactoryArgs } from "./oracle";
 import type { Proved } from "./proved";
 import type { Invoke } from "./makeLive";
 import type { ReachControl } from "./validationDeploy";
+import type { SetupProof } from "./setupProof";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -110,6 +111,9 @@ export interface DispatchDeps {
   /** Injectable for tests: how thinkube-control's address and token are
    *  found for the live checks. */
   reachControl?: ReachControl;
+  /** Readiness's proof of the setup kept for a checkout at its HEAD now
+   *  (src/run/setupProof.ts), which the door takes when it still applies. */
+  setupProven?: (repoRoot: string) => SetupProof | undefined;
   /** Injectable for tests: the run's own clock (epoch ms). One reading of
    *  it mints both the run id and the produced-at stamp on its delivery, so
    *  the two can never name different moments. Defaults to `Date.now`. */
