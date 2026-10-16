@@ -77,7 +77,7 @@ export function firstRoundOf(
 }
 
 /** The new unit's brief, as the next message in the predecessor's session. */
-export function continuationBrief(from: string, brief: string): string {
+function continuationBrief(from: string, brief: string): string {
   return [
     `THE NEXT UNIT CONTINUES IN THIS SESSION. You finished ${from}, and its work is in the tree.`,
     "What you read for it is still in your context: use it. Read a file again only where another unit may have changed it since.",
