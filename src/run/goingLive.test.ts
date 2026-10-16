@@ -125,7 +125,11 @@ test("a template is made live by its own deploy, and judged on the live product"
   assert.equal(r.judged, 1, "the live product is judged");
   assert.deepEqual(r.blocked, []);
   assert.equal(r.recorded?.liveAt, "https://svc.example.com");
-  assert.equal(r.recorded?.proofs[0].verdict, "green", "the promise settled by the deploy is answered");
+  assert.equal(
+    r.recorded?.proofs[0].verdict,
+    "pending",
+    "going live does not answer the promise: the live drive that follows judges it on the running service",
+  );
   assert.equal(r.recorded?.afterMerge?.outcome, "held");
   assert.equal(
     fs.readFileSync(path.join(r.state.common, "tandem", "deployed"), "utf8").trim(),
