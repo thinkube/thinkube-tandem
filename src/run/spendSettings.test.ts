@@ -23,3 +23,13 @@ test("zero and an empty name are the settings' words for none, and reach the run
   assert.deepEqual(spendSettings(settings({ unitBudgetUsd: 0, fallbackModel: "" })), {});
   assert.deepEqual(spendSettings(settings({})), {});
 });
+
+test("a negative budget is read exactly like 0: no ceiling, the fallback still read", () => {
+  for (const negative of [-1, -0.5]) {
+    const got = spendSettings(settings({ unitBudgetUsd: negative, fallbackModel: "haiku" }));
+    assert.deepEqual(got, spendSettings(settings({ unitBudgetUsd: 0, fallbackModel: "haiku" })));
+    assert.equal("unitBudgetUsd" in got, false);
+    assert.equal(got.fallbackModel, "haiku");
+    assert.deepEqual(spendSettings(settings({ unitBudgetUsd: negative })), {});
+  }
+});
