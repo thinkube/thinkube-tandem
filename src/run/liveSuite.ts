@@ -38,7 +38,7 @@ function isUnder(f: string, dir: string): boolean {
 }
 
 /** The environment variable a live check reads the service's address from. */
-export const LIVE_URL_ENV = "TANDEM_LIVE_URL";
+const LIVE_URL_ENV = "TANDEM_LIVE_URL";
 
 /** Whether a repository file reads the live address, which makes it a live
  *  check whatever it is named. */

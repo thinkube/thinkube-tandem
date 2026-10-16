@@ -10,12 +10,16 @@
  * when none can. The human accepts or rewords; their wording wins.
  */
 import { Change } from "../core/schema";
-import { RoundDeps, runReadRound } from "./round";
+import { jsonSchemaOf, readAnswer, RoundDeps, runReadRound } from "./round";
+import { z } from "zod";
 
 export interface ProposedCheck {
   text: string;
   kind: "probe" | "assessment";
 }
+
+/** The shape the check-proposal round answers in. */
+const CheckAnswer = z.object({ text: z.string(), kind: z.enum(["probe", "assessment"]) });
 
 function buildCheckPrompt(promise: Change, askText: string): string {
   const lands = (promise.grounding?.touchpoints ?? [])
@@ -38,17 +42,9 @@ function buildCheckPrompt(promise: Change, askText: string): string {
 }
 
 function parseProposedCheck(raw: string | null): ProposedCheck | undefined {
-  if (!raw) return undefined;
-  const a = raw.indexOf("{");
-  const b = raw.lastIndexOf("}");
-  if (a < 0 || b <= a) return undefined;
-  try {
-    const p = JSON.parse(raw.slice(a, b + 1)) as { text?: unknown; kind?: unknown };
-    if (typeof p.text !== "string" || !p.text.trim()) return undefined;
-    return { text: p.text.trim(), kind: p.kind === "assessment" ? "assessment" : "probe" };
-  } catch {
-    return undefined;
-  }
+  const p = readAnswer(CheckAnswer, raw);
+  if (!p || !p.text.trim()) return undefined;
+  return { text: p.text.trim(), kind: p.kind };
 }
 
 export async function proposeCheck(
@@ -58,7 +54,7 @@ export async function proposeCheck(
 ): Promise<ProposedCheck | undefined> {
   return parseProposedCheck(
     await runReadRound(
-      { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 6 },
+      { ...deps, model: deps.volumeModel ?? deps.model, maxTurns: 6, schema: jsonSchemaOf(CheckAnswer) },
       buildCheckPrompt(promise, askText),
     ),
   );

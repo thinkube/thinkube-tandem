@@ -9,6 +9,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { driveAll, driveOne, originOf } from "./drive";
 
+
+type V = "GREEN" | "RED" | "BLOCKED";
+/** A reviewer's answer, in the shape the harness holds it to. */
+function answer(items: [number, V, string][], findings: { saw: string; ask?: string }[] = []): string {
+  return JSON.stringify({ items: items.map(([item, verdict, said]) => ({ item, verdict, said })), findings });
+}
+
 /** One reply, in the shape the SDK streams it. */
 function says(reply: string) {
   const seen: Record<string, unknown>[] = [];
@@ -26,7 +33,7 @@ function says(reply: string) {
 }
 
 test("a driver is given a browser, one address, and no way to touch the repository", async () => {
-  const { ask, seen } = says("1. GREEN typed a task, it appeared in the list");
+  const { ask, seen } = says(answer([[1, "GREEN", "typed a task, it appeared in the list"]]));
   await driveOne(
     { at: "https://todo.example.com/app", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "a task added is shown", criteria: [{ text: "the user adds a task and sees it in the list" }] },
@@ -47,7 +54,7 @@ test("the one origin a reviewer's browser may open is the product's own", () => 
 
 test("one session answers every criterion of its promise, each in its own words", async () => {
   const { ask } = says(
-    "I opened the page.\n1. GREEN the list showed the soonest first\n2. RED the Add button does nothing — no task appears",
+    answer([[1, "GREEN", "the list showed the soonest first"], [2, "RED", "the Add button does nothing — no task appears"]]),
   );
   const ps = await driveOne(
     { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
@@ -79,7 +86,7 @@ test("a driver that never answers leaves the promise unjudged — never a pass n
 });
 
 test("every promise is judged, and the verdicts come back grouped as they were asked", async () => {
-  const replies = ["1. GREEN one", "1. RED two", "1. GREEN three"];
+  const replies = [answer([[1, "GREEN", "one"]]), answer([[1, "RED", "two"]]), answer([[1, "GREEN", "three"]])];
   let i = 0;
   const ask = async () =>
     ({
@@ -106,7 +113,7 @@ test("the address the browser is held to is the origin, whatever path the produc
 });
 
 test("a reviewer that could not get in judges nothing — never a red the work did not earn", async () => {
-  const { ask } = says("1. BLOCKED the address redirected to a sign-in page and no way in was offered");
+  const { ask } = says(answer([[1, "BLOCKED", "the address redirected to a sign-in page and no way in was offered"]]));
   const ps = await driveOne(
     { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "a task added is shown", criteria: [{ id: "AC-1", text: "adding a task shows it" }] },
@@ -118,7 +125,7 @@ test("a reviewer that could not get in judges nothing — never a red the work d
 });
 
 test("a reviewer is connected to a browser that is already up", async () => {
-  const { ask, seen } = says("1. GREEN it was there");
+  const { ask, seen } = says(answer([[1, "GREEN", "it was there"]]));
   await driveOne(
     { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:39217/mcp" },
     { promise: "p", criteria: [{ text: "c" }] },
@@ -133,7 +140,7 @@ test("a reviewer is connected to a browser that is already up", async () => {
 });
 
 test("a reviewer gets the browser it was given and no other", async () => {
-  const { ask, seen } = says("1. GREEN it was there");
+  const { ask, seen } = says(answer([[1, "GREEN", "it was there"]]));
   await driveOne(
     { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ text: "c" }] },
@@ -146,7 +153,7 @@ test("a reviewer gets the browser it was given and no other", async () => {
 });
 
 test("the browser server and the chrome are the ones this machine has", async () => {
-  const { ask, seen } = says("1. GREEN it was there");
+  const { ask, seen } = says(answer([[1, "GREEN", "it was there"]]));
   await driveOne({ at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" }, { promise: "p", criteria: [{ text: "c" }] }, 1);
   const b = (seen[0].mcpServers as Record<string, { command: string; args: string[] }>).browser;
   const fetched = b.command === "npx";
@@ -161,8 +168,8 @@ test("a reviewer still working is asked to carry on, and stops when a round adds
   // Two criteria; the first round answers one and keeps working, the
   // second answers the rest.
   const replies = [
-    "1. GREEN the cursor was in the title",
-    "1. GREEN the cursor was in the title\n2. RED Enter did not save",
+    answer([[1, "GREEN", "the cursor was in the title"]]),
+    answer([[1, "GREEN", "the cursor was in the title"], [2, "RED", "Enter did not save"]]),
   ];
   let i = 0;
   const seen: Record<string, unknown>[] = [];
@@ -186,7 +193,7 @@ test("a reviewer still working is asked to carry on, and stops when a round adds
 });
 
 test("a reviewer that never answers is asked once without the browser, from what it found", async () => {
-  const replies = ["I opened the page and made a task.", "I opened the page and made a task.", "1. GREEN it was there"];
+  const replies = ["I opened the page and made a task.", "I opened the page and made a task.", answer([[1, "GREEN", "it was there"]])];
   let i = 0;
   const seen: Record<string, unknown>[] = [];
   const ask = async (_p: string, options: Record<string, unknown>) => {
@@ -235,7 +242,7 @@ test("the round in flight is given the run's own abort", async () => {
     seen.push(options);
     return {
       [Symbol.asyncIterator]: async function* () {
-        yield { type: "result", result: "1. GREEN done" };
+        yield { type: "result", result: answer([[1, "GREEN", "done"]]) };
       },
     } as AsyncIterable<unknown>;
   };
@@ -251,7 +258,7 @@ test("the round in flight is given the run's own abort", async () => {
 });
 
 test("a reviewer may use the browser it was given, and nothing else", async () => {
-  const { ask, seen } = says("1. GREEN it was there");
+  const { ask, seen } = says(answer([[1, "GREEN", "it was there"]]));
   await driveOne(
     { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ text: "c" }] },
@@ -275,7 +282,7 @@ test("a reviewer may use the browser it was given, and nothing else", async () =
 
 test("a reviewer keeps one conversation and one browser, and both are closed after it", async () => {
   const seen: Record<string, unknown>[] = [];
-  const replies = ["1. GREEN one", "1. GREEN one\n2. GREEN two"];
+  const replies = [answer([[1, "GREEN", "one"]]), answer([[1, "GREEN", "one"], [2, "GREEN", "two"]])];
   let i = 0;
   const ask = async (_p: string, options: Record<string, unknown>) => {
     seen.push(options);
@@ -323,7 +330,7 @@ test("a reviewer whose browser will not start judges nothing, and says why", asy
   const ask = async () =>
     ({
       [Symbol.asyncIterator]: async function* () {
-        yield { type: "result", result: "1. GREEN" };
+        yield { type: "result", result: answer([[1, "GREEN", ""]]) };
       },
     }) as AsyncIterable<unknown>;
   const proofs = await driveAll(
@@ -338,11 +345,16 @@ test("a reviewer whose browser will not start judges nothing, and says why", asy
 
 test("a reviewer reports what it noticed and did not judge", async () => {
   const { ask } = says(
-    [
-      "1. GREEN the cursor was in the title",
-      "FINDING: the priority filter reads in English on a Catalan page | ASK: The priority filter reads in Catalan when the page is in Catalan.",
-      "FINDING: none of the date fields say what format they want",
-    ].join("\n"),
+    answer(
+      [[1, "GREEN", "the cursor was in the title"]],
+      [
+        {
+          saw: "the priority filter reads in English on a Catalan page",
+          ask: "The priority filter reads in Catalan when the page is in Catalan.",
+        },
+        { saw: "none of the date fields say what format they want" },
+      ],
+    ),
   );
   const ps = await driveOne(
     { at: "https://x.test", model: "m", ask, browserAt: "http://localhost:1/mcp" },
@@ -363,7 +375,7 @@ test("a reviewer is told the whole path to write its pictures to", async () => {
   // A bare name is written wherever the browser is running, which is not
   // where the report reads pictures from; the whole path lands it there
   // whatever the browser's working directory turns out to be.
-  const { ask, asked } = says("1. GREEN the count matched the cards");
+  const { ask, asked } = says(answer([[1, "GREEN", "the count matched the cards"]]));
   await driveOne(
     {
       at: "https://todo.example.com",
@@ -384,7 +396,7 @@ test("a reviewer is told the whole path to write its pictures to", async () => {
 });
 
 test("with nowhere to keep pictures, the reviewer is still told how to name one", async () => {
-  const { ask, asked } = says("1. GREEN it did");
+  const { ask, asked } = says(answer([[1, "GREEN", "it did"]]));
   await driveOne(
     { at: "https://todo.example.com", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ text: "c" }] },
@@ -408,7 +420,7 @@ test("reviewers drive the product one at a time, never two at once", async () =>
     open--;
     return {
       [Symbol.asyncIterator]: async function* () {
-        yield { type: "result", result: "1. GREEN it did" };
+        yield { type: "result", result: answer([[1, "GREEN", "it did"]]) };
       },
     } as AsyncIterable<unknown>;
   };
@@ -437,7 +449,7 @@ test("a reviewer alone in the product clears this machinery's leftovers, and not
   // reviewers ran side by side. Alone, every such item is a leftover of an
   // earlier run, and leaving it makes a criterion about the whole list —
   // nothing is high priority, there is nothing at all — unreachable.
-  const { ask, asked } = says("1. GREEN it did");
+  const { ask, asked } = says(answer([[1, "GREEN", "it did"]]));
   await driveOne(
     { at: "https://todo.example.com", model: "m", ask, browserAt: "http://localhost:1/mcp" },
     { promise: "p", criteria: [{ text: "with nothing in the list the heading says so" }] },

@@ -10,6 +10,7 @@
  * broken round never blocks the space.
  */
 import { theModel } from "../engine/theModel";
+import { z } from "zod";
 
 export interface RoundDeps {
   model: string;
@@ -29,6 +30,37 @@ export interface RoundDeps {
    *  partial messages, so a model that thinks for minutes without calling a
    *  tool is still heard moving. */
   pulse?: () => RoundPulse;
+  /** The shape of the answer, as a JSON schema (`jsonSchemaOf`). Given one,
+   *  the harness holds the model to it and retries a malformed answer
+   *  itself; the round's text is then the answer and nothing else. */
+  schema?: Record<string, unknown>;
+}
+
+/**
+ * A round's answer shape as the harness takes it: the JSON schema of a zod
+ * shape, without the dialect marker the API does not want.
+ */
+export function jsonSchemaOf(shape: z.ZodType): Record<string, unknown> {
+  const out = z.toJSONSchema(shape) as Record<string, unknown>;
+  delete out.$schema;
+  return out;
+}
+
+/**
+ * A round's answer, read against its shape. The harness validated it
+ * before it came back, so this is the typed reading; a round that failed,
+ * or a fake that answers prose, reads as nothing.
+ */
+export function readAnswer<T>(shape: z.ZodType<T>, raw: string | null): T | undefined {
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  const read = shape.safeParse(parsed);
+  return read.success ? read.data : undefined;
 }
 
 /** What a listener hears of one running round: every event its stream
@@ -99,6 +131,7 @@ export async function runReadRound(
           // a tool a later release adds is closed by default.
           tools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
           allowedTools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
+          ...(deps.schema ? { outputFormat: { type: "json_schema", schema: deps.schema } } : {}),
           disallowedTools: [
             "Write",
             "Edit",
@@ -164,8 +197,11 @@ export async function collectText(
             log?.(`  ${at()} ⚙ ${describeUse(b)}`);
           }
         }
-      } else if (rec.type === "result" && typeof rec.result === "string") {
-        text = rec.result;
+      } else if (rec.type === "result") {
+        // A round held to a shape answers with the shape; the text is then
+        // that answer and nothing else. Any other round answers in words.
+        if (rec.structured_output !== undefined) text = JSON.stringify(rec.structured_output);
+        else if (typeof rec.result === "string") text = rec.result;
         log?.(`  ${at()} ✓ round done — ${turns} tool use(s)`);
       }
     }

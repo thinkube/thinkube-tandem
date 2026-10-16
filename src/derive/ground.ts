@@ -14,7 +14,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { AcceptanceCriterion, Anchor, Ask, Change, Question, validateAnchor } from "../core/schema";
 import { readStamp, SourceStamp } from "../core/stamp";
-import { RoundDeps, runReadRound } from "./round";
+import { jsonSchemaOf, readAnswer, RoundDeps, runReadRound } from "./round";
+import { z } from "zod";
 import { observationShaped } from "../run/observations";
 import { factsOf } from "../run/facts";
 import { downstreamOf } from "../run/survey";
@@ -237,10 +238,43 @@ function buildGroundingPrompt(args: {
   );
 }
 
+/** The shape the grounding round answers in; the prompt above describes it
+ *  in words, and the harness holds the model to it. */
+const GroundedAnswer = z.object({
+  nodes: z.array(
+    z.object({
+      sentence: z.string(),
+      claim: z.number().optional(),
+      touchpoints: z
+        .array(
+          z.object({
+            path: z.string(),
+            symbol: z.string().optional(),
+            evidence: z.string().optional(),
+            scope: z.string().optional(),
+          }),
+        )
+        .optional(),
+      needs: z.array(z.number()).optional(),
+      acceptance: z
+        .array(
+          z.object({
+            text: z.string(),
+            kind: z.enum(["probe", "assessment"]).optional(),
+            settledBy: z.string().optional(),
+          }),
+        )
+        .optional(),
+      unverified: z.array(z.object({ text: z.string(), why: z.string() })).optional(),
+    }),
+  ),
+  questions: z.array(z.object({ text: z.string(), recommendation: z.string() })).optional(),
+});
+
 /**
- * Parse and validate a round's output. Anchors are validated (positions
- * refused), needs indices bounded, empty sentences dropped. `fileExists`
- * marks planned anchors; injectable for tests.
+ * Validate a round's answer. Anchors are validated (positions refused),
+ * needs indices bounded, empty sentences dropped. `fileExists` marks
+ * planned anchors; injectable for tests.
  */
 export function parseGroundedNodes(
   raw: string,
@@ -248,17 +282,9 @@ export function parseGroundedNodes(
   fileExists: (abs: string) => boolean = fs.existsSync,
   scopeDir?: (scope: string) => string | undefined,
 ): DerivedNode[] {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return [];
-  let parsed: { nodes?: unknown; questions?: unknown };
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1)) as typeof parsed;
-  } catch {
-    return [];
-  }
-  const rawNodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
-  void 0;
+  const parsed = readAnswer(GroundedAnswer, raw);
+  if (!parsed) return [];
+  const rawNodes = parsed.nodes;
   const out: DerivedNode[] = [];
   for (const n of rawNodes) {
     if (typeof n !== "object" || n === null) continue;
@@ -337,19 +363,17 @@ export function parseGroundedNodes(
   return out;
 }
 
-/** Parse the round's unresolved questions (fail-soft to none). */
+/** The questions of any round that raises them, whatever else it answers. */
+const QuestionsAnswer = z.object({
+  questions: z.array(z.object({ text: z.string(), recommendation: z.string() })).optional(),
+});
+
+/** The round's unresolved questions (fail-soft to none). */
 export function parseGroundedQuestions(raw: string): DerivedQuestion[] {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return [];
-  let parsed: { questions?: unknown };
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1)) as typeof parsed;
-  } catch {
-    return [];
-  }
+  const parsed = readAnswer(QuestionsAnswer, raw);
+  if (!parsed) return [];
   const out: DerivedQuestion[] = [];
-  for (const q of Array.isArray(parsed.questions) ? parsed.questions : []) {
+  for (const q of parsed.questions ?? []) {
     if (typeof q !== "object" || q === null) continue;
     const rec = q as Record<string, unknown>;
     const text = typeof rec.text === "string" ? rec.text.trim() : "";
@@ -463,7 +487,7 @@ export async function runGrounding(
   const live = !!liveSuiteDeclared(deps.repoRoot);
   const settling = settlingSourcesOf(down, live);
   const text = await round(
-    deps,
+    { ...deps, schema: jsonSchemaOf(GroundedAnswer) },
     buildGroundingPrompt({
       ...(opts.claims ? { claims: opts.claims } : {}),
       ask,
