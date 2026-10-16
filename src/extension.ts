@@ -67,8 +67,13 @@ const sessions = new Map<string, TandemSession>();
 const lastChangeMs = new Map<string, number>();
 
 let statusBar: vscode.StatusBarItem | undefined;
+/** The Configuration view, scoped to the repository Tandem works on. */
+let configTree: ConfigTreeProvider | undefined;
 
 function updateStatusBar(project: EnabledProject | undefined): void {
+  // The Configuration view follows the same choice: the repository Tandem
+  // works on is the one whose .claude it shows.
+  configTree?.setSelectedRepo(project ? { path: project.gitRoot, name: project.card.label } : undefined);
   if (!statusBar) return;
   statusBar.text = project
     ? `$(repo) Tandem: ${project.card.product ? `${project.card.product} / ` : ""}${project.card.label}`
@@ -330,13 +335,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // else the user's home (a neutral seed until a repository is chosen).
   const seedPath = rememberedProject(context)?.gitRoot ?? process.env.HOME ?? "/";
   const configService = new ClaudeConfigService(seedPath);
-  const configTree = new ConfigTreeProvider(configService);
+  configTree = new ConfigTreeProvider(configService);
   const configView = vscode.window.createTreeView("claudeConfigTree", {
     treeDataProvider: configTree,
     showCollapseAll: true,
   });
   context.subscriptions.push(configView);
   initActiveContext({ configService, treeProvider: configTree, statusBarItem: statusBar });
+  // Scoped to the remembered repository from the first paint.
+  updateStatusBar(rememberedProject(context));
   configService.onConfigChanged(() => {
     void updateConfigContext();
   });
