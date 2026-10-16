@@ -73,6 +73,7 @@ import { renderTepBody } from "./briefs";
 import { clearanceStanza, coderStanza, fixturesStanza, liveCheckStanza, testerStanza } from "./brief";
 import { productionSeams, sharedFixtures } from "./seams";
 import { applyFixturePlan, commitSharedFixture, planSharedFixture, testerCode } from "./sharedFixture";
+import { testHomeStanza } from "./testHomeExamples";
 import { sliceBookkeeping } from "./plan";
 import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
@@ -400,7 +401,7 @@ export async function dispatchTep(
             ownsFixture
               ? { write: ownsFixture.path, seams: ownsFixture.seams, users: [ownsFixture.owner, ...ownsFixture.waiters] }
               : undefined,
-          )
+          ) + (await testHomeStanza(tree, next.footprint))
         : "";
     // Each role's brief carries what it owns, read FRESH each attempt — a contract that crossed slices mid-run reaches its owner at its next attempt.
     const oracleStanza = () =>

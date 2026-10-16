@@ -19,6 +19,8 @@ import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import type { OracleFactoryArgs } from "./oracle";
 import { pulseOf } from "./oracle";
+import { environmentSigns, environmentStanza } from "./environmentFailure";
+import { testHomeStanza } from "./testHomeExamples";
 import { isCheckOf } from "../core/testShape";
 import { formatVerifyReply, type VerifyResult } from "../engine/verifyOracle";
 import { CHALLENGE_BUDGET } from "./challengeBudget";
@@ -71,6 +73,9 @@ export function makeChallenge(
         return `check ${ac} has no probe yet — nothing to challenge; run verify first.`;
       }
       spent.set(`${slice}#${ac}`, used + 1);
+      const listed = await a.exec("git", ["-C", a.worktree, "ls-files"], a.worktree);
+      if (listed.code !== 0) throw new Error(`git could not list the worktree's files: ${listed.out.trim().slice(0, 300)}`);
+      const signs = environmentSigns(ran.output, listed.out.split("\n").map((l) => l.trim()).filter(Boolean));
       const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
       const reply = await (a.supervisorRound ?? runReadRound)(
         { model: judge, repoRoot: a.testerWt, log: a.log, ...pulseOf(a, a.acting?.(slice)?.unit ?? slice) },
@@ -83,8 +88,9 @@ export function makeChallenge(
           "implementation is DEFECTIVE. A probe that relies on behaviour the",
           "INSTALLED version of a library lacks is DEFECTIVE — judge the library",
           "by the versions below and what it printed, never by the version you",
-          "remember. A probe the coder merely finds hard is FAITHFUL. The",
-          "criterion itself is not on trial.",
+          "remember. A probe whose environment cannot load what it exercises,",
+          "though the tree holds it, is DEFECTIVE. A probe the coder merely",
+          "finds hard is FAITHFUL. The criterion itself is not on trial.",
           "Your FIRST line must be exactly DEFECTIVE or FAITHFUL, then one plain",
           "sentence of reason.",
           "",
@@ -101,6 +107,7 @@ export function makeChallenge(
           "",
           "──── THE CODER'S ARGUMENT ────",
           argument.slice(0, 4000),
+          ...(signs.length ? ["", environmentStanza(signs)] : []),
         ].join("\n"),
       );
       const granted = !!reply?.trimStart().toUpperCase().startsWith("DEFECTIVE");
@@ -169,6 +176,7 @@ async function reauthorCheck(
       ...(siblings.length ? [`SIBLING PROBES of this slice, written to the same conventions — read one first: ${siblings.join(", ")}`] : []),
       ...(a.digest ? ["", "THE REPOSITORY, READ FOR YOU:", a.digest.slice(0, 6000)] : []),
       fixturesStanza(await sharedFixtures(a.testerWt), await productionSeams(a.testerWt)),
+      await testHomeStanza(a.testerWt, [args.rel]),
       "",
       "Write a complete, runnable probe file proving only that criterion,",
       "against the repository as this tree shows it. Do not weaken the",

@@ -35,6 +35,8 @@ test("a challenge to a Python check reaches the judge", async () => {
   let judged = "";
   const challenge = makeChallenge({
     testerWt,
+    worktree: testerWt,
+    exec: async () => ({ code: 0, out: "" }),
     sliceProbes: new Map([["SL-1", ["tests/main_AC-1_test.py", "tests/main_AC-2_test.py"]]]),
     criterionOf: (_slice: string, ac: number) => (ac === 2 ? { id: "c-2", text: "the route declares its model" } : undefined),
     model: "sonnet",

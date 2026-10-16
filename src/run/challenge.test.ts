@@ -29,6 +29,8 @@ test("the judge reads the coder's verify output and the installed versions the p
   let judged = "";
   const challenge = makeChallenge({
     testerWt,
+    worktree: testerWt,
+    exec: async () => ({ code: 0, out: "" }),
     sliceProbes: new Map([["SL-1", ["tests/main_AC-2_test.py"]]]),
     criterionOf: () => ({ id: "c-2", text: "the health route declares its response model" }),
     model: "sonnet",
@@ -57,6 +59,8 @@ test("a challenge before any verify is refused without spending the budget or ca
   let judged = 0;
   const challenge = makeChallenge({
     testerWt,
+    worktree: testerWt,
+    exec: async () => ({ code: 0, out: "" }),
     sliceProbes: new Map([["SL-1", ["tests/x_AC-1_test.py"]]]),
     criterionOf: () => ({ id: "c-1", text: "criterion" }),
     model: "sonnet",
@@ -121,6 +125,7 @@ test("a check whose pool double has only execute() is re-authored on the supervi
   const args = {
     worktree: tree,
     testerWt: tree,
+    exec: async () => ({ code: 0, out: "" }),
     sliceProbes: new Map([["SL-2", [rel]]]),
     briefBySlice: new Map([["SL-2", "write fail_document through tenant_transaction"]]),
     criterionOf: () => ({ id: "c-1", text: "a failed ingestion marks the document failed" }),

@@ -26,6 +26,7 @@ import { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
 import { pulseOf } from "./oracle";
 import { isCheckOf } from "../core/testShape";
+import { environmentSigns, environmentStanza } from "./environmentFailure";
 
 /** Evidence a coder cannot act on: an assertion that compared nothing it
  *  shows, or a failure with no words of its own at all. */
@@ -72,44 +73,61 @@ export function makeDiagnoser(
     const log = (line: string) => a.log(line, unit);
     log(`🔎 ${slice}: check ${ac} failed with nothing a coder can act on — the judge runs it and looks`);
     const runnerDir = path.join(a.wtRoot, "oracle-runners", `${a.tep}-${slice}`);
-    const ran = await a.boundedExec(verif.run, runnerDir).catch(() => ({ code: null, output: "" }));
-    const src = await fs.readFile(path.join(a.testerWt, rel), "utf8").catch(() => "");
-    const reply = await (a.supervisorRound ?? runReadRound)(
-      {
-        model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
-        repoRoot: runnerDir,
-        log,
-        ...pulseOf(a, unit ?? slice),
-      },
-      [
-        "You are the ORACLE. A check keeps failing and its evidence tells the coder nothing.",
-        "You see everything the coder cannot: the check's SOURCE, and what it printed when it",
-        "was just run against the coder's current tree, in the tree itself.",
-        "",
-        "Answer ONE question: could ANY correct implementation of the criterion pass this check",
-        "as written? Read the WHOLE file, not each test alone — a check can be defective through",
-        "an INTERACTION its tests have with each other: module state one test establishes and a",
-        "later test inherits (a cached singleton, a module loaded once, a fake installed after the",
-        "module was already loaded), an order dependence, a leaked global.",
-        "",
-        "Your FIRST line must be exactly one of:",
-        '- "DEFECTIVE: <what makes it unpassable, in one or two sentences>"',
-        '- "FAITHFUL: <what the implementation must do, concretely, naming the behavior — never',
-        '   \'try again\'>"',
-        "",
-        `THE CRITERION the human signed: ${criterion.text}`,
-        "",
-        "──── THE CHECK'S SOURCE ────",
-        src.slice(0, 14000),
-        "",
-        "──── WHAT IT PRINTED, RUN AGAINST THE CODER'S CURRENT TREE ────",
-        `$ ${verif.run} → exit ${ran.code ?? "null"}`,
-        (ran.output || "(no output)").slice(0, 6000),
-        "",
-        "──── WHAT THE CODER WAS TOLD (the evidence that says nothing) ────",
-        evidence.slice(0, 1500),
-      ].join("\n"),
-    ).catch(() => null);
+    // A check that cannot be run at all is put to the judge in the runner's
+    // own words: that is evidence too.
+    const ran = await a.boundedExec(verif.run, runnerDir).catch((e: unknown) => ({
+      code: null,
+      output: `the check could not be run: ${e instanceof Error ? e.message : String(e)}`,
+    }));
+    const src = await fs.readFile(path.join(a.testerWt, rel), "utf8");
+    const listed = await a.exec("git", ["-C", a.worktree, "ls-files"], a.worktree);
+    if (listed.code !== 0) throw new Error(`git could not list the worktree's files: ${listed.out.trim().slice(0, 300)}`);
+    const signs = environmentSigns(`${ran.output}\n${evidence}`, listed.out.split("\n").map((l) => l.trim()).filter(Boolean));
+    let reply: string | null;
+    try {
+      reply = await (a.supervisorRound ?? runReadRound)(
+        {
+          model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
+          repoRoot: runnerDir,
+          log,
+          ...pulseOf(a, unit ?? slice),
+        },
+        [
+          "You are the ORACLE. A check keeps failing and its evidence tells the coder nothing.",
+          "You see everything the coder cannot: the check's SOURCE, and what it printed when it",
+          "was just run against the coder's current tree, in the tree itself.",
+          "",
+          "Answer ONE question: could ANY correct implementation of the criterion pass this check",
+          "as written? Read the WHOLE file, not each test alone — a check can be defective through",
+          "an INTERACTION its tests have with each other: module state one test establishes and a",
+          "later test inherits (a cached singleton, a module loaded once, a fake installed after the",
+          "module was already loaded), an order dependence, a leaked global. A check is DEFECTIVE",
+          "too when its environment cannot load what it exercises although the tree holds it: no",
+          "change to the code under test can make it pass.",
+          "",
+          "Your FIRST line must be exactly one of:",
+          '- "DEFECTIVE: <what makes it unpassable, in one or two sentences>"',
+          '- "FAITHFUL: <what the implementation must do, concretely, naming the behavior — never',
+          '   \'try again\'>"',
+          "",
+          `THE CRITERION the human signed: ${criterion.text}`,
+          "",
+          "──── THE CHECK'S SOURCE ────",
+          src.slice(0, 14000),
+          "",
+          "──── WHAT IT PRINTED, RUN AGAINST THE CODER'S CURRENT TREE ────",
+          `$ ${verif.run} → exit ${ran.code ?? "null"}`,
+          (ran.output || "(no output)").slice(0, 6000),
+          "",
+          "──── WHAT THE CODER WAS TOLD (the evidence that says nothing) ────",
+          evidence.slice(0, 1500),
+          ...(signs.length ? ["", environmentStanza(signs)] : []),
+        ].join("\n"),
+      );
+    } catch (e) {
+      log(`⛔ ${slice}: the judge could not rule on check ${ac} — ${e instanceof Error ? e.message : String(e)}`);
+      return undefined;
+    }
     const first = (reply ?? "").trimStart();
     if (/^DEFECTIVE/i.test(first)) {
       const why = first.replace(/^DEFECTIVE:\s*/i, "").split("\n")[0].trim().slice(0, 400);
