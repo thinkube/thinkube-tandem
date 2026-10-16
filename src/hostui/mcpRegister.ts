@@ -4,21 +4,25 @@
  */
 
 /**
- * The extension registers its own server.
+ * The extension no longer registers its server by hand.
  *
- * A registration written by hand lives on one machine and dies with it:
- * reinstall, and the entry is gone with no trace of what it said. The
- * extension knows where it is installed, so it is the only thing that can
- * keep the entry correct across versions — and it must point at the
- * VERSION-INDEPENDENT path, because a registration naming
- * `…-2.0.189/out/…` breaks silently at the next deploy, which is exactly
- * how the previous server's entry came to point at a directory that no
- * longer existed.
+ * The Tandem plugin (`claude-plugins/tandem`) declares the server to Claude
+ * Code through the same version-independent path, and the platform installs
+ * the plugin from the marketplace the extension ships beside its code. A
+ * registration written by hand lived on one machine and died with it; a
+ * plugin is installed, listed, updated and removed by the tool that reads
+ * it.
+ *
+ * What remains here is the clean-up: an entry this extension wrote into
+ * `~/.claude.json` in earlier versions is removed, so the server is not
+ * registered twice — once by the plugin and once by hand. An entry under
+ * the same name that points anywhere else is somebody's own, and is left
+ * alone.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-/** The stable path a registration may name: repointed by every deploy. */
+/** The stable path the hand-written entry named: repointed by every deploy. */
 export const STABLE_SERVER = path.join("extension-current", "out", "mcp", "server.js");
 
 export interface Registration {
@@ -26,58 +30,51 @@ export interface Registration {
   args: string[];
 }
 
-/** What the entry should say, given where the extension keeps its state. */
+/** What the extension used to write, so that only its own entry is removed. */
 export function registrationFor(globalStorage: string): Registration {
   return { command: "node", args: [path.join(globalStorage, STABLE_SERVER)] };
 }
 
 /**
- * Ensure the config names this server, correctly. Returns what changed, so
- * a caller can say so once rather than every activation.
- *
- * Idempotent by comparison, never by blind write: a config a person edited
- * for other servers must survive, and an entry that is already right must
- * not be rewritten on every window.
+ * Remove the entry this extension wrote, when it is there. Returns what
+ * changed, so a caller can say so once rather than every activation.
  */
-export function ensureRegistered(
+export function retireHandRegistration(
   configFile: string,
   globalStorage: string,
-): "added" | "corrected" | "unchanged" | "unwritable" {
-  const want = registrationFor(globalStorage);
+): "removed" | "unchanged" | "unwritable" {
+  const ours = registrationFor(globalStorage);
   let doc: Record<string, unknown> = {};
   try {
     doc = JSON.parse(fs.readFileSync(configFile, "utf8")) as Record<string, unknown>;
   } catch {
-    // A missing config is not an error — it is the first run.
+    return "unchanged";
   }
   const servers = (doc.mcpServers ?? {}) as Record<string, unknown>;
   const had = servers["thinkube-tandem"] as Registration | undefined;
-  const same =
-    had?.command === want.command &&
+  const isOurs =
+    had?.command === ours.command &&
     Array.isArray(had?.args) &&
-    had.args.length === want.args.length &&
-    had.args.every((a, i) => a === want.args[i]);
-  if (same) return "unchanged";
-  const outcome = had ? "corrected" : "added";
-  doc.mcpServers = { ...servers, "thinkube-tandem": want };
+    had.args.length === ours.args.length &&
+    had.args.every((a, i) => a === ours.args[i]);
+  if (!isOurs) return "unchanged";
+  const { "thinkube-tandem": _gone, ...rest } = servers;
+  void _gone;
+  doc.mcpServers = rest;
   try {
-    fs.mkdirSync(path.dirname(configFile), { recursive: true });
     fs.writeFileSync(configFile, `${JSON.stringify(doc, null, 2)}\n`);
   } catch {
-    // A registration that cannot be written costs the server, never the
-    // editor: the person can still do everything through the window.
+    // A config that cannot be written leaves a second registration behind,
+    // never a broken editor: the person still has everything in the window.
     return "unwritable";
   }
-  return outcome;
+  return "removed";
 }
 
-/**
- * Keep the registration correct for this installation, and say so once
- * when it changed. The extension is the only thing that knows where it
- * lives, so it is the only thing that can keep the entry true.
- */
-export function registerServer(globalStorage: string, home = process.env.HOME ?? ""): void {
-  const outcome = ensureRegistered(path.join(home, ".claude.json"), globalStorage);
-  if (outcome === "added" || outcome === "corrected")
-    console.log(`tandem: mcp server registration ${outcome}`);
+/** Retire the hand-written registration for this installation, and say so
+ *  once when it was there. */
+export function retireServerRegistration(globalStorage: string, home = process.env.HOME ?? ""): void {
+  const outcome = retireHandRegistration(path.join(home, ".claude.json"), globalStorage);
+  if (outcome === "removed")
+    console.log("tandem: the hand-written mcp server entry was removed — the Tandem plugin registers the server");
 }

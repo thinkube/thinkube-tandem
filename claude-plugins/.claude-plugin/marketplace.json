@@ -1,0 +1,13 @@
+{
+  "name": "thinkube",
+  "owner": { "name": "Thinkube" },
+  "description": "Claude Code plugins of the Thinkube platform, installed from the extension that ships them.",
+  "plugins": [
+    {
+      "name": "tandem",
+      "source": "./tandem",
+      "description": "The Tandem Workshop for Claude Code: its MCP server, its flows as prompts, and what an agent must know about the two gates.",
+      "category": "development"
+    }
+  ]
+}

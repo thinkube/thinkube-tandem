@@ -1,0 +1,9 @@
+{
+  "name": "tandem",
+  "description": "The Tandem Workshop for Claude Code: its MCP server, its flows as prompts, and what an agent must know about the two gates.",
+  "author": { "name": "Thinkube" },
+  "homepage": "https://thinkube.org",
+  "repository": "https://github.com/thinkube/thinkube-tandem",
+  "license": "Apache-2.0",
+  "keywords": ["thinkube", "tandem", "workshop"]
+}

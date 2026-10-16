@@ -31,14 +31,19 @@ for you, and the machine's data one gesture away.
 - **The store.** Spaces, products and the defect ledger are kept in the
   tandem store, by default `~/thinkube-tandem-store`
   (`thinkubeTandem.storeRoot`).
-- **The MCP server.** `out/mcp/server.js` serves Tandem's tools to Claude
-  Code over stdio. The extension registers it in `~/.claude.json` as
-  `thinkube-tandem`, through a path that each install points at the
-  installed version. The server works on the same store as the editor, so
-  the editor shows its changes. `src/surfaces/actions.ts` declares which
-  actions are the person's alone, among them signing a cut and accepting a
-  delivery. The server refuses those unless `TANDEM_AUTONOMOUS=1` is set,
-  and always refuses an action not declared there.
+- **The MCP server, as a plugin.** `out/mcp/server.js` serves Tandem's
+  tools to Claude Code over stdio. The Claude Code plugin in
+  `claude-plugins/tandem` declares it as `thinkube-tandem`, through a path
+  that each install points at the installed version, and carries the
+  Workshop's flows as prompts and a skill that tells an agent what the two
+  gates are. The platform installs the plugin from the marketplace in
+  `claude-plugins/` at the installed extension's path, so a redeploy of the
+  extension is a redeploy of the plugin. The server works on the same store
+  as the editor, so the editor shows its changes. `src/surfaces/actions.ts`
+  declares which actions are the person's alone, among them signing a cut
+  and accepting a delivery: to a machine the server refuses those, a client
+  that can ask the person asks them, and an action not declared there is
+  always refused.
 - **Live checks.** A repository that declares where it answers
   (`spec.deploy.at` in `thinkube.yaml`) declares its live checks beside it
   (`spec.deploy.live`: `home`, the directory they are kept in, outside the
@@ -101,10 +106,19 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `stop_run` | Asks the run to stop. The process that owns the run ends it at its next heartbeat. |
 | `answer_worker` | Answers a parked worker's question, by unit id. |
 
-The person's own actions are tools too. The server refuses them unless its
-environment has `TANDEM_AUTONOMOUS=1`; Claude Code passes its own
-environment to the server, so the variable goes in the `env` block of
-`~/.claude/settings.json`.
+The person's own actions are tools too. To a machine the server refuses
+them. A client that can ask the person (MCP elicitation; Claude Code is
+one) is asked instead: the call waits while the person reads what is about
+to happen and says yes or no in their own session, and a no does nothing.
+For an unattended run, `TANDEM_AUTONOMOUS=1` lets every action through;
+Claude Code passes its environment to the server, so the variable goes in
+the `env` block of `~/.claude/settings.json`.
+
+The server also offers the Workshop's flows as prompts, which Claude Code
+lists as slash commands: `/mcp__thinkube-tandem__capture-asks`,
+`/mcp__thinkube-tandem__build` and `/mcp__thinkube-tandem__review-delivery`,
+each taking the space to work in. A prompt names the tools to call and
+where the agent must stop for the person.
 
 | Tool | What it does |
 |---|---|

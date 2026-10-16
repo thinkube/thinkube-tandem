@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "thinkube-tandem": {
+      "command": "node",
+      "args": [
+        "${HOME}/.local/share/code-server/User/globalStorage/thinkube.thinkube-tandem/extension-current/out/mcp/server.js"
+      ]
+    }
+  }
+}

@@ -179,6 +179,19 @@ of them there — nothing has users.
   the brief and the digest today, and through role definitions and
   `.claude/rules` when roles become agent definitions. Revisit then.
 
+## The Claude Code surface ships as a plugin (2026-10-16)
+- `claude-plugins/` is a Claude Code marketplace beside the code, with one
+  plugin, `tandem`: the MCP server (through the version-independent
+  `extension-current` path), the flows as prompts, and the skill that tells
+  an agent what the two gates are. The platform installs it from the
+  installed extension's path, so a redeploy of the extension is a redeploy
+  of the plugin.
+- The extension no longer writes `~/.claude.json`. The entry earlier
+  versions wrote is removed on activation when it is the extension's own;
+  one under the same name pointing elsewhere is left alone.
+- The roles (`agents/tandem-*.md`) are not part of the plugin: they are the
+  run's workers, not subagents for a person's session.
+
 ## The person's gates are asked, not switched (2026-10-16)
 - A person-only tool called through a client that can ask the person (MCP
   elicitation) waits for their yes, shown with whose act it is and what the

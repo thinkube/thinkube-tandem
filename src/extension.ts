@@ -24,7 +24,7 @@ import { appendDefect } from "./engine/defectLog";
 import { thinkubeDeclaration } from "./core/thinkubeYaml";
 import { configureDocsRoots, docsRootsOf } from "./core/docsDuty";
 import { followFor } from "./hostui/storeWatch";
-import { registerServer } from "./hostui/mcpRegister";
+import { retireServerRegistration } from "./hostui/mcpRegister";
 import { createProduct, EnabledProject, listProducts, setCardProduct } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
 import { activeOwnerKey, forgetProjects, openProjects, rememberedProject } from "./hostui/whichProject";
@@ -274,7 +274,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   // The server that drives a space from outside this window is part of the
   // product, so the product keeps its own registration correct.
-  registerServer(context.globalStorageUri.fsPath);
+  retireServerRegistration(context.globalStorageUri.fsPath);
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusBar.command = "thinkube-tandem.switchProject";
   statusBar.tooltip = "Switch the repository or project Tandem works on";
