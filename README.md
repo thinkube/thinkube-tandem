@@ -39,6 +39,17 @@ for you, and the machine's data one gesture away.
   actions are the person's alone, among them signing a cut and accepting a
   delivery. The server refuses those unless `TANDEM_AUTONOMOUS=1` is set,
   and always refuses an action not declared there.
+- **Live checks.** A repository that declares where it answers
+  (`spec.deploy.at` in `thinkube.yaml`) declares its live checks beside it
+  (`spec.deploy.live`: `home`, the directory they are kept in, outside the
+  unit suite; `one`, the command that runs one, with `<file>`). A promise
+  only the running service can answer gets a live check: the tester writes
+  it under `home`, against the deployed service's public API. The gate never
+  runs it. Once the work is live, each live check runs with `one` in the
+  delivered tree, with `TANDEM_LIVE_URL`, `THINKUBE_CONTROL_URL` and
+  `THINKUBE_API_TOKEN` in its environment; its exit settles the promise
+  green or red, and a red goes back to be repaired with the check's output.
+  Without the declaration those promises stay pending.
 - **Explorer menu.** *Claude Code → Open Here* on a folder in the Explorer.
 
 ## How it reaches a user
@@ -70,8 +81,8 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `read_space` | A space's asks, how many promises were derived, its phase, open questions, whether a signed cut is waiting, and the last readiness answer. |
 | `read_run` | The current or last run: every unit and its state, and the run's note. |
 | `look_at` | Opens a deployed address and reports what a person would notice: a blank page, nothing to press, a page with no height, errors the page threw. Findings only. |
-| `read_delivery` | The latest delivery: its proofs, its findings, and whether it was withheld. |
-| `check_readiness` | Whether the repository is ready for work to be signed against it: its setup holds on a clean copy of HEAD, checks land where its suite runs tests, and, for a template, its deploy is declared, its newest release tag matches `metadata.version`, its manifest's secrets exist in Thinkube Control, and its deploy goes live. Build refuses while any item is not ready. |
+| `read_delivery` | The latest delivery: its proofs, its findings, and whether it was withheld. A proof a live check settled names the check's path in its ref, with the end of its output. |
+| `check_readiness` | Whether the repository is ready for work to be signed against it: its setup holds on a clean copy of HEAD, checks land where its suite runs tests, its live checks are declared outside the unit suite when it declares `spec.deploy.at` (the item says it does not apply otherwise), and, for a template, its deploy is declared, its newest release tag matches `metadata.version`, its manifest's secrets exist in Thinkube Control, and its deploy goes live. Build refuses while any item is not ready. |
 | `ask_platform_again` | Asks again what became of accepted work after its merge. For a template, its declared deploy is run and its health path asked, which settles the promises answered after the merge. |
 | `read_log` | The tail of a step's log, or of the run's own log when no step is given. |
 | `save_draft` | Puts text in the capture box, one ask per line. It only drafts; turning drafts into asks is the person's act. |

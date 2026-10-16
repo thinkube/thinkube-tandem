@@ -151,3 +151,29 @@ export function testerStanza(built: readonly string[] = []): string {
     "yours to prove — the delivery reports it as not verified, with its reason."
   );
 }
+
+/**
+ * What a tester is told about the live checks it writes: checks of the
+ * deployed service, run after the work is live and never at the gate. The
+ * rules above about fakes and seams are for the checks that run in the
+ * worktree; a live check talks to the real service.
+ */
+export function liveCheckStanza(files: readonly string[], one: string): string {
+  if (!files.length) return "";
+  return (
+    "\n\n──── LIVE CHECKS (checks of the deployed service) ────\n" +
+    files.map((f) => `- ${f}`).join("\n") +
+    "\nThese files are LIVE CHECKS. Each proves its criterion against the DEPLOYED service, after the work " +
+    "is merged and live — never in this worktree, and never at the gate. The rules above about fakes and " +
+    "seams are for the other checks; for these:\n" +
+    "- The service answers at the address in the environment variable TANDEM_LIVE_URL. " +
+    "THINKUBE_CONTROL_URL and THINKUBE_API_TOKEN are in the environment too; send the token as " +
+    "`Authorization: Bearer <token>` where the platform's APIs need it.\n" +
+    "- Create the data the check needs through the services' PUBLIC APIs, under names unique to this " +
+    "run of the check (a random suffix), and remove it before the check ends, whether it passed or not.\n" +
+    "- Assert on what the running service ANSWERS: status, headers, body.\n" +
+    "- NEVER import the repository's code: the check is a client of the service, nothing more.\n" +
+    `- It is run alone with: ${one} (<file> is its path as listed above). Write it so that command runs it, and ` +
+    "so it exits non-zero when the criterion does not hold."
+  );
+}

@@ -32,7 +32,9 @@ import type { Cut } from "../core/schema";
 import { buildUnitDag } from "../engine/core/dag";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { coderTestPaths } from "./plan";
-import { pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
+import { houseLiveChecks, pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
+import { isLiveCheckUnit } from "./liveChecks";
+import { liveHomeRefusal, liveSuiteDeclared } from "./liveSuite";
 import { verifyCutSignature } from "../gates/sign";
 
 interface SliceLike extends SliceForDag {
@@ -224,6 +226,25 @@ export async function refusedBeforeDispatch(a: {
   // read over the whole repository.
   const declared = thinkubeDeclaration(a.repoRoot);
   const parts = declared && "declared" in declared ? partsDeclared(declared.declared) : [];
+  // A live check is minted in the live home the repository declares, which
+  // must stand apart from the unit suite: one it collected would reach for
+  // the network at the gate and in the image build.
+  const live = liveSuiteDeclared(a.repoRoot);
+  const hasLive = a.slices.some((s) => s.workUnits.some(isLiveCheckUnit));
+  if (hasLive && !live)
+    return {
+      dag: buildUnitDag(a.slices),
+      refusal: {
+        trigger: "live-home",
+        refusal: "the plan holds live checks, but thinkube.yaml declares no spec.deploy.live to keep and run them",
+      },
+    };
+  if (live && hasLive) {
+    const why = liveHomeRefusal(live.home, repoFiles, parts);
+    if (why) return { dag: buildUnitDag(a.slices), refusal: { trigger: "live-home", refusal: why } };
+    const housed = houseLiveChecks(a.slices, live.home, repoFiles, new Set([...onBranch, ...(a.recordedChecks ?? [])]));
+    if (housed.length) a.log(`${housed.length} live check(s) minted under ${live.home}, e.g. ${housed[0].to}`);
+  }
   const rehoused = rehouseChecks(
     a.slices,
     repoFiles,

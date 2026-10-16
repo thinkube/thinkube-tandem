@@ -314,6 +314,9 @@ spec:
     run: bash scripts/deploy.sh      # or a playbook, or a call into control
     in: /elsewhere                   # when the command lives in another repo
     at: https://…                    # where the result can be seen
+    live:                            # checks run against the service at `at`
+      home: live                     # where they are kept, outside the unit suite
+      one: pytest -q <file>          # how one runs
   verify:
     still: [ … ]                     # commands that change nothing
     apply: …                         # the command that does the work
@@ -356,6 +359,12 @@ What the specification says that Tandem reads:
   application's parts are its containers.
 - `spec.deploy`, `spec.verify` — how it is made live, and how declarative
   work converges. Read by `makeLive` and `askTheTool`.
+- `spec.deploy.live` — the live checks: `home` (where a criterion settled
+  on the running product gets its check minted, refused inside the unit
+  suite) and `one` (how one runs, with `<file>`). Read by
+  `src/run/liveSuite.ts`; the checks run after the work is live
+  (`src/run/liveChecks.ts`), with `TANDEM_LIVE_URL`, `THINKUBE_CONTROL_URL`
+  and `THINKUBE_API_TOKEN`.
 - `spec.docs.root` — where documentation lands; an `antora.yml` inside it
   marks an Antora site.
 

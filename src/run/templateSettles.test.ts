@@ -87,7 +87,7 @@ async function settle(root: string, o: { deployFails?: string } = {}) {
   return { went, updates, ran, state, d: updates.at(-1)!.d };
 }
 
-test("going live leaves the proof pending for the live drive: a health answer is not the criterion", async () => {
+test("going live leaves the proof pending: a health answer is not the criterion, and with no live checks nothing exercises it", async () => {
   const root = repo();
   const { went, d, ran, updates, state } = await settle(root);
   assert.deepEqual(went, { live: true, at: "https://svc.example.com" });
@@ -96,10 +96,10 @@ test("going live leaves the proof pending for the live drive: a health answer is
   assert.equal(ran[0].env?.THINKUBE_API_TOKEN, "tok");
   const p = d.proofs.find((x) => x.criterionId === "c1")!;
   assert.equal(p.verdict, "pending");
-  assert.match(p.ref ?? "", /live at https:\/\/svc\.example\.com and https:\/\/svc\.example\.com\/health answered — not yet exercised on the running service/);
+  assert.match(p.ref ?? "", /live at https:\/\/svc\.example\.com and https:\/\/svc\.example\.com\/health answered — no live checks are declared \(spec\.deploy\.live in thinkube\.yaml\)/);
   assert.equal(d.proofs[0].verdict, "green", "a proof settled in the run is left as it was");
   assert.deepEqual(d.afterMerge, { at: "2026-10-15T11:00:00.000Z", outcome: "held", said: "a validation deployment through thinkube-control" });
-  assert.match(updates.at(-1)!.note, /judged on the running service next/);
+  assert.match(updates.at(-1)!.note, /no live checks are declared, so the promises settled after the merge stay pending/);
   assert.equal(
     fs.readFileSync(path.join(state.common, "tandem", "deployed"), "utf8").trim(),
     RELEASE,

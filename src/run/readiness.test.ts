@@ -25,7 +25,7 @@ const HEAD = "a".repeat(40);
 const HOME = { storeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-store-")), repoId: "svc-abc123" };
 const FILES = ["app/main.py", "app/store.py", "tests/test_main.py", "run_tests.sh", "thinkube.yaml", "manifest.yaml"];
 
-function thinkubeYaml(o: { version?: string; deploy?: boolean; health?: boolean } = {}): string {
+function thinkubeYaml(o: { version?: string; deploy?: boolean; health?: boolean; live?: string[] } = {}): string {
   return [
     "apiVersion: thinkube.io/v1",
     "kind: ThinkubeDeployment",
@@ -37,6 +37,7 @@ function thinkubeYaml(o: { version?: string; deploy?: boolean; health?: boolean 
     "      build: .",
     ...(o.health === false ? [] : ["      health: /health"]),
     ...(o.deploy === false ? [] : ["  deploy:", "    run: ./deploy.sh", "    at: https://svc.example.com/"]),
+    ...(o.deploy === false ? [] : (o.live ?? ["    live:", "      home: live", '      one: "python3 -m pytest -q <file>"'])),
   ].join("\n");
 }
 
@@ -145,7 +146,7 @@ test("a template whose setup holds, whose checks land in its tests, declared, ta
   const r = await checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {} });
   assert.deepEqual(
     r.items.map((i) => [i.name, i.ready]),
-    [["setup", true], ["check homes", true], ["deploy declared", true], ["release", true], ["secrets", true], ["deploy works", true]],
+    [["setup", true], ["check homes", true], ["live checks", true], ["deploy declared", true], ["release", true], ["secrets", true], ["deploy works", true]],
     r.items.map((i) => `${i.name}: ${i.say}`).join("\n"),
   );
   assert.equal(readinessRefusal([r]), undefined);
@@ -204,7 +205,8 @@ test("a check that would be minted where the repository runs no test is not read
   assert.equal(homes.ready, false, homes.say);
   assert.match(homes.say, /src\/score_AC-1_test\.py/);
   assert.match(homes.say, /its tests live under web/);
-  assert.deepEqual(r.items.map((i) => i.name), ["setup", "check homes"], "a repository that is not a template is asked nothing about deploys");
+  assert.deepEqual(r.items.map((i) => i.name), ["setup", "check homes", "live checks"], "a repository that is not a template is asked nothing about deploys");
+  assert.match(item(r, "live checks").say, /^does not apply/);
 });
 
 test("a template that declares no deploy is not ready, and its deploy is not tried", async () => {
@@ -533,4 +535,41 @@ test("readiness proves the setup the run will work with, and does not reuse an a
   const again = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d2.boundedExec, reading: fixed });
   assert.ok(d2.ran.includes(fixed.build), "a different setup is proved again, not read from the kept answer");
   assert.equal(item(again, "setup").ready, true, item(again, "setup").say);
+});
+
+/**
+ * A repository that names where it answers has promises only that service
+ * can settle; its live checks are what settle them, so they must be
+ * declared, and kept where the unit suite never collects them.
+ */
+test("live checks: ready when declared outside the unit suite, saying where they are minted and how they run", async () => {
+  const root = template();
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: git().exec, boundedExec: door().boundedExec, control, http: web().http });
+  const live = item(r, "live checks");
+  assert.equal(live.ready, true, live.say);
+  assert.match(live.say, /minted under live \(made by the first one\) and run one at a time with: python3 -m pytest -q <file>, against https:\/\/svc\.example\.com\//);
+});
+
+test("live checks: a repository with an address and no live declaration is not ready, saying exactly what to declare", async () => {
+  const root = template({ yaml: thinkubeYaml({ live: [] }) });
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: git().exec, boundedExec: door().boundedExec, control, http: web().http });
+  const live = item(r, "live checks");
+  assert.equal(live.ready, false);
+  assert.match(live.say, /spec\.deploy declares no `live` — declare `live\.home`.*and `live\.one`/);
+  assert.match(readinessRefusal([r]) ?? "", /live checks: /);
+});
+
+test("live checks: a home inside the unit suite's test directory is not ready, naming why", async () => {
+  const root = template({ yaml: thinkubeYaml({ live: ["    live:", "      home: tests/live", '      one: "pytest <file>"'] }) });
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: git().exec, boundedExec: door().boundedExec, control, http: web().http });
+  const live = item(r, "live checks");
+  assert.equal(live.ready, false);
+  assert.match(live.say, /live\.home `tests\/live` is inside `tests`, where the unit suite's tests live \(tests\/test_main\.py\)/);
+});
+
+test("live checks: a declaration missing `one` is not ready, naming it", async () => {
+  const root = template({ yaml: thinkubeYaml({ live: ["    live:", "      home: live"] }) });
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: git().exec, boundedExec: door().boundedExec, control, http: web().http });
+  assert.equal(item(r, "live checks").ready, false);
+  assert.match(item(r, "live checks").say, /spec\.deploy\.live declares no `one`/);
 });

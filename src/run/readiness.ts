@@ -36,6 +36,7 @@ import { spacesHome } from "../core/spaces";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { controlReachedBy, type Http } from "../hostui/templateCore";
 import { isCodePath, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
+import { liveHomeRefusal } from "./liveSuite";
 import { haltableExecs } from "./execs";
 import { factsOf, type RepositoryFacts } from "./facts";
 import type { Invoke } from "./makeLive";
@@ -57,7 +58,7 @@ interface ReadinessItem {
 }
 
 /** Items whose answer the tree under the key decides alone. */
-const DECIDED_BY_THE_TREE = new Set(["setup", "check homes", "deploy declared"]);
+const DECIDED_BY_THE_TREE = new Set(["setup", "check homes", "deploy declared", "live checks"]);
 
 /** What a kept answer still says for the tree it was asked about: every
  *  ready item, and every not-ready item the tree alone decides. */
@@ -231,6 +232,7 @@ async function answer(
     answered.get(name) ?? checkItem(name, check);
   items.push(await attempt("setup", () => setupHolds(a, head, template)));
   items.push(await attempt("check homes", () => checksLandWhereTestsRun(root, a.exec)));
+  items.push(await attempt("live checks", () => liveChecksDeclared(root, a.exec)));
   if (template) {
     items.push(await attempt("deploy declared", async () => deployDeclared(root)));
     items.push(await attempt("release", () => releaseTagged(root, a.exec)));
@@ -401,6 +403,55 @@ async function checksLandWhereTestsRun(root: string, exec: Exec): Promise<Omit<R
     say: stranded.roots.length
       ? `a check for ${subject} is minted at ${minted}, where the repository runs its tests (${stranded.roots.join(", ")})`
       : `the repository keeps no test yet; a check for ${subject} is minted at ${minted}, as its first`,
+  };
+}
+
+/**
+ * Whether what only the running service can answer will be judged on it.
+ *
+ * A repository that declares where it answers (`spec.deploy.at`) has
+ * promises only that service can settle, and its live checks are what
+ * settle them: declared in `spec.deploy.live`, kept in a home the unit
+ * suite never collects. A repository that names no address has no running
+ * service to judge, and the item does not apply.
+ */
+async function liveChecksDeclared(root: string, exec: Exec): Promise<Omit<ReadinessItem, "name">> {
+  const read = thinkubeDeclaration(root);
+  if (read && "unreadable" in read) return { ready: false, say: read.unreadable };
+  const d = read?.declared.deploy;
+  if (!d?.at)
+    return {
+      ready: true,
+      say: "does not apply — thinkube.yaml declares no spec.deploy.at, so there is no running service to judge",
+    };
+  if (!d.live)
+    return {
+      ready: false,
+      say:
+        "thinkube.yaml spec.deploy declares no `live` — declare `live.home` (a directory for live checks, outside " +
+        "every directory the unit suite collects, such as `live`) and `live.one` (the command that runs one live " +
+        `check, with <file> for its path), so the promises only the service at ${d.at} can answer are judged on it`,
+    };
+  const listed = await exec("git", ["-C", root, "ls-files"], root);
+  if (listed.code !== 0) throw new Error(`git could not list the repository's files: ${listed.out.trim().slice(0, 300)}`);
+  const repoFiles = listed.out.split("\n").map((l) => l.trim()).filter(Boolean);
+  const why = liveHomeRefusal(d.live.home, repoFiles, partsDeclared(read!.declared));
+  if (why) return { ready: false, say: `${why} — declare a live.home of its own` };
+  // The home, or the first of its ancestors that exists, must be a directory.
+  const segs = d.live.home.split("/");
+  for (let i = segs.length; i > 0; i--) {
+    const at = path.join(root, ...segs.slice(0, i));
+    if (!fs.existsSync(at)) continue;
+    if (!fs.statSync(at).isDirectory())
+      return { ready: false, say: `live.home \`${d.live.home}\` cannot be created: ${segs.slice(0, i).join("/")} is a file` };
+    break;
+  }
+  const exists = fs.existsSync(path.join(root, d.live.home));
+  return {
+    ready: true,
+    say:
+      `live checks are minted under ${d.live.home}${exists ? "" : " (made by the first one)"} and run one at a time ` +
+      `with: ${d.live.one}, against ${d.at}`,
   };
 }
 

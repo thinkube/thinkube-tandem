@@ -27,6 +27,7 @@ import * as path from "node:path";
 import { isProbePath, isTestPath } from "./testHomes";
 import { checkOrdinalOf } from "../core/testShape";
 import type { ThinkubePart } from "../core/thinkubeYaml";
+import { isLiveCheckUnit } from "./liveChecks";
 
 /** A declared part, as placement reads it: where it is, and how its tests run. */
 type PartAt = Pick<ThinkubePart, "root" | "test">;
@@ -316,7 +317,8 @@ export function rehouseChecks(
       inferTestIdiom(repoFiles);
     if (!idiom) continue;
     for (const u of units) {
-      if ((u.role ?? "code") !== "test") continue;
+      // A live check has its own home, given by houseLiveChecks.
+      if ((u.role ?? "code") !== "test" || isLiveCheckUnit(u)) continue;
       u.footprint = u.footprint.map((f) => {
         const k = /_AC-(\d+)/.exec(f)?.[1];
         if (!isProbePath(f) || !k || alreadyWritten.has(f)) return f;
@@ -332,6 +334,64 @@ export function rehouseChecks(
     }
     if (s.files)
       s.files = s.files.map((f) => moved.find((m) => m.from === f)?.to ?? f);
+  }
+  return moved;
+}
+
+/**
+ * Move every live check this plan would file under `probes/` into the
+ * repository's live home, named for the module its slice lands in.
+ *
+ * A live check drives the deployed service, not a module, so it sits in
+ * the one directory the repository declares for them, apart from the unit
+ * suite; the subject only names it. It wears the suffix the live home's
+ * own checks wear, else the suffix the subject's tests wear, else the one
+ * it was planned with. A check an earlier run already wrote keeps its
+ * address. Returns what moved, for the log.
+ */
+export function houseLiveChecks(
+  slices: readonly SliceLike[],
+  home: string,
+  repoFiles: readonly string[],
+  alreadyWritten: ReadonlySet<string> = new Set(),
+): { from: string; to: string }[] {
+  const moved: { from: string; to: string }[] = [];
+  const taken = new Set<string>(repoFiles.filter((f) => f && !alreadyWritten.has(f)));
+  // The suffix most of the live home's own checks wear, if it holds any.
+  const counted = new Map<string, number>();
+  for (const f of repoFiles)
+    if (f.startsWith(`${home}/`) && isTestPath(f)) {
+      const sfx = suffixOf(f);
+      if (sfx) counted.set(sfx, (counted.get(sfx) ?? 0) + 1);
+    }
+  const homeSuffix = [...counted.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  for (const s of slices) {
+    const units = s.workUnits ?? s.units ?? [];
+    const subject = units
+      .filter((u) => (u.role ?? "code") === "code")
+      .flatMap((u) => u.footprint)
+      .find((f) => !isTestPath(f) && CODE.test(f));
+    for (const u of units) {
+      if ((u.role ?? "code") !== "test" || !isLiveCheckUnit(u)) continue;
+      u.footprint = u.footprint.map((f) => {
+        const k = checkOrdinalOf(f);
+        if (!k || alreadyWritten.has(f) || f.startsWith(`${home}/`)) return f;
+        const suffix =
+          homeSuffix ??
+          (subject ? (inferTestIdiom(repoFiles, subject.split("/")[0]) ?? idiomOfLanguage(subject))?.suffix : undefined) ??
+          suffixOf(f);
+        const named = subject ?? path.basename(f).replace(/_AC-\d+.*$/, "");
+        const to = nextFreeIn(taken, { suffix, dir: `${home}/` }, named, k);
+        moved.push({ from: f, to });
+        return to;
+      });
+      if (u.cleared)
+        u.cleared = u.cleared.map((c) => {
+          const hit = moved.find((m) => m.from === c.path);
+          return hit ? { ...c, path: hit.to } : c;
+        });
+    }
+    if (s.files) s.files = s.files.map((f) => moved.find((m) => m.from === f)?.to ?? f);
   }
   return moved;
 }
@@ -358,7 +418,7 @@ export function pinRecordedChecks(
   for (const s of slices) {
     const ids = (s as { criterionIds?: string[] }).criterionIds ?? [];
     for (const u of s.workUnits ?? s.units ?? []) {
-      if ((u.role ?? "code") !== "test") continue;
+      if ((u.role ?? "code") !== "test" || isLiveCheckUnit(u)) continue;
       u.footprint = u.footprint.map((f) => {
         const k = checkOrdinalOf(f);
         const cid = k ? ids[Number(k) - 1] : undefined;
@@ -422,7 +482,8 @@ export function unreachableCheckHomes(
   const where: string[] = [];
   for (const s of slices)
     for (const u of s.workUnits ?? [])
-      for (const f of u.footprint)
-        if (isTestPath(f) && !under(f)) where.push(`${s.handle}: ${f}`);
+      if (!isLiveCheckUnit(u))
+        for (const f of u.footprint)
+          if (isTestPath(f) && !under(f)) where.push(`${s.handle}: ${f}`);
   return { where: [...new Set(where)], roots };
 }

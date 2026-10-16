@@ -13,6 +13,7 @@
 import { Cut, Delivery, Space } from "../core/schema";
 import { SessionDeps } from "../surfaces/session";
 import { tepSlices } from "./adapter";
+import { liveSuiteDeclared } from "../run/liveSuite";
 import { qualifyProbes, qualifySpace, ScopePlan } from "./scopes";
 import { dispatchTep, DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
@@ -80,6 +81,7 @@ export async function dispatchScopePlan(args: {
         cut: scopedCut,
         spaceName: deps.scope?.projectId ?? args.spaceName,
         handlePrefix: sc ? `${sc}.` : "",
+        live: !!liveSuiteDeclared(target.gitRoot),
       });
       qualifyProbes(slices, prefix);
     } catch (err) {

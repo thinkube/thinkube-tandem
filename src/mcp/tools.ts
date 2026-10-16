@@ -152,7 +152,10 @@ function deliveryReport(c: ToolCall): string {
   const d = c.session.space.deliveries[c.session.space.deliveries.length - 1];
   if (!d) return "no delivery yet";
   const proofs = (d.proofs ?? []).map(
-    (p) => `  ${p.verdict.padEnd(6)} ${p.criterionId ? `[${p.criterionId}] ` : ""}${p.label}${p.ref ? ` — ${p.ref}` : ""}`,
+    // A ref can carry a check's output over several lines (a live check's
+    // ref names its file, then what it printed): they stay under the proof.
+    (p) =>
+      `  ${p.verdict.padEnd(6)} ${p.criterionId ? `[${p.criterionId}] ` : ""}${p.label}${p.ref ? ` — ${p.ref.replace(/\n/g, "\n         ")}` : ""}`,
   );
   return [
     `delivery for ${d.cutId}${d.withheld ? ` — WITHHELD: ${d.withheld}` : ""}`,

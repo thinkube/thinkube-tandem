@@ -84,6 +84,48 @@ export interface ThinkubeDeploy {
   /** Where the result can be seen once it is live, so the look has an
    *  address instead of a guess assembled from the directory name. */
   at?: string;
+  /** The repository's live checks: what only the running service at `at`
+   *  can answer, checked against it once it is live. */
+  live?: ThinkubeLive;
+}
+
+/**
+ * Where a repository keeps its live checks, and how one of them runs.
+ *
+ * A live check exercises the deployed service through its public API, so
+ * it needs the network and a deploy behind it: it never runs in the unit
+ * suite or an image build, only after the work is live.
+ */
+export interface ThinkubeLive {
+  /** Repository-relative directory the live checks are minted in,
+   *  "/"-separated, never the repository root. */
+  home: string;
+  /** The command that runs one live check; `<file>` is its
+   *  repository-relative path. */
+  one: string;
+}
+
+/** The `live` block as written, or why it cannot be used. Both fields are
+ *  required: without `home` a check has nowhere to be minted, and without
+ *  `one` nothing can run it. */
+function liveOf(v: unknown): { live: ThinkubeLive } | { refused: string } {
+  // `live:` written with nothing under it is a block with both fields missing.
+  if (v !== null && (typeof v !== "object" || Array.isArray(v)))
+    return { refused: "spec.deploy.live must be a mapping with `home` and `one`" };
+  const { home, one } = (v ?? {}) as { home?: unknown; one?: unknown };
+  const lacks = [
+    ...(typeof home === "string" && home.trim() ? [] : ["`home` (the directory of live checks, repository-relative)"]),
+    ...(typeof one === "string" && one.trim() ? [] : ["`one` (the command that runs one live check, with <file> for its path)"]),
+  ];
+  if (lacks.length) return { refused: `spec.deploy.live declares no ${lacks.join(" and no ")}` };
+  const h = rootOf((home as string).trim());
+  if (path.posix.isAbsolute(h) || h === ".." || h.startsWith("../"))
+    return { refused: `spec.deploy.live.home \`${home as string}\` is not inside the repository` };
+  if (h === ".")
+    return { refused: "spec.deploy.live.home is the repository root — name a directory of its own, such as `live`" };
+  if (!(one as string).includes("<file>"))
+    return { refused: "spec.deploy.live.one does not contain <file>, so it cannot be told which live check to run" };
+  return { live: { home: h, one: (one as string).trim() } };
 }
 
 /**
@@ -190,7 +232,7 @@ export function thinkubeDeclaration(
         deployment?: { type?: string };
         parts?: { name?: string; root?: string; test?: { enabled?: boolean; command?: string; image?: string; one?: string } }[];
         docs?: { root?: unknown };
-        deploy?: { run?: unknown; in?: unknown; at?: unknown };
+        deploy?: { run?: unknown; in?: unknown; at?: unknown; live?: unknown };
         verify?: { still?: unknown; apply?: unknown; ask?: unknown; settled?: unknown };
         containers?: {
           name?: string;
@@ -221,11 +263,16 @@ export function thinkubeDeclaration(
       typeof doc?.spec?.docs?.root === "string" && doc.spec.docs.root.trim() ? rootOf(doc.spec.docs.root) : undefined;
     const d = doc?.spec?.deploy;
     const run = lines(d?.run);
+    const live = d && Object.prototype.hasOwnProperty.call(d, "live") ? liveOf(d.live) : undefined;
+    if (live && "refused" in live) return { unreadable: `thinkube.yaml ${live.refused}` };
+    if (live && !(typeof d?.at === "string" && d.at.trim()))
+      return { unreadable: "thinkube.yaml spec.deploy.live needs spec.deploy.at, the address its live checks run against" };
     const deploy: ThinkubeDeploy | undefined = d
       ? {
           run,
           ...(typeof d.in === "string" && d.in.trim() ? { in: d.in.trim() } : {}),
           ...(typeof d.at === "string" && d.at.trim() ? { at: d.at.trim() } : {}),
+          ...(live ? { live: live.live } : {}),
         }
       : undefined;
     const declaredVersion = doc?.metadata?.version;

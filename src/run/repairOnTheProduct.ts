@@ -7,10 +7,11 @@
  * A promise that does not hold on the running product is repaired here.
  *
  * The closing gate is over by the time the product answers, so a red
- * found on the page is answered by this loop instead: repair bounded to
- * the files the promise lands in, with the reviewer's own words as the
- * evidence; the repository's build proved here; a push; a wait for the
- * platform; and the reviewers asked again about exactly those promises.
+ * found on the page or by a live check is answered by this loop instead:
+ * repair bounded to the files the promise lands in, with the reviewer's
+ * own words or the check's own output as the evidence; the repository's
+ * build proved here; a push; a wait for the platform; and those promises
+ * judged again, by the same reviewers and checks.
  * Two attempts, then it stops and says what still does not hold.
  */
 import { Change, Cut, Space } from "../core/schema";
@@ -51,7 +52,9 @@ export function whatDidNotHold(a: {
         const said = n.acceptance
           .map((c) => reds.find((p) => p.criterionId === c.id))
           .filter(Boolean)
-          .map((p) => `  - ${p!.label}`)
+          // What the judge said, under the criterion: a live check's own
+          // output is the evidence the repair works from.
+          .map((p) => `  - ${p!.label}${p!.ref ? `\n    ${p!.ref.replace(/\n/g, "\n    ")}` : ""}`)
           .join("\n");
         return `── ${n.sentence}\n${said}`;
       })

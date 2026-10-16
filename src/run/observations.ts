@@ -45,6 +45,9 @@ export function toDriveOf(
    *  repository declares them. A promise landing in one of them is a
    *  promise about the page. */
   pageRoots: readonly string[] = [],
+  /** The repository declares live checks: a criterion the running product
+   *  answers is proved by its live check, not by a browser. */
+  liveSuite = false,
 ): { promise: string; criteria: { id?: string; text: string }[]; ask?: string }[] {
   const byId = new Map(space.nodes.map((n) => [n.id, n]));
   const out: { promise: string; criteria: { id?: string; text: string }[]; ask?: string }[] = [];
@@ -59,12 +62,14 @@ export function toDriveOf(
     // person watching. Never one that is answered elsewhere, and never an
     // assessment: those are read, not driven.
     const criteria = n.acceptance
+      .filter((c) => !(liveSuite && settledOnTheLiveProduct(c.settledBy)))
       .filter(
         (c) =>
           observationShaped(c.text) ||
           (page && c.kind !== "assessment" && !c.settledBy) ||
-          // A template's criterion that waits on its deploy is answered by
-          // the running service, so the drive is what settles it.
+          // A criterion that waits on the deploy is answered by the running
+          // service; with no live checks declared, the drive is what can
+          // settle it.
           (c.kind !== "assessment" && settledOnTheLiveProduct(c.settledBy)),
       )
       .map((c) => ({ ...(c.id ? { id: c.id } : {}), text: c.text }));

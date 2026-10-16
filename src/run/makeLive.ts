@@ -38,7 +38,8 @@ export type Invoke = (
   env?: Record<string, string>,
 ) => Promise<{ code: number | null; out: string }>;
 
-const spawn: Invoke = (command, cwd, env) =>
+/** A command run by bash in `cwd`, with `env` over this process's own. */
+export const runInShell: Invoke = (command, cwd, env) =>
   new Promise((resolve) =>
     execFile(
       "bash",
@@ -81,7 +82,7 @@ export async function makeLive(a: {
   if (!a.deploy.run.length) return { live: true, ...at };
 
   const where = a.deploy.in ?? a.repoRoot;
-  const run = a.invoke ?? spawn;
+  const run = a.invoke ?? runInShell;
   for (const command of a.deploy.run) {
     a.log?.(`making it live: ${command}`);
     const r = await run(command, where, a.env);

@@ -40,8 +40,15 @@ function driverId(n: number): string {
  * so the shape of the whole run — including what will be judged on the
  * product — is visible while the work is still being built.
  */
-export function seedDrivers(st: RunState, space: Space, cut: Cut, pageRoots: readonly string[]): string[] {
-  const list = toDriveOf(space, cut, pageRoots);
+export function seedDrivers(
+  st: RunState,
+  space: Space,
+  cut: Cut,
+  pageRoots: readonly string[],
+  /** The repository declares live checks, which take what the running service answers. */
+  liveSuite = false,
+): string[] {
+  const list = toDriveOf(space, cut, pageRoots, liveSuite);
   list.forEach((c, i) =>
     st.seed(
       driverId(i + 1),
@@ -65,6 +72,8 @@ export async function judgeOnTheProduct(a: {
   outcome: DispatchOutcome;
   /** Where the page is built, as the repository declares it. */
   pageRoots: readonly string[];
+  /** The repository declares live checks, which take what the running service answers. */
+  liveSuite?: boolean;
   /** Where this run keeps its record — the reviewers' pictures go beside
    *  it, one directory each. */
   storeDir?: string;
@@ -81,11 +90,11 @@ export async function judgeOnTheProduct(a: {
    *  red, never the whole page again. */
   only?: (promise: string) => boolean;
 }): Promise<DispatchOutcome> {
-  const all: ToDrive[] = toDriveOf(a.space, a.cut, a.pageRoots);
+  const all: ToDrive[] = toDriveOf(a.space, a.cut, a.pageRoots, !!a.liveSuite);
   const list = a.only ? all.filter((c) => a.only!(c.promise)) : all;
   if (!list.length) return a.outcome;
   const ids = list.map((c) => driverId(all.findIndex((x) => x.promise === c.promise) + 1));
-  for (const id of ids) if (!a.st.units.has(id)) seedDrivers(a.st, a.space, a.cut, a.pageRoots);
+  for (const id of ids) if (!a.st.units.has(id)) seedDrivers(a.st, a.space, a.cut, a.pageRoots, !!a.liveSuite);
   // A promise judged again replaces its earlier verdicts: one answer per
   // criterion, the newest.
   const judgedAgain = new Set(list.flatMap((c) => c.criteria.map((x) => x.id).filter(Boolean) as string[]));

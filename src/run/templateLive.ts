@@ -27,6 +27,7 @@ import type { Http } from "../hostui/templateCore";
 import type { Went } from "./goingLive";
 import { stampByValidation, stepJudged, validateTemplate, type Validation } from "./harvest";
 import { namedFiles } from "./live";
+import { liveSuiteDeclared } from "./liveSuite";
 import type { Invoke } from "./makeLive";
 import type { Exec } from "./oracle";
 import type { ReachControl } from "./validationDeploy";
@@ -59,7 +60,7 @@ export function templateGoesLive(a: {
     },
     settle: async (d) => {
       if (!last) throw new Error("the validation deployment has not run, so there is nothing to settle");
-      return stampByValidation(d, last, new Date().toISOString());
+      return stampByValidation(d, last, new Date().toISOString(), !!liveSuiteDeclared(a.repoRoot));
     },
   };
 }

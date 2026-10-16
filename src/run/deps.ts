@@ -17,6 +17,8 @@ import type { runUnitWorker, WorkerOutcome } from "./worker";
 import type { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
 import type { Proved } from "./proved";
+import type { Invoke } from "./makeLive";
+import type { ReachControl } from "./validationDeploy";
 
 export interface DispatchDeps {
   repoRoot: string;
@@ -103,6 +105,11 @@ export interface DispatchDeps {
   /** Injectable for tests: replaces the check re-author (challenge and repair). */
   author?: OracleFactoryArgs["author"];
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
+  /** Injectable for tests: how a live check's command is run. */
+  invokeLive?: Invoke;
+  /** Injectable for tests: how thinkube-control's address and token are
+   *  found for the live checks. */
+  reachControl?: ReachControl;
   /** Injectable for tests: the run's own clock (epoch ms). One reading of
    *  it mints both the run id and the produced-at stamp on its delivery, so
    *  the two can never name different moments. Defaults to `Date.now`. */

@@ -143,13 +143,35 @@ At the bottom of the work page, *Pressing Build these N* says what the press doe
 
 image::tandem-07-sign.png[The work page of a thing with one sentence: two promises, their lines, and under Pressing Build these 2 what the button does]
 
-Before it signs, the press checks that the repository is ready. Its setup must hold on a clean copy of the last commit, and a check must land where the repository's own tests run. For a template, more is checked. It must declare how it deploys (`spec.deploy` with `run` and `at`). Its newest release tag on `origin` must name the version in `thinkube.yaml`. The secrets its `manifest.yaml` names must exist in Thinkube Control. Its deploy must go live and answer at its health path. When something is not ready, nothing is signed, and the refusal under the button says what to fix. The same commit is not checked or deployed twice: the answer is kept in the store, and *Readiness* above the button shows it for the commit you are on.
+Before it signs, the press checks that the repository is ready. Its setup must hold on a clean copy of the last commit, and a check must land where the repository's own tests run. A repository that says where it answers (`spec.deploy.at`) must also declare its live checks (`spec.deploy.live`, see <<Live checks>>). For a template, more is checked. It must declare how it deploys (`spec.deploy` with `run` and `at`). Its newest release tag on `origin` must name the version in `thinkube.yaml`. The secrets its `manifest.yaml` names must exist in Thinkube Control. Its deploy must go live and answer at its health path. When something is not ready, nothing is signed, and the refusal under the button says what to fix. The same commit is not checked or deployed twice: the answer is kept in the store, and *Readiness* above the button shows it for the commit you are on.
 
 Where checks land follows `thinkube.yaml`. Each container is a part of the repository with its own tests, and `test.one` says how one of its test files runs. A container built from the whole repository (`build: .`) gives the command for every file no other part holds. A check for a screen goes to the part whose tests are written in the screen's language, even when the screen's file sits inside another part.
 
 For a template, the build Tandem runs is only the build the repository declares. The image is built, and its tests run, only by the platform's deploy, so the deploy is what decides whether a template's work holds.
 
 Press *Build these N*. The strip says *building — <the thing's name>*, the run page opens, and *Stop* is the only other button.
+
+=== Live checks
+
+Some promises only the running service can answer, for example _the storage service returns the document's XLIFF for a key_. A test in the worktree cannot answer them, and a browser cannot call an API. A live check can. Declare where live checks are kept and how one runs, beside the deploy in `thinkube.yaml`:
+
+[source,yaml]
+----
+spec:
+  deploy:
+    run: ./scripts/deploy.sh
+    at: https://storage.example.com
+    live:
+      home: live
+      one: "python3 -m pytest -q -p no:cacheprovider <file>"
+----
+
+* `home` is a directory of its own. It must not be inside a directory your unit tests run from, because live checks need the network and the deployed service. *Readiness* refuses a home inside the directory that holds your unit tests, or inside a part of the repository, and says why. A test runner that searches the whole repository must be told to leave `home` out, for example pytest with `testpaths`.
+* `one` runs one live check. `<file>` is replaced with the check's path.
+
+For each promise that only the running service can answer, the tester writes a live check under `home`. The check calls the deployed service through its public API. It creates its own data under unique names and removes it afterwards. It never imports the repository's code. The closing gate does not run live checks. When the work is live, each one runs with `one` in the delivered tree. Its environment has `TANDEM_LIVE_URL` (the value of `at`), `THINKUBE_CONTROL_URL` and `THINKUBE_API_TOKEN`. Exit 0 turns the promise green. A failure turns it red, with the end of the check's output, and the run repairs the work and runs the check again. A check that could not run at all (the command is not found, nothing was collected) leaves the promise unjudged and says why.
+
+Without `spec.deploy.live`, these promises stay *pending* and say that no live checks are declared. They never turn green.
 
 === Step 8. Watch it build
 
@@ -205,8 +227,12 @@ image::tandem-14-everything-built.png[The space with everything built: three acc
 | Press *Not needed* on the documentation promise with your reason, or let the page be built.
 
 | *Build these N* says *not ready to sign*
-| The repository fails a readiness item: its setup, where checks land, or, for a template, its deploy, release tag or secrets
+| The repository fails a readiness item: its setup, where checks land, its live checks, or, for a template, its deploy, release tag or secrets
 | Fix what each named item says, commit, and press again.
+
+| A promise says *no live checks are declared*
+| The promise can only be answered by the running service, and `thinkube.yaml` has no `spec.deploy.live`
+| Declare `spec.deploy.live` (see <<Live checks>>), commit, and run the work again.
 
 | A template's delivery says its promises are *pending* after Accept
 | Those promises are settled by deploying the template, and that deploy did not run or did not answer

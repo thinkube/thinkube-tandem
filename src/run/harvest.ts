@@ -30,6 +30,8 @@ import { controlReachedBy, type Http as ControlHttp } from "../hostui/templateCo
 import type { Invoke } from "./makeLive";
 import type { Exec } from "./oracle";
 import { headOf, validationDeploy, type ReachControl, type Validated } from "./validationDeploy";
+import { settledOnTheLiveProduct } from "../derive/ground";
+import { liveSuiteDeclared } from "./liveSuite";
 
 /** The control API's base URL for a gitops app, from the repository's own
  *  remote: `git.<domain>` names the platform, `control.<domain>` runs the
@@ -213,7 +215,12 @@ export async function runClusterValidation(a: {
  * of them. Unreachable maps to none — the machine's inability to look is
  * written on the proof, not into its verdict.
  */
-export function stampPending(delivery: Delivery, reading: PipelineReading): Delivery {
+export function stampPending(
+  delivery: Delivery,
+  reading: PipelineReading,
+  /** The repository declares live checks (`spec.deploy.live`). */
+  liveSuite: boolean,
+): Delivery {
   const proofs: Proof[] = delivery.proofs.map((p) => {
     if (p.verdict !== "pending" || !p.settledBy) return p;
     if (!reading.settled)
@@ -223,8 +230,12 @@ export function stampPending(delivery: Delivery, reading: PipelineReading): Deli
     // The platform names its phases in its own case, so the reading is
     // compared in one case: a pipeline that passed must never be read as a
     // failure, which would put a repair on work that is already right.
+    // A pipeline that deployed shows the service runs, not what a criterion
+    // the running service answers claims of it: that proof waits.
     if (reading.phase?.toLowerCase() === "succeeded")
-      return { ...p, verdict: "green", ref: `settled by ${p.settledBy}: pipeline ${reading.phase}`.slice(0, 300) };
+      return settledOnTheLiveProduct(p.settledBy)
+        ? { ...p, ref: `deployed by the pipeline (${reading.phase}) — ${awaitingTheLiveProduct(p, liveSuite)}`.slice(0, 300) }
+        : { ...p, verdict: "green", ref: `settled by ${p.settledBy}: pipeline ${reading.phase}`.slice(0, 300) };
     return {
       ...p,
       verdict: "red",
@@ -315,7 +326,7 @@ export async function watchGitopsAfterAccept(a: {
   for (let tick = 0; tick < 30; tick++) {
     const reading = await readPipeline({ controlUrl, app: a.app, since: a.acceptedAt, token, http: a.http });
     if (reading.settled) {
-      if (stamping) d = stampPending(d, reading);
+      if (stamping) d = stampPending(d, reading, !!liveSuiteDeclared(a.gitRoot));
       // What the platform did with the merged work comes home, whichever
       // way it went. A delivery whose merged tree failed to build read
       // "accepted, every check green" for ever, and nobody was told.
@@ -510,27 +521,34 @@ export async function validateTemplate(a: {
 /**
  * A validation deployment's answer, onto a template delivery.
  *
- * Went live and answered: every proof settled after the merge turns green.
- * Tried and did not go live: they turn red, in the deploy's own words. Not
+ * Went live and answered: every proof settled after the merge stays
+ * pending, waiting for the live check that exercises it on the running
+ * service, or saying that nothing does. Tried and did not go live: they turn red, in the deploy's own words. Not
  * tried, because the repository does not declare how: they stay pending
  * with the reason, and the outcome is unjudged — nothing is known about
  * the work from that. A red proof of an earlier settlement is settled
  * again: a deploy that failed for a fault since fixed says nothing about
  * the work any more.
  */
-export function stampByValidation(delivery: Delivery, v: Validation, at: string): Delivery {
+export function stampByValidation(
+  delivery: Delivery,
+  v: Validation,
+  at: string,
+  /** The repository declares live checks (`spec.deploy.live`). */
+  liveSuite: boolean,
+): Delivery {
   const judged = judgedBy(v);
   return {
     ...delivery,
     proofs: delivery.proofs.map((p) => {
       if (!settling(p)) return p;
       // Going live shows the service runs, not what a criterion claims of
-      // it: the proof waits for the live drive, which exercises it there.
+      // it: the proof waits for what exercises it on the running service.
       if (v.ok)
         return {
           ...p,
           verdict: "pending",
-          ref: `live at ${v.at} and ${v.url} answered — not yet exercised on the running service`.slice(0, 300),
+          ref: `live at ${v.at} and ${v.url} answered — ${awaitingTheLiveProduct(p, liveSuite)}`.slice(0, 300),
         };
       if (judged) return { ...p, verdict: "red", ref: `settled by ${VALIDATION}: ${v.why}`.slice(0, 300) };
       return { ...p, verdict: "pending", ref: `still pending — ${v.why}`.slice(0, 300) };
@@ -542,6 +560,20 @@ export function stampByValidation(delivery: Delivery, v: Validation, at: string)
       ...(v.ok ? {} : { detail: v.why.slice(0, 2000) }),
     },
   };
+}
+
+/**
+ * What a proof answered by the running product waits for once the work is
+ * live: its live check, when the repository declares live checks and the
+ * criterion is one the running service answers; otherwise nothing
+ * exercises it, and it stays pending, never green.
+ */
+function awaitingTheLiveProduct(p: Proof, liveSuite: boolean): string {
+  if (!liveSuite)
+    return "no live checks are declared (spec.deploy.live in thinkube.yaml), so nothing exercises it on the running service";
+  return settledOnTheLiveProduct(p.settledBy)
+    ? "its live check judges it on the running service next"
+    : "no live check covers it, so nothing exercises it on the running service";
 }
 
 /** A proof a validation deployment answers. */
@@ -571,13 +603,18 @@ export async function settleTemplateAfterAccept(a: {
 }): Promise<{ live: boolean; at?: string }> {
   const now = a.now ?? (() => new Date().toISOString());
   const v = await validateTemplate(a);
-  const d = stampByValidation(a.delivery, v, now());
+  const liveSuite = !!liveSuiteDeclared(a.repoRoot);
+  const d = stampByValidation(a.delivery, v, now(), liveSuite);
   const answered = a.delivery.proofs.some(settling);
   a.update(
     d,
     v.ok
       ? `the merged template went live at ${v.at}` +
-          (answered ? " — the promises settled after the merge are judged on the running service next" : "")
+          (answered
+            ? liveSuite
+              ? " — the promises settled after the merge are judged on the running service next"
+              : " — no live checks are declared, so the promises settled after the merge stay pending"
+            : "")
       : judgedBy(v)
         ? `the merged template did not go live: ${v.why.split("\n")[0]}`
         : `the merged template could not be deployed to judge it: ${v.why.split("\n")[0]} — nothing is known about the work from this`,

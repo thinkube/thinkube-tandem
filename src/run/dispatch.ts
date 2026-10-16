@@ -28,6 +28,10 @@ import { deployedAddress, knock, pageRoots as pageRootsOf, readLive, whyItFailed
 import { stampPending } from "./harvest";
 import { goLiveAndJudge, liveWhenAlreadyThere } from "./goingLive";
 import { templateGoesLive } from "./templateLive";
+import { judgeByLiveChecks, liveChecksOf } from "./liveChecks";
+import { liveSuiteDeclared } from "./liveSuite";
+import { runInShell } from "./makeLive";
+import { controlReachedBy } from "../hostui/templateCore";
 import { downstreamOf } from "./survey";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { Cut, Ruling, Space } from "../core/schema";
@@ -66,7 +70,7 @@ import { runLogSink } from "./runLog";
 import { watchForStall } from "./watchdog";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
-import { clearanceStanza, coderStanza, fixturesStanza, testerStanza } from "./brief";
+import { clearanceStanza, coderStanza, fixturesStanza, liveCheckStanza, testerStanza } from "./brief";
 import { productionSeams, sharedFixtures } from "./seams";
 import { applyFixturePlan, commitSharedFixture, planSharedFixture, testerCode } from "./sharedFixture";
 import { sliceBookkeeping } from "./plan";
@@ -187,7 +191,12 @@ export async function dispatchTep(
   // deployment from the first frame — the run's whole shape, before any of
   // it has happened.
   const pageRoots = pageRootsOf(deps.repoRoot);
-  const drivers = seedDrivers(st, space, cut, pageRoots);
+  // The live checks the repository declares take what the running service
+  // answers; the reviewers keep what a person does on the page.
+  const liveSuite = liveSuiteDeclared(deps.repoRoot);
+  const liveChecks = liveSuite ? liveChecksOf(slices, space) : [];
+  const liveFiles = new Set(liveChecks.map((c) => c.path));
+  const drivers = seedDrivers(st, space, cut, pageRoots, !!liveSuite);
 
   // Asked to start from nothing: the branch that holds the earlier run's
   // committed slices goes, so the door below cuts a fresh one from the base
@@ -398,6 +407,7 @@ export async function dispatchTep(
       role === "test"
         ? testerStanza(built) +
           doubles +
+          (liveSuite ? liveCheckStanza(next.footprint.filter((f) => liveFiles.has(f)), liveSuite.one) : "") +
           (maintain ? coderStanza(!!oracle) : "") +
           testHomesStanza(testHomesOf(next.footprint.filter((f) => f !== ownsFixture?.path)), testHomeWorkOf(next))
         : clearanceStanza(next) +
@@ -718,13 +728,31 @@ export async function dispatchTep(
     // other: repaired, landed, and judged again. The same for work the
     // project already had — a resume is not a reason to skip the repair.
     const judgeAndRepair = async (at: string, alsoMerged: string[]): Promise<DispatchOutcome> => {
-      const judge = (only?: (promise: string) => boolean) =>
-        judgeOnTheProduct({
-          at, st, log, deps, space, cut, outcome, pageRoots,
+      // The live checks first, against the deployed service at the
+      // repository's declared address; then the reviewers on the page.
+      const judge = async (only?: (promise: string) => boolean): Promise<DispatchOutcome> => {
+        if (liveSuite && outcome.delivery)
+          outcome = {
+            ...outcome,
+            delivery: await judgeByLiveChecks({
+              delivery: outcome.delivery,
+              checks: liveChecks,
+              ...(only ? { only } : {}),
+              suite: liveSuite,
+              tree: worktree,
+              control: deps.reachControl ?? controlReachedBy,
+              run: deps.invokeLive ?? runInShell,
+              log: (l) => log(l, "live"),
+              doing: (l) => st.phase("live", "running", l),
+            }),
+          };
+        return judgeOnTheProduct({
+          at, st, log, deps, space, cut, outcome, pageRoots, liveSuite: !!liveSuite,
           ...(deps.storeDir ? { storeDir: deps.storeDir } : {}),
           ...(runId ? { runId } : {}),
           ...(only ? { only } : {}),
         });
+      };
       outcome = await judge();
       // A promise that does not hold on the page is a red like any
       // other: the run repairs it rather than handing the person live
@@ -736,7 +764,7 @@ export async function dispatchTep(
         repair: (found, attempt) =>
           repairAfterTheMerge({
             tep, attempt, worktree, deps, st, exec, boundedExec,
-            evidence: `the reviewers opened ${at} and found these do not hold:\n${found.evidence}`,
+            evidence: `judged on the running product at ${at}, these do not hold:\n${found.evidence}`,
             files: found.files,
             log: (l) => log(l, "live"),
             onTheProduct: { criteria: found.evidence.split("\n").filter((l) => l.startsWith("  - ")).map((l) => l.slice(4)) },
@@ -820,7 +848,7 @@ export async function dispatchTep(
         settle: async (x) =>
           byDeploy
             ? byDeploy.settle(x)
-            : stampPending(x, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt)),
+            : stampPending(x, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt), !!liveSuite),
         repair: (found, attempt) =>
           repairAfterTheMerge({
             tep, attempt, worktree, deps, st, exec, boundedExec,
