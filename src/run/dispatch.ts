@@ -462,7 +462,7 @@ export async function dispatchTep(
           role,
           blind,
           footprint: next.footprint,
-          ...(deps.spend?.unitBudgetUsd ? { budgetUsd: deps.spend.unitBudgetUsd } : {}),
+          ...(deps.spend?.unitBudgetUsd !== undefined && deps.spend.unitBudgetUsd > 0 ? { budgetUsd: deps.spend.unitBudgetUsd } : {}),
           ...(deps.spend?.fallbackModel ? { fallbackModel: deps.spend.fallbackModel } : {}),
           // A tester's turns scale with what it must write; a coder keeps the default.
           ...(role === "test" ? { maxTurns: testerTurns(next.footprint.length) } : {}),

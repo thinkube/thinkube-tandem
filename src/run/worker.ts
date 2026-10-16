@@ -450,7 +450,7 @@ export async function runUnitWorker(
         agent: roleName,
         agents: { [roleName]: agentDefinitionOf(role) },
         maxTurns: deps.maxTurns ?? role.maxTurns ?? 80,
-        ...(deps.budgetUsd ? { maxBudgetUsd: deps.budgetUsd } : {}),
+        ...(deps.budgetUsd !== undefined && deps.budgetUsd > 0 ? { maxBudgetUsd: deps.budgetUsd } : {}),
         ...(deps.fallbackModel ? { fallbackModel: deps.fallbackModel } : {}),
         abortController: deps.abort,
         ...(listening ? { includePartialMessages: true } : {}),
