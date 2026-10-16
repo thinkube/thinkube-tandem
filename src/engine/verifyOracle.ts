@@ -28,6 +28,7 @@
  */
 
 import type { AcVerification } from "./orchestratorCore";
+import { greenOnlyWhenRan } from "./core/testsRan";
 
 /** One changed path in a worktree, from `git status --porcelain` text. */
 interface OverlayEntry {
@@ -452,10 +453,14 @@ export function createVerifyOracle(deps: VerifyOracleDeps): VerifyOracle {
     for (const v of deps.verifications) {
       if (v.env === "assessment" || !v.run) continue;
       const r = await deps.exec(v.run, deps.runnerDir);
+      // An exit of 0 is a pass only when the runner shows a test of the
+      // check ran; a run that executed nothing is never a pass.
+      const ended = r.code === 0 ? greenOnlyWhenRan(r.output) : undefined;
       results.push({
         ac: v.ac,
-        pass: r.code === 0,
-        evidence: probeEvidence(v.run, r.code, r.output),
+        pass: r.code === 0 && !!ended?.pass,
+        evidence:
+          probeEvidence(v.run, r.code, r.output) + (ended && !ended.pass ? `\n(${ended.why})` : ""),
       });
     }
     log(

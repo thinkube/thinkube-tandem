@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { greenOnlyWhenRan } from "./testsRan";
 import { spawn } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
@@ -459,6 +460,18 @@ export async function runAcVerifications(
         unrunnable: true,
       });
     } else {
+      // An exit of 0 is green only when the runner shows a test of the
+      // check ran; a run that executed nothing is never green.
+      const ended = cached.code === 0 ? greenOnlyWhenRan(cached.output) : undefined;
+      if (ended && !ended.pass) {
+        out.push({
+          ac: v.ac,
+          pass: false,
+          evidence: `${acEvidence(v.run, cached.code, cached.output)}\n(${ended.why})`,
+          ...(ended.unjudged ? { unrunnable: true } : {}),
+        });
+        continue;
+      }
       const neverStarted = cached.code !== 0 && checkNeverStarted(cached.code, cached.output);
       const unrunnable =
         (cached.code !== null && PROBE_UNRUNNABLE_CODES.has(cached.code)) ||
