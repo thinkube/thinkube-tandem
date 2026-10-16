@@ -25,9 +25,58 @@
  * is a locked door rather than an open one.
  */
 
-import { ACTIONS, AUTONOMOUS_ENV, machineMay as declaredMay } from "../surfaces/actions";
+import { ACTIONS, AUTONOMOUS_ENV, labelOf, machineMay as declaredMay } from "../surfaces/actions";
 
 export type Verdict = { ok: true } | { ok: false; reason: string };
+
+/**
+ * What the person is asked when an agent reaches for one of their actions
+ * through a client that can ask them (MCP elicitation). The gate stays a
+ * human act: the agent's call waits, the person reads what is about to
+ * happen and says yes or no, in their own session, without an
+ * environment switch that would let every agent through.
+ */
+export function confirmation(
+  action: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): {
+  message: string;
+  requestedSchema: {
+    type: "object";
+    properties: { yes: { type: "boolean"; title: string; description: string } };
+    required: ["yes"];
+  };
+} {
+  const why = ACTIONS[action]?.mine ?? "";
+  const named = Object.entries(args)
+    .filter(([, v]) => typeof v === "string" || typeof v === "number")
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(", ");
+  return {
+    message:
+      `${labelOf(action)} — ${why}\n` +
+      `An agent asks to run ${toolName}${named ? ` (${named})` : ""} on your behalf. ` +
+      `This is yours to decide: yes lets it go ahead now, no refuses it and nothing is done.`,
+    requestedSchema: {
+      type: "object",
+      properties: {
+        yes: {
+          type: "boolean",
+          title: labelOf(action),
+          description: `Yes: ${toolName} goes ahead now. No: it is refused.`,
+        },
+      },
+      required: ["yes"],
+    },
+  };
+}
+
+/** Whether the person said yes: an accepted form whose answer is `yes`;
+ *  a decline, a cancel, or an empty form is a no. */
+export function confirmed(result: { action: string; content?: Record<string, unknown> }): boolean {
+  return result.action === "accept" && result.content?.yes === true;
+}
 
 /**
  * Whether a machine caller may perform an action, and why not when it may

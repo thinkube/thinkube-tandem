@@ -179,6 +179,16 @@ of them there — nothing has users.
   the brief and the digest today, and through role definitions and
   `.claude/rules` when roles become agent definitions. Revisit then.
 
+## The person's gates are asked, not switched (2026-10-16)
+- A person-only tool called through a client that can ask the person (MCP
+  elicitation) waits for their yes, shown with whose act it is and what the
+  agent asked. A decline, a cancel or a failure to ask is a no, in words.
+- A client that cannot ask gets the refusal as before. `TANDEM_AUTONOMOUS=1`
+  stays the switch for an unattended run, and nothing else opens a gate.
+- The flows are MCP prompts (`capture-asks`, `build`, `review-delivery`),
+  each naming the tools to call and where the agent stops for the person;
+  a test holds every prompt to tools the server offers.
+
 ## The roles are files, and their tools are not (2026-10-16)
 - Coder, tester and closer are agent definitions in the shape Claude Code
   reads, at `agents/tandem-<role>.md`, passed to the harness so a worker's

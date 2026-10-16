@@ -18,11 +18,18 @@
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import * as path from "node:path";
 import { attach } from "./attach";
 import type { Attached } from "./attach";
-import { machineMay } from "./boundary";
+import { confirmation, confirmed, machineMay } from "./boundary";
+import { PROMPTS } from "./prompts";
+import { labelOf } from "../surfaces/actions";
 import { toolTable } from "./tools";
 import { appendWorkingOut } from "../run/runLog";
 import type { ToolCall } from "./tools";
@@ -42,6 +49,32 @@ function sayIn(storeDir: string, line: string): void {
     appendWorkingOut(storeDir, line);
   } catch (e) {
     say(`the working-out log in ${storeDir} cannot be written: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/**
+ * The person's yes to one of their own acts, asked through the client.
+ *
+ * A client that cannot ask (no elicitation capability) gets the refusal
+ * as before. One that can shows the person what is about to happen; a
+ * decline, a cancel or a failure to ask is a no, said in words.
+ */
+async function askThePerson(
+  server: Server,
+  tool: { name: string; action: string },
+  args: Record<string, unknown>,
+  refusal: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!server.getClientCapabilities()?.elicitation) return { ok: false, reason: refusal };
+  try {
+    const answer = await server.elicitInput(confirmation(tool.action, tool.name, args));
+    if (confirmed(answer)) {
+      say(`${labelOf(tool.action)}: the person said yes to ${tool.name}`);
+      return { ok: true };
+    }
+    return { ok: false, reason: `${labelOf(tool.action)} — you were asked and did not say yes, so nothing was done.` };
+  } catch (e) {
+    return { ok: false, reason: `${refusal}; asking you failed: ${e instanceof Error ? e.message : String(e)}` };
   }
 }
 
@@ -75,7 +108,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   const table = toolTable();
   const server = new Server(
     { name: "thinkube-tandem", version: "1.0.0" },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, prompts: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
@@ -86,6 +119,24 @@ export async function main(argv: readonly string[]): Promise<number> {
     })),
   }));
 
+  server.setRequestHandler(ListPromptsRequestSchema, () => ({
+    prompts: PROMPTS.map((p) => ({ name: p.name, description: p.description, arguments: p.arguments })),
+  }));
+
+  server.setRequestHandler(GetPromptRequestSchema, (req) => {
+    const p = PROMPTS.find((x) => x.name === req.params.name);
+    if (!p) throw new Error(`no such prompt: ${req.params.name}`);
+    const args = Object.fromEntries(
+      Object.entries(req.params.arguments ?? {}).map(([k, v]) => [k, typeof v === "string" ? v : String(v)]),
+    );
+    const missing = p.arguments.filter((a) => a.required && !args[a.name]).map((a) => a.name);
+    if (missing.length) throw new Error(`${p.name} needs ${missing.join(", ")}`);
+    return {
+      description: p.description,
+      messages: [{ role: "user" as const, content: { type: "text" as const, text: p.text(args) } }],
+    };
+  });
+
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = table.find((t) => t.name === req.params.name);
     if (!tool)
@@ -93,11 +144,15 @@ export async function main(argv: readonly string[]): Promise<number> {
         isError: true,
         content: [{ type: "text" as const, text: `no such tool: ${req.params.name}` }],
       };
-    // The boundary, before any space is opened at all.
-    const may = machineMay(tool.action);
-    if (!may.ok)
-      return { isError: true, content: [{ type: "text" as const, text: may.reason }] };
     const args = (req.params.arguments ?? {}) as ToolCall["args"];
+    // The boundary, before any space is opened at all. A person's act is
+    // refused to a machine — unless the client can ask the person, in
+    // which case the call waits for their yes.
+    const may = machineMay(tool.action);
+    if (!may.ok) {
+      const asked = await askThePerson(server, tool, args, may.reason);
+      if (!asked.ok) return { isError: true, content: [{ type: "text" as const, text: asked.reason }] };
+    }
     try {
       if (tool.spaceless) return { content: [{ type: "text" as const, text: await tool.run({ args } as ToolCall) }] };
       const space = typeof args.space === "string" ? args.space : "";
