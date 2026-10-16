@@ -51,6 +51,12 @@ test("a repository the platform does not build keeps the build its reading found
   assert.equal(imagesBuiltByPlatform(parts), false);
 });
 
+test("a repository the platform does not deploy is built here even when it lists containers", () => {
+  const root = repo(APP.replace("spec:\n", "spec:\n  deployment:\n    type: none\n"));
+  assert.equal(imagesBuiltByPlatform(root), false);
+  assert.equal(runSetup(root, READING).build, READING.build);
+});
+
 test("a thinkube.yaml that cannot be read is said, not taken for no containers", () => {
   const root = repo(APP);
   fs.chmodSync(path.join(root, "thinkube.yaml"), 0o000);

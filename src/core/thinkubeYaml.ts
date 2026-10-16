@@ -309,15 +309,16 @@ export function thinkubeDeclaration(
 }
 
 /**
- * Whether the platform's pipeline builds this repository's images: it
- * declares containers, and each push builds and tests them in the cluster
- * with the resources the declaration names. Such a repository's product is
- * judged by that pipeline, never by a build run beside the editor. A
- * declaration that cannot be read throws in its own words.
+ * Whether the platform's pipeline builds this repository's images: the
+ * platform deploys it (its type is not `none`) and it declares containers,
+ * which each push builds and tests in the cluster with the resources the
+ * declaration names. Such a repository's product is judged by that
+ * pipeline, never by a build run beside the editor. A declaration that
+ * cannot be read throws in its own words.
  */
 export function imagesBuiltByPlatform(repoRoot: string): boolean {
   const read = thinkubeDeclaration(repoRoot);
   if (!read) return false;
   if ("unreadable" in read) throw new Error(read.unreadable);
-  return read.declared.containers.length > 0;
+  return read.declared.deploymentType !== "none" && read.declared.containers.length > 0;
 }
