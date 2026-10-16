@@ -78,6 +78,9 @@ import { sliceBookkeeping } from "./plan";
 import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
+import type { RunWorkerDeps, WorkerOutcome } from "./worker";
+import { firstRoundOf, runFirstRound } from "./continuation";
+import { tallied } from "./unitReads";
 export type { DispatchDeps } from "./deps";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
@@ -327,6 +330,13 @@ export async function dispatchTep(
   // The session each unit was worked in: a criterion red at the gate goes
   // back to the author that wrote the code, not to a stranger with a summary.
   const sessions = new Map<string, string>();
+  // The units whose recorded session was worked by a blinded coder: the
+  // only sessions a blinded coder of a later unit may continue.
+  const blindSessions = new Set<string>();
+  const isCoder = (id: string): boolean => {
+    const u = dag.find((x) => x.id === id);
+    return !!u && (u.role ?? "code") === "code" && !isMaintainUnit(u);
+  };
   const waits = runWaits({ dag, done, failed, waiting: () => waiting, live: () => liveFootprints, tree: worktree, commitUnitWork: (id, w) => commitUnitWork(id, w) });
   const wakers = (sl: string, self: string) => waits.wakers(sl, self);
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
@@ -432,16 +442,23 @@ export async function dispatchTep(
       role, tree, files: next.footprint.filter((f) => !isTestPath(f)),
       tests: (await repoTestFiles(tree)).filter((t: string) => !next.footprint.includes(t)),
     });
+    const blind = role !== "test" && !!oracle;
+    // A code unit that follows another code unit of this run continues that
+    // coder's session in its first round; every later round starts cold.
+    const start = firstRoundOf(next, {
+      coder: role === "code" && !maintain, blind, isCoder, sessions, blindSessions, failed,
+    });
+    let began = "started cold";
+    const tally = tallied(worker);
     for (let attempt = 1; attempt <= attempts && !st.halted; attempt++) {
-      let outcome = await worker(
-        {
+      const workerDeps: RunWorkerDeps = {
           model: resolveWorkerModel(
             deps.workerModel ?? { workerModel: deps.model },
             role,
           ),
           worktree: tree,
           role,
-          blind: role !== "test" && !!oracle,
+          blind,
           footprint: next.footprint,
           // A tester's turns scale with what it must write; a coder keeps the default.
           ...(role === "test" ? { maxTurns: testerTurns(next.footprint.length) } : {}),
@@ -478,10 +495,18 @@ export async function dispatchTep(
                 challengeTool: challengeFor(next.slice, () => oracle.last()?.result),
               }
             : {}),
-        },
-        brief,
-      );
-      if (outcome.sessionId) sessions.set(next.id, outcome.sessionId);
+      };
+      let outcome: WorkerOutcome;
+      if (attempt === 1) {
+        const first = await runFirstRound({ start, unit: next.id, worker: tally.worker, deps: workerDeps, brief, log: (l) => log(l, next.id) });
+        outcome = first.outcome;
+        began = first.began;
+      } else outcome = await tally.worker(workerDeps, brief);
+      if (outcome.sessionId) {
+        sessions.set(next.id, outcome.sessionId);
+        if (blind) blindSessions.add(next.id);
+        else blindSessions.delete(next.id);
+      }
       if (role === "test" && !outcome.containment)
         outcome = await finishAuthoring({
           outcome,
@@ -496,7 +521,7 @@ export async function dispatchTep(
           log: (line) => log(line, next.id),
           defect: (detail) => defect({ slice: next.slice, unit: next.id, activity: "check authoring", trigger: "probe-audit", type: "test", impact: "refused before anyone was graded", detail }),
           runWorker: (text, turns) =>
-            worker(
+            tally.worker(
               {
                 model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, role),
                 worktree: tree,
@@ -647,6 +672,7 @@ export async function dispatchTep(
         });
       }
     }
+    log(tally.line(next.id, began), next.id);
     st.aborts.delete(next.id);
     liveFootprints.delete(next.id);
     if (role === "test" && !maintain) testInflight--;

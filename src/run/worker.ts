@@ -31,7 +31,17 @@ export interface WorkerOutcome {
   /** The session this unit was worked in, so a repair can be the NEXT
    *  message in it rather than a stranger with a summary. */
   sessionId?: string;
+  /** Read, Glob and Grep tool uses in this session: what it spent finding
+   *  its way around the code. */
+  reads?: number;
+  /** Edit, Write and NotebookEdit tool uses in this session. */
+  writes?: number;
 }
+
+/** Tools that only look at the code. */
+const LOOKING_TOOLS = new Set(["Read", "Glob", "Grep"]);
+/** Tools that change a file and name it. */
+const FILE_WRITING_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
 
 export interface RunWorkerDeps {
   model: string;
@@ -103,6 +113,10 @@ export interface RunWorkerDeps {
   /** Continue a session this run already had: the author still holds its
    *  own reasoning, so the intent behind the code survives the repair. */
   resume?: string;
+  /** With `resume`: continue a COPY of that session under a new id, so the
+   *  session resumed stays as it was for its own unit's later repair, and
+   *  two units continuing it at once never write into one transcript. */
+  fork?: boolean;
 }
 
 /** Tools whose use can leave a change on disk. */
@@ -383,6 +397,8 @@ export async function runUnitWorker(
   /** The first uncleared write teaches; the second ends the unit. */
   let warned = false;
   let sessionId: string | undefined;
+  let reads = 0;
+  let writes = 0;
   const listening = deps.pulse?.();
   try {
     const stream = query({
@@ -393,7 +409,7 @@ export async function runUnitWorker(
         // A worker's environment carries no credential and no way into the
         // cluster; what a check needs, the runner is given by the engine.
         env: workerEnv(),
-        ...(deps.resume ? { resume: deps.resume } : {}),
+        ...(deps.resume ? { resume: deps.resume, ...(deps.fork ? { forkSession: true } : {}) } : {}),
         permissionMode: "bypassPermissions",
         thinking: { type: "disabled" },
         maxTurns: deps.maxTurns ?? 80,
@@ -495,7 +511,11 @@ export async function runUnitWorker(
             for (const line of b.text.split("\n").map((l) => l.trim()).filter(Boolean))
               deps.log(line);
           }
-          if (b.type === "tool_use") deps.log(`⚙ ${describeTool(b)}`);
+          if (b.type === "tool_use") {
+            deps.log(`⚙ ${describeTool(b)}`);
+            if (LOOKING_TOOLS.has(String(b.name))) reads++;
+            if (FILE_WRITING_TOOLS.has(String(b.name))) writes++;
+          }
         }
       } else if (rec.type === "result") {
         const turn = typeof rec.result === "string" ? rec.result : text;
@@ -516,7 +536,7 @@ export async function runUnitWorker(
     }
   } catch (err) {
     if (containment)
-      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}) };
+      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes };
     return {
       ok: false,
       finalText: text,
@@ -524,17 +544,21 @@ export async function runUnitWorker(
         `worker errored: ${err instanceof Error ? err.message : String(err)}`,
       ],
       ...(sessionId ? { sessionId } : {}),
+      reads,
+      writes,
     };
   } finally {
     listening?.ended();
   }
-  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}) };
+  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes };
   const undelivered = realUndelivered(text);
   return {
     ok: undelivered.length === 0,
     finalText: text,
     ...(undelivered.length ? { undelivered } : {}),
     ...(sessionId ? { sessionId } : {}),
+    reads,
+    writes,
   };
 }
 
