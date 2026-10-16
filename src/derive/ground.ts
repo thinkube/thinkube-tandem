@@ -42,6 +42,15 @@ export interface DerivedNode {
 }
 
 /** Build the derivation prompt. Pure; exported for tests. */
+/** What a template's criteria that a worktree cannot settle are settled by. */
+export const TEMPLATE_SETTLING = "a validation deployment of the template through thinkube-control";
+
+/** Whether a criterion waits on a template's validation deployment: the
+ *  running service is what can answer it. */
+export function settledOnTheLiveProduct(settledBy: string | undefined): boolean {
+  return settledBy === TEMPLATE_SETTLING;
+}
+
 /** Where this target settles what a worktree cannot — one sentence per
  *  downstream, given to the grounding so it classifies instead of forcing
  *  every criterion into a here-shaped check. */
@@ -50,7 +59,7 @@ function settlingSourceOf(downstream: string): string | undefined {
     case "gitops-app":
       return "the app's build pipeline — its declared tests run in their named image after the merge, and a failure prevents deployment";
     case "template":
-      return "a validation deployment of the template through thinkube-control";
+      return TEMPLATE_SETTLING;
     case "ansible":
     case "ansible-component":
       return "the component's own 18_test.yaml, run against the live cluster after deployment";

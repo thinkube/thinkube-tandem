@@ -14,6 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pageRoots } from "./live";
 import { toDriveOf } from "./observations";
+import { TEMPLATE_SETTLING } from "../derive/ground";
 import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
 import { RunState } from "./state";
 import type { Change, Cut, Space } from "../core/schema";
@@ -91,6 +92,25 @@ test("a promise that lands where the page is built is judged on the page — rea
     "and it judges only what a person can do and see on the page",
   );
   assert.equal(driven[0].ask, "I can see my tasks in order", "and the reviewer is told what was asked");
+});
+
+/**
+ * A template's criterion that waits on its deploy is judged on the running
+ * service, wherever its code lands: a deploy that answers its health path
+ * shows the service runs, not what the criterion claims of it.
+ */
+test("a template's criterion settled by its validation deployment is driven on the running service", () => {
+  const s = space([
+    promise("n1", "app/services/storage.py", [
+      { id: "c1", text: "the storage service returns the document's XLIFF for a key the format service wrote", settledBy: TEMPLATE_SETTLING },
+      { id: "c2", text: "the image builds in the pipeline", settledBy: "the build" },
+      { id: "c3", text: "the docs read well", kind: "assessment", settledBy: TEMPLATE_SETTLING },
+    ]),
+  ]);
+  assert.deepEqual(
+    toDriveOf(s, cut(["n1"]), []).flatMap((d) => d.criteria.map((c) => c.id)),
+    ["c1"],
+  );
 });
 
 test("a criterion worded for a person watching is driven wherever it lands", () => {

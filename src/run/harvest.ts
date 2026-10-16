@@ -524,8 +524,14 @@ export function stampByValidation(delivery: Delivery, v: Validation, at: string)
     ...delivery,
     proofs: delivery.proofs.map((p) => {
       if (!settling(p)) return p;
+      // Going live shows the service runs, not what a criterion claims of
+      // it: the proof waits for the live drive, which exercises it there.
       if (v.ok)
-        return { ...p, verdict: "green", ref: `settled by ${VALIDATION}: it went live at ${v.at} and ${v.url} answered`.slice(0, 300) };
+        return {
+          ...p,
+          verdict: "pending",
+          ref: `live at ${v.at} and ${v.url} answered — not yet exercised on the running service`.slice(0, 300),
+        };
       if (judged) return { ...p, verdict: "red", ref: `settled by ${VALIDATION}: ${v.why}`.slice(0, 300) };
       return { ...p, verdict: "pending", ref: `still pending — ${v.why}`.slice(0, 300) };
     }),
@@ -570,7 +576,8 @@ export async function settleTemplateAfterAccept(a: {
   a.update(
     d,
     v.ok
-      ? `the merged template went live at ${v.at}` + (answered ? " — the promises settled after the merge are answered" : "")
+      ? `the merged template went live at ${v.at}` +
+          (answered ? " — the promises settled after the merge are judged on the running service next" : "")
       : judgedBy(v)
         ? `the merged template did not go live: ${v.why.split("\n")[0]}`
         : `the merged template could not be deployed to judge it: ${v.why.split("\n")[0]} — nothing is known about the work from this`,
