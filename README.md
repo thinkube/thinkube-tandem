@@ -114,11 +114,13 @@ For an unattended run, `TANDEM_AUTONOMOUS=1` lets every action through;
 Claude Code passes its environment to the server, so the variable goes in
 the `env` block of `~/.claude/settings.json`.
 
-The server also offers the Workshop's flows as prompts, which Claude Code
-lists as slash commands: `/mcp__thinkube-tandem__capture-asks`,
-`/mcp__thinkube-tandem__build` and `/mcp__thinkube-tandem__review-delivery`,
-each taking the space to work in. A prompt names the tools to call and
-where the agent must stop for the person.
+The server also offers the Workshop's flows as prompts — `capture-asks`,
+`build` and `review-delivery`, each taking the space to work in — which
+Claude Code lists as slash commands named after the server. Installed as
+the plugin, the server is `plugin:tandem:thinkube-tandem`, so its tools are
+`mcp__plugin_tandem_thinkube-tandem__<tool>` and its prompts
+`/mcp__plugin_tandem_thinkube-tandem__<prompt>`. A prompt names the tools
+to call and where the agent must stop for the person.
 
 | Tool | What it does |
 |---|---|

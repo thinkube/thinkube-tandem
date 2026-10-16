@@ -29,13 +29,16 @@ work around a refusal.
 ## The flows
 
 The server offers each flow as a prompt, which Claude Code lists as a
-slash command. Each takes the space to work in:
+slash command named after the server (installed as this plugin, the
+server is `plugin:tandem:thinkube-tandem`, and its tools are
+`mcp__plugin_tandem_thinkube-tandem__<tool>`). Each takes the space to
+work in:
 
-- `/mcp__thinkube-tandem__capture-asks` — turn what the person said into
+- `/mcp__plugin_tandem_thinkube-tandem__capture-asks` — turn what the person said into
   drafted asks, one sentence each, kept only when they say so.
-- `/mcp__thinkube-tandem__build` — readiness, reading, grouping, and the
+- `/mcp__plugin_tandem_thinkube-tandem__build` — readiness, reading, grouping, and the
   build on the person's word; then watching the run.
-- `/mcp__thinkube-tandem__review-delivery` — read the latest delivery with
+- `/mcp__plugin_tandem_thinkube-tandem__review-delivery` — read the latest delivery with
   the person, look at the running product, record what they decide.
 
 ## Reading before acting
