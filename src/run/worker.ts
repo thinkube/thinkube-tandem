@@ -31,6 +31,7 @@ import { CHALLENGE_TOOL_TEXT } from "./challengeBudget";
 import { allowedFor, doorFor, pathsNamedByTool, toolsGivenTo } from "./footprintRules";
 export { pathsNamedByTool } from "./footprintRules";
 import { stopRefusal } from "./exitProtocol";
+import { agentDefinitionOf, isOwn, roleDefinition, roleNameFor, type Role, type RoleName } from "./roles";
 
 export interface WorkerOutcome {
   ok: boolean;
@@ -296,6 +297,21 @@ export async function runUnitWorker(
 ): Promise<WorkerOutcome> {
   let query: SdkQuery;
   let mcpServers: Record<string, unknown> | undefined;
+  // Who this session runs as: the role's file, the repository's own when
+  // it has one. Read before the model is reached, so a role that cannot be
+  // read is the unit's failure, named, and never a worker running as nobody.
+  const roleName: RoleName = roleNameFor(deps);
+  let role: Role;
+  try {
+    role = roleDefinition(roleName, deps.worktree);
+    if (isOwn(role)) deps.log(`as ${roleName}, in the repository's own words (${role.from})`);
+  } catch (err) {
+    return {
+      ok: false,
+      finalText: "",
+      undelivered: [`the role ${roleName} could not be read: ${err instanceof Error ? err.message : String(err)}`],
+    };
+  }
   try {
     const mod = (await theModel("the unit worker")) as {
       query: SdkQuery;
@@ -429,7 +445,11 @@ export async function runUnitWorker(
         settingSources: [],
         strictMcpConfig: true,
         thinking: { type: "disabled" },
-        maxTurns: deps.maxTurns ?? 80,
+        // The session runs AS its role: the role's words are its system
+        // prompt, and the brief is what it is asked to do.
+        agent: roleName,
+        agents: { [roleName]: agentDefinitionOf(role) },
+        maxTurns: deps.maxTurns ?? role.maxTurns ?? 80,
         ...(deps.budgetUsd ? { maxBudgetUsd: deps.budgetUsd } : {}),
         ...(deps.fallbackModel ? { fallbackModel: deps.fallbackModel } : {}),
         abortController: deps.abort,

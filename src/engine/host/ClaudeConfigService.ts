@@ -555,7 +555,7 @@ export class ClaudeConfigService {
     name: string,
     description: string,
     content: string,
-    allowedTools: string[] = [],
+    tools: string[] = [],
     model?: string,
     projectPath?: string,
   ): Promise<Agent> {
@@ -569,8 +569,10 @@ export class ClaudeConfigService {
       name,
       description,
       content,
-      allowedTools,
-      deniedTools: [],
+      tools,
+      disallowedTools: [],
+      skills: [],
+      mcpServers: [],
       model,
     };
 

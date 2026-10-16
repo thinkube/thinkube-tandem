@@ -179,6 +179,19 @@ of them there — nothing has users.
   the brief and the digest today, and through role definitions and
   `.claude/rules` when roles become agent definitions. Revisit then.
 
+## The roles are files, and their tools are not (2026-10-16)
+- Coder, tester and closer are agent definitions in the shape Claude Code
+  reads, at `agents/tandem-<role>.md`, passed to the harness so a worker's
+  session runs AS its role with the role's words as its system prompt. A
+  repository may say a role's words its own way at
+  `.claude/agents/tandem-<role>.md`; the run says so in its log.
+- A role file's `tools` and `disallowedTools` are not read. What a worker
+  may reach for is the run's rule (`footprintRules.ts`, `toolsAllowed.ts`):
+  a repository that could hand its tester a shell would be writing its own
+  blinding wall.
+- The Configuration view and the run read a role file with one parser
+  (`engine/host/models/Agent.ts`), whose fields are Claude Code's own.
+
 ## Test homes are a maintain slice (2026-08-17)
 - Bringing existing test homes under a promise is its own slice, appended
   after the production slices: scheduled after the code those tests import

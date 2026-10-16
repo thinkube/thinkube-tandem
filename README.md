@@ -50,6 +50,12 @@ for you, and the machine's data one gesture away.
   `THINKUBE_API_TOKEN` in its environment; its exit settles the promise
   green or red, and a red goes back to be repaired with the check's output.
   Without the declaration those promises stay pending.
+- **Roles as files.** The coder, the tester and the closer are agent
+  definitions in the shape Claude Code reads, at `agents/tandem-<role>.md`;
+  a worker's session runs as its role, with the role's words as its system
+  prompt. A repository says a role's words its own way at
+  `.claude/agents/tandem-<role>.md`. The tools a role has are the run's
+  rule, never the file's.
 - **Explorer menu.** *Claude Code → Open Here* on a folder in the Explorer.
 
 ## How it reaches a user
