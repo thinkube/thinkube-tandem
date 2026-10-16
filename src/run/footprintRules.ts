@@ -23,6 +23,8 @@
  * path, so a file it writes is still found in the tree and restored.
  */
 
+import { answered, questionAsked } from "./exitProtocol";
+
 /** Tools that change a file and name it. */
 const FILE_TOOLS = ["Edit", "Write", "NotebookEdit"] as const;
 
@@ -79,7 +81,9 @@ export function toolsGivenTo(w: {
 }): string[] | { type: "preset"; preset: "claude_code" } {
   if (w.unfenced) return { type: "preset", preset: "claude_code" };
   const shell = w.role === "test" || w.blind ? [] : ["Bash"];
-  return [...LOOKING, ...FILE_TOOLS, ...shell];
+  // The question tool: a worker that cannot settle something asks, the
+  // door carries it to the run, and the answer is the tool's result.
+  return [...LOOKING, ...FILE_TOOLS, ...shell, "AskUserQuestion"];
 }
 
 /**
@@ -118,24 +122,36 @@ export type DoorAnswer =
         destination: "session";
       }[];
     }
+  | { behavior: "allow"; updatedInput: Record<string, unknown> }
   | { behavior: "deny"; message: string };
 
 /**
  * The door, as the harness calls it: for every tool use no rule allows.
  *
  * A file tool naming a path outside the footprint is the case the door is
- * for. Anything else reaching it was not given to this worker, and is
- * refused with its name. Without a run to ask, every uncleared write is
- * simply refused.
+ * for. A question is the other: the worker asks through the question
+ * tool, the run answers, and the answer goes back as the tool's result in
+ * the same session. Anything else reaching the door was not given to this
+ * worker, and is refused with its name. Without a run to ask, every
+ * uncleared write is simply refused.
  */
 export function doorFor(d: {
   worktree: string;
   footprint: () => readonly string[];
   clearFor?: (paths: string[]) => Promise<Ruling>;
   granted: (paths: string[]) => void;
+  /** The run's ear for a question: resolves with the answer. */
+  ask?: (question: string) => Promise<string>;
   log: (line: string) => void;
 }): (tool: string, input: Record<string, unknown>) => Promise<DoorAnswer> {
   return async (tool, input) => {
+    if (tool === "AskUserQuestion") {
+      if (!d.ask) return { behavior: "deny", message: "there is nobody to ask here; decide from the brief and say so." };
+      const question = questionAsked(input);
+      d.log(`? the unit asks: ${question.split("\n")[0]}`);
+      const answer = await d.ask(question);
+      return { behavior: "allow", updatedInput: answered(input, answer) };
+    }
     if (!(FILE_TOOLS as readonly string[]).includes(tool))
       return { behavior: "deny", message: `${tool} is not among the tools this unit was given.` };
     const named = pathsNamedByTool({ tool_name: tool, tool_input: input }, d.worktree);

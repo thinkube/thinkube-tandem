@@ -43,6 +43,23 @@ export function clearanceStanza(unit: { units?: unknown[] }): string {
 }
 
 /** The stanza appended to a worker's brief when the oracle can answer. */
+/**
+ * How a unit leaves. The harness holds it to both: a stop without the
+ * report line is refused, and a question asked through the tool is
+ * answered in the same session.
+ */
+export function exitStanza(): string {
+  return (
+    "\n\n──── HOW YOU LEAVE ────\n" +
+    "A question you cannot settle from this brief — which of two files, whether to keep an old column — " +
+    "you ask with the AskUserQuestion tool and carry on with the answer; it reaches the run, and the " +
+    "answer comes back as the tool's result. Never guess, never stop to ask.\n" +
+    "Your final summary ends with the line `UNDELIVERED: none` when everything was delivered, or one " +
+    "line per obligation left undone, each starting exactly with `UNDELIVERED: `. A stop without that " +
+    "line is refused and you are asked to write the summary again."
+  );
+}
+
 export function coderStanza(oracleAvailable: boolean): string {
   if (!oracleAvailable) return "";
   return (

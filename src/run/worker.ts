@@ -10,9 +10,12 @@
  * asks the run (src/run/footprintRules.ts). The shell names no path, so a
  * file a command writes is still found in the tree afterwards: a
  * PostToolUse check restores ONLY offending paths, and fails the unit
- * with containment named on the second offence. A parked worker (the
- * NEEDS-INPUT sentinel) keeps its session alive while the human answers
- * through the run view — the oracle lesson's door.
+ * with containment named on the second offence. A worker's question is a
+ * tool call (AskUserQuestion) the door carries to the run and answers in
+ * the same session; the engine's brief still names the NEEDS-INPUT
+ * sentinel, and a final message carrying it parks the unit the old way.
+ * A stop whose summary says nothing of what was left undone is refused
+ * (src/run/exitProtocol.ts).
  */
 import { theModel } from "../engine/theModel";
 import type { RoundPulse } from "../derive/round";
@@ -27,6 +30,7 @@ import { describeTool } from "./toolsAllowed";
 import { CHALLENGE_TOOL_TEXT } from "./challengeBudget";
 import { allowedFor, doorFor, pathsNamedByTool, toolsGivenTo } from "./footprintRules";
 export { pathsNamedByTool } from "./footprintRules";
+import { stopRefusal } from "./exitProtocol";
 
 export interface WorkerOutcome {
   ok: boolean;
@@ -41,6 +45,11 @@ export interface WorkerOutcome {
   reads?: number;
   /** Edit, Write and NotebookEdit tool uses in this session. */
   writes?: number;
+  /** Tool calls that failed to run at all, with the tool's own words: a
+   *  missing binary, a timeout, a server that did not answer. An
+   *  environment's failures, named at the moment they happened, never a
+   *  verdict on the work. */
+  toolFailures?: { tool: string; error: string }[];
 }
 
 /** Tools that only look at the code. */
@@ -366,6 +375,9 @@ export async function runUnitWorker(
   let sessionId: string | undefined;
   let reads = 0;
   let writes = 0;
+  /** Stops refused for want of a report, so a worker is never made to loop. */
+  let stopsRefused = 0;
+  const toolFailures: { tool: string; error: string }[] = [];
   const listening = deps.pulse?.();
   try {
     const stream = query({
@@ -393,6 +405,9 @@ export async function runUnitWorker(
                 granted: (paths) => {
                   deps.footprint = [...new Set([...deps.footprint, ...paths])];
                 },
+                // A question parks the unit until the run answers, and the
+                // answer is the tool's result in this same session.
+                ask: (question) => new Promise<string>((resolve) => deps.onPark(question, resolve)),
                 log: deps.log,
               }),
             }),
@@ -412,6 +427,37 @@ export async function runUnitWorker(
         // relative write land outside the footprint: none of those, ever.
         disallowedTools: toolsRefusedTo(deps),
         hooks: {
+          // A stop is refused while the summary says nothing of what was
+          // left undone: the report is written in the same session, not
+          // reconstructed from an incomplete one afterwards.
+          Stop: [
+            {
+              hooks: [
+                async (h: { last_assistant_message?: string }) => {
+                  const why = stopRefusal(h.last_assistant_message, stopsRefused);
+                  if (!why) return {};
+                  stopsRefused++;
+                  deps.log(`↩ the unit stopped without saying what was left undone — asked to report`);
+                  return { decision: "block", reason: why };
+                },
+              ],
+            },
+          ],
+          // A tool that could not run is the environment's failure, named
+          // as it happens with the tool's own words; it is never read later
+          // as the worker's.
+          PostToolUseFailure: [
+            {
+              hooks: [
+                async (h: { tool_name?: string; error?: string }) => {
+                  const error = (h.error ?? "").trim().slice(0, 400);
+                  toolFailures.push({ tool: h.tool_name ?? "tool", error });
+                  deps.log(`✗ ${h.tool_name ?? "a tool"} could not run — ${error.split("\n")[0]}`);
+                  return {};
+                },
+              ],
+            },
+          ],
           PreToolUse: [
             {
               hooks: [
@@ -528,7 +574,7 @@ export async function runUnitWorker(
     }
   } catch (err) {
     if (containment)
-      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes };
+      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}) };
     return {
       ok: false,
       finalText: text,
@@ -542,7 +588,7 @@ export async function runUnitWorker(
   } finally {
     listening?.ended();
   }
-  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes };
+  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}) };
   const undelivered = realUndelivered(text);
   return {
     ok: undelivered.length === 0,
@@ -551,6 +597,7 @@ export async function runUnitWorker(
     ...(sessionId ? { sessionId } : {}),
     reads,
     writes,
+    ...(toolFailures.length ? { toolFailures } : {}),
   };
 }
 

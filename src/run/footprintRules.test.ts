@@ -22,8 +22,27 @@ test("a footprint entry is a rule for the path and for everything under it", () 
   ]);
 });
 
+test("a question asked through the tool goes to the run, and the answer comes back as the tool's result", async () => {
+  const heard: string[] = [];
+  const door = doorFor({
+    worktree: WT,
+    footprint: () => [],
+    granted: () => undefined,
+    ask: async (q) => (heard.push(q), "accounts"),
+    log: () => undefined,
+  });
+  const input = { questions: [{ question: "Which table?", options: [{ label: "users" }, { label: "accounts" }] }] };
+  const a = await door("AskUserQuestion", input);
+  assert.deepEqual(heard, ["Which table? (users / accounts)"]);
+  assert.equal(a.behavior, "allow");
+  if (a.behavior === "allow" && "updatedInput" in a) assert.deepEqual(a.updatedInput.answers, { "Which table?": "accounts" });
+  else assert.fail("the answer rides the tool's input");
+  const nobody = doorFor({ worktree: WT, footprint: () => [], granted: () => undefined, log: () => undefined });
+  assert.equal((await nobody("AskUserQuestion", input)).behavior, "deny", "with nobody to ask, the question is refused");
+});
+
 test("a worker's tools are an allow list; only the closer gets the whole set", () => {
-  assert.deepEqual(toolsGivenTo({ role: "code" }), ["Read", "Grep", "Glob", "Edit", "Write", "NotebookEdit", "Bash"]);
+  assert.deepEqual(toolsGivenTo({ role: "code" }), ["Read", "Grep", "Glob", "Edit", "Write", "NotebookEdit", "Bash", "AskUserQuestion"]);
   assert.ok(!(toolsGivenTo({ role: "test" }) as string[]).includes("Bash"), "a tester has no shell");
   assert.ok(!(toolsGivenTo({ role: "code", blind: true }) as string[]).includes("Bash"), "nor a blinded coder");
   assert.deepEqual(toolsGivenTo({ unfenced: true }), { type: "preset", preset: "claude_code" });
@@ -53,7 +72,7 @@ test("the door grants a session rule and widens the footprint, so the write goes
   const answer = await door("Edit", { file_path: `${WT}/src/b.ts` });
   assert.deepEqual(asked, [["src/b.ts"]], "asked as the repository sees the path");
   assert.equal(answer.behavior, "allow");
-  if (answer.behavior === "allow") {
+  if (answer.behavior === "allow" && "updatedPermissions" in answer) {
     assert.equal(answer.updatedPermissions[0].destination, "session");
     assert.deepEqual(
       answer.updatedPermissions[0].rules.map((r) => r.ruleContent),

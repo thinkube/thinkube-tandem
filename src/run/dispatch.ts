@@ -70,7 +70,7 @@ import { runLogSink } from "./runLog";
 import { watchForStall } from "./watchdog";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
-import { clearanceStanza, coderStanza, fixturesStanza, liveCheckStanza, testerStanza } from "./brief";
+import { clearanceStanza, coderStanza, exitStanza, fixturesStanza, liveCheckStanza, testerStanza } from "./brief";
 import { productionSeams, sharedFixtures } from "./seams";
 import { applyFixturePlan, commitSharedFixture, planSharedFixture, testerCode } from "./sharedFixture";
 import { testHomeStanza } from "./testHomeExamples";
@@ -420,10 +420,12 @@ export async function dispatchTep(
           doubles +
           (liveSuite ? liveCheckStanza(next.footprint.filter((f) => liveFiles.has(f)), liveSuite.one) : "") +
           (maintain ? coderStanza(!!oracle) : "") +
-          testHomesStanza(testHomesOf(next.footprint.filter((f) => f !== ownsFixture?.path)), testHomeWorkOf(next))
+          testHomesStanza(testHomesOf(next.footprint.filter((f) => f !== ownsFixture?.path)), testHomeWorkOf(next)) +
+          exitStanza()
         : clearanceStanza(next) +
           coderStanza(!!oracle) +
-          decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
+          decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text)) +
+          exitStanza();
     // Dispatch-time audit: a decidable fact the brief lacks is missing at round zero.
     let disclosure = "";
     if (oracle?.preflight) {
