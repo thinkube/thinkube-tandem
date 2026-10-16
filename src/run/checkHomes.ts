@@ -185,6 +185,24 @@ function commonTestDirOf(tests: readonly string[]): string {
 }
 
 /**
+ * The one directory the repository keeps its tests in, with the suffix
+ * they wear — the place its runner collects a check that has no module to
+ * sit beside. Nothing when its tests are not kept under one directory.
+ */
+function sharedTestHome(files: readonly string[]): TestIdiom | undefined {
+  const repo = inferTestIdiom(files);
+  if (!repo) return undefined;
+  if (repo.dir) return repo;
+  const dir = commonTestDirOf(files.filter((f) => f && isTestPath(f) && !isProbePath(f) && suffixOf(f) === repo.suffix));
+  return dir ? { suffix: repo.suffix, dir } : undefined;
+}
+
+/** A file stem for a slice's checks, from its handle. */
+function sliceStem(handle: string | undefined): string {
+  return (handle ?? "checks").replace(/[^A-Za-z0-9_-]+/g, "_");
+}
+
+/**
  * The roots where a check can be run: wherever the repository keeps a test
  * of its own, every declared part other than ".", and "." itself when the
  * part built from it says how its tests run — then the whole repository is
@@ -248,7 +266,9 @@ interface SliceLike {
  * own test homes, beside the production file its slice lands in.
  *
  * Returns what moved, for the log. A slice with no production file of its
- * own keeps the old coordinate: there is nothing to sit beside.
+ * own has its checks put in the repository's one test directory; where the
+ * repository keeps no such directory they keep the old coordinate, and
+ * {@link checksInAnotherLanguage} refuses those its runner cannot run.
  */
 export function rehouseChecks(
   slices: readonly SliceLike[],
@@ -298,7 +318,13 @@ export function rehouseChecks(
     // Code in a runnable tree first; failing that, anything in a runnable
     // tree — a view's locale file still sits where the tree's tests run;
     // failing that, code anywhere.
-    const subject = inRunnable.find((f) => CODE.test(f)) ?? inRunnable[0] ?? files.find((f) => CODE.test(f));
+    const found = inRunnable.find((f) => CODE.test(f)) ?? inRunnable[0] ?? files.find((f) => CODE.test(f));
+    // A slice with no file of its own to sit beside — its work is a test
+    // or a document another slice writes — still has its checks run by the
+    // repository's runner: they go to the one directory the repository
+    // keeps its tests in, named for the slice, in that directory's idiom.
+    const shared = found ? undefined : sharedTestHome(repoFiles);
+    const subject = found ?? (shared ? `${shared.dir}${sliceStem(s.handle)}${path.extname(shared.suffix)}` : undefined);
     if (!subject) continue;
     // The idiom of the subject's own tree, so a Python module gets a Python
     // test and a Vue view a vitest one, whatever the rest of the repository
@@ -310,6 +336,7 @@ export function rehouseChecks(
     const own = inferTestIdiom(repoFiles, treeOf(subject));
     const ownSpeaks = !!own && (!partRoots.length || languageOf(own.suffix) === languageOf(subject));
     const idiom =
+      shared ??
       (ownSpeaks ? own : undefined) ??
       (own && partRoots.length ? testHomeInPartOfLanguage(repoFiles, partRoots, subject) : undefined) ??
       sharedTestDirFor(repoFiles, subject) ??
@@ -455,6 +482,30 @@ function testRootsOf(repoFiles: readonly string[]): string[] {
   for (const f of repoFiles)
     if (f && isTestPath(f) && !isProbePath(f)) roots.add(f.split("/")[0]);
   return [...roots].sort();
+}
+
+/**
+ * Checks left at the run's own coordinate (`probes/`) in a language none of
+ * the repository's tests are written in — refused before dispatch, naming
+ * them. The repository's runner runs its own language: a JavaScript check
+ * handed to pytest runs nothing. A repository with no tests of its own
+ * refuses nothing here, as with {@link unreachableCheckHomes}.
+ */
+export function checksInAnotherLanguage(
+  slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
+  repoFiles: readonly string[],
+): { where: string[]; languages: string[] } {
+  const languages = [
+    ...new Set(repoFiles.filter((f) => f && isTestPath(f) && !isProbePath(f) && suffixOf(f)).map(languageOf)),
+  ].sort();
+  if (!languages.length) return { where: [], languages };
+  const where: string[] = [];
+  for (const s of slices)
+    for (const u of s.workUnits ?? [])
+      if ((u.role ?? "code") === "test" && !isLiveCheckUnit(u))
+        for (const f of u.footprint)
+          if (isProbePath(f) && !languages.includes(languageOf(f))) where.push(`${s.handle}: ${f}`);
+  return { where: [...new Set(where)], languages };
 }
 
 /**

@@ -32,7 +32,7 @@ import type { Cut } from "../core/schema";
 import { buildUnitDag } from "../engine/core/dag";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { coderTestPaths } from "./plan";
-import { houseLiveChecks, pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
+import { checksInAnotherLanguage, houseLiveChecks, pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
 import { isLiveCheckUnit } from "./liveChecks";
 import { liveHomeRefusal, liveSuiteDeclared } from "./liveSuite";
 import { verifyCutSignature } from "../gates/sign";
@@ -287,6 +287,22 @@ export async function refusedBeforeDispatch(a: {
         refusal:
           `these checks are born where this repository runs no test of its own, so nothing would compile or run them — ` +
           `refused before dispatch: ${stranded.where.join(", ")}. Its tests live under ${stranded.roots.join(", ")}.`,
+      },
+    };
+
+  // A check left at the run's own coordinate in a language the repository
+  // does not test in is run by a runner that runs nothing of it.
+  const foreign = checksInAnotherLanguage(a.slices, repoFiles);
+  if (foreign.where.length)
+    return {
+      dag,
+      refusal: {
+        trigger: "plan-check-homes",
+        refusal:
+          `these checks would stay at the run's own coordinate in a language this repository's tests are not written in ` +
+          `(${foreign.languages.join(", ")}), so its runner would run nothing of them — refused before dispatch: ` +
+          `${foreign.where.join(", ")}. A check an earlier run already wrote keeps its address; start the work again ` +
+          `from nothing (full rerun) so it is placed in the repository's own test home.`,
       },
     };
 
