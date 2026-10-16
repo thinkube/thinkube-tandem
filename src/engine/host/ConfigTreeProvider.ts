@@ -30,7 +30,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import { ClaudeConfigService } from "./ClaudeConfigService";
+import { ClaudeConfigService, RuleFile, WorkflowFile } from "./ClaudeConfigService";
 import { PluginService, InstalledPlugin } from "./PluginService";
 import { Hook, HookEvent, HOOK_EVENTS } from "./models/Hook";
 import { Command } from "./models/Command";
@@ -51,7 +51,6 @@ export type ConfigItemType =
   | "claude-md"
   | "settings-json"
   | "hooks-section"
-  | "commands-section"
   | "skills-section"
   | "agents-section"
   | "mcp-section"
@@ -62,6 +61,10 @@ export type ConfigItemType =
   | "command"
   | "skill"
   | "agent"
+  | "rules-section"
+  | "rule"
+  | "workflows-section"
+  | "workflow"
   | "mcp-server"
   | "permission-allow"
   | "permission-deny"
@@ -83,6 +86,8 @@ export class ConfigTreeItem extends vscode.TreeItem {
       | Agent
       | McpServer
       | InstalledPlugin
+      | RuleFile
+      | WorkflowFile
       | string,
     public readonly parentType?: ConfigItemType,
     public readonly projectPath?: string,
@@ -155,13 +160,17 @@ export class ConfigTreeItem extends vscode.TreeItem {
         this.iconPath = new vscode.ThemeIcon("zap");
         this.tooltip = "Event hooks for tool execution";
         break;
-      case "commands-section":
-        this.iconPath = new vscode.ThemeIcon("terminal");
-        this.tooltip = "Custom slash commands";
-        break;
       case "skills-section":
         this.iconPath = new vscode.ThemeIcon("lightbulb");
-        this.tooltip = "Reusable capabilities";
+        this.tooltip = "Skills, and the older .claude/commands beside them";
+        break;
+      case "rules-section":
+        this.iconPath = new vscode.ThemeIcon("law");
+        this.tooltip = "Rules in .claude/rules, each scoped to paths";
+        break;
+      case "workflows-section":
+        this.iconPath = new vscode.ThemeIcon("run-all");
+        this.tooltip = "Workflow scripts saved in .claude/workflows";
         break;
       case "agents-section":
         this.iconPath = new vscode.ThemeIcon("person");
@@ -191,12 +200,13 @@ export class ConfigTreeItem extends vscode.TreeItem {
             http: "cloud",
             prompt: "comment",
             agent: "robot",
+            mcp_tool: "plug",
           };
           this.iconPath = new vscode.ThemeIcon(
             typeIcons[hook.hookType] || "symbol-function",
           );
           const detail =
-            hook.command || hook.url || hook.prompt || hook.agent || "";
+            hook.command || hook.url || hook.prompt || (hook.server && hook.tool ? `${hook.server}/${hook.tool}` : "");
           this.tooltip = `Type: ${hook.hookType}\nMatcher: ${hook.matcher}\nDetail: ${detail}\n\nClick to open settings.json`;
           // Open settings.json on click
           if (this.projectPath) {
@@ -249,6 +259,25 @@ export class ConfigTreeItem extends vscode.TreeItem {
             title: "Open Agent",
             arguments: [agent],
           };
+        }
+        break;
+      case "rule":
+        this.iconPath = new vscode.ThemeIcon("law");
+        if (this.data) {
+          const rule = this.data as RuleFile;
+          this.description = rule.paths.length ? rule.paths.join(", ") : "every file";
+          this.tooltip = rule.paths.length
+            ? `Loaded when a file matching ${rule.paths.join(", ")} is read or edited`
+            : "Loaded in every session of this project";
+          this.command = { command: "vscode.open", title: "Open Rule", arguments: [vscode.Uri.file(rule.filePath)] };
+        }
+        break;
+      case "workflow":
+        this.iconPath = new vscode.ThemeIcon("run-all");
+        if (this.data) {
+          const wf = this.data as WorkflowFile;
+          this.tooltip = `A saved workflow script: /workflows runs it`;
+          this.command = { command: "vscode.open", title: "Open Workflow", arguments: [vscode.Uri.file(wf.filePath)] };
         }
         break;
       case "mcp-server":
@@ -390,12 +419,14 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
           element.label as HookEvent,
           element.projectPath!,
         );
-      case "commands-section":
-        return this.getCommandsChildren(element.projectPath!);
       case "skills-section":
         return this.getSkillsChildren(element.projectPath!);
       case "agents-section":
         return this.getAgentsChildren(element.projectPath!);
+      case "rules-section":
+        return this.getRulesChildren(element.projectPath!);
+      case "workflows-section":
+        return this.getWorkflowsChildren(element.projectPath!);
       case "mcp-section":
         return this.getMcpChildren(element.projectPath!);
       case "permissions-section":
@@ -560,21 +591,11 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     if (hooks.length > 0) hooksItem.description = `(${hooks.length})`;
     items.push(hooksItem);
 
-    // Commands with count
-    const commands = await this.configService.getCommands(pp);
-    const cmdsItem = new ConfigTreeItem(
-      "Commands",
-      "commands-section",
-      vscode.TreeItemCollapsibleState.Collapsed,
-      undefined,
-      undefined,
-      pp,
-    );
-    if (commands.length > 0) cmdsItem.description = `(${commands.length})`;
-    items.push(cmdsItem);
-
-    // Skills with count
+    // Skills with count. The older .claude/commands format lives under
+    // the same heading: a skill with the same name wins, and a command is
+    // a skill with less to say.
     const skills = await this.configService.getSkills(pp);
+    const commands = await this.configService.getCommands(pp);
     const skillsItem = new ConfigTreeItem(
       "Skills",
       "skills-section",
@@ -583,7 +604,7 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
       undefined,
       pp,
     );
-    if (skills.length > 0) skillsItem.description = `(${skills.length})`;
+    if (skills.length + commands.length > 0) skillsItem.description = `(${skills.length + commands.length})`;
     items.push(skillsItem);
 
     // Agents with count
@@ -598,6 +619,32 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     );
     if (agents.length > 0) agentsItem.description = `(${agents.length})`;
     items.push(agentsItem);
+
+    // Rules with count: .claude/rules/*.md, each scoped by its paths.
+    const rules = await this.configService.getRules(pp);
+    const rulesItem = new ConfigTreeItem(
+      "Rules",
+      "rules-section",
+      vscode.TreeItemCollapsibleState.Collapsed,
+      undefined,
+      undefined,
+      pp,
+    );
+    if (rules.length > 0) rulesItem.description = `(${rules.length})`;
+    items.push(rulesItem);
+
+    // Workflows with count: .claude/workflows scripts.
+    const workflows = await this.configService.getWorkflows(pp);
+    const workflowsItem = new ConfigTreeItem(
+      "Workflows",
+      "workflows-section",
+      vscode.TreeItemCollapsibleState.Collapsed,
+      undefined,
+      undefined,
+      pp,
+    );
+    if (workflows.length > 0) workflowsItem.description = `(${workflows.length})`;
+    items.push(workflowsItem);
 
     // MCP Servers with count
     const servers = await this.configService.getMcpServers(pp);
@@ -830,44 +877,14 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
     });
   }
 
-  // ========== Commands ==========
-
-  private async getCommandsChildren(
-    projectPath: string,
-  ): Promise<ConfigTreeItem[]> {
-    const commands = await this.configService.getCommands(projectPath);
-    if (commands.length === 0) {
-      return [
-        new ConfigTreeItem(
-          "No commands — use + to add",
-          "command",
-          vscode.TreeItemCollapsibleState.None,
-          undefined,
-          undefined,
-          projectPath,
-        ),
-      ];
-    }
-    return commands.map(
-      (cmd) =>
-        new ConfigTreeItem(
-          `/${cmd.name}`,
-          "command",
-          vscode.TreeItemCollapsibleState.None,
-          cmd,
-          undefined,
-          projectPath,
-        ),
-    );
-  }
-
   // ========== Skills ==========
 
   private async getSkillsChildren(
     projectPath: string,
   ): Promise<ConfigTreeItem[]> {
     const skills = await this.configService.getSkills(projectPath);
-    if (skills.length === 0) {
+    const commands = await this.configService.getCommands(projectPath);
+    if (skills.length === 0 && commands.length === 0) {
       return [
         new ConfigTreeItem(
           "No skills — use + to add",
@@ -879,16 +896,68 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<ConfigTreeIte
         ),
       ];
     }
-    return skills.map(
-      (skill) =>
-        new ConfigTreeItem(
-          skill.name,
-          "skill",
+    return [
+      ...skills.map(
+        (skill) =>
+          new ConfigTreeItem(
+            skill.name,
+            "skill",
+            vscode.TreeItemCollapsibleState.None,
+            skill,
+            undefined,
+            projectPath,
+          ),
+      ),
+      ...commands.map((cmd) => {
+        const item = new ConfigTreeItem(
+          `/${cmd.name}`,
+          "command",
           vscode.TreeItemCollapsibleState.None,
-          skill,
+          cmd,
           undefined,
           projectPath,
-        ),
+        );
+        item.description = ".claude/commands — the older format";
+        return item;
+      }),
+    ];
+  }
+
+  private async getRulesChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+    const rules = await this.configService.getRules(projectPath);
+    if (rules.length === 0) {
+      const none = new ConfigTreeItem(
+        "No rules",
+        "rule",
+        vscode.TreeItemCollapsibleState.None,
+        undefined,
+        undefined,
+        projectPath,
+      );
+      none.description = ".claude/rules/*.md, scoped with paths:";
+      return [none];
+    }
+    return rules.map(
+      (rule) => new ConfigTreeItem(rule.name, "rule", vscode.TreeItemCollapsibleState.None, rule, undefined, projectPath),
+    );
+  }
+
+  private async getWorkflowsChildren(projectPath: string): Promise<ConfigTreeItem[]> {
+    const workflows = await this.configService.getWorkflows(projectPath);
+    if (workflows.length === 0) {
+      const none = new ConfigTreeItem(
+        "No workflows",
+        "workflow",
+        vscode.TreeItemCollapsibleState.None,
+        undefined,
+        undefined,
+        projectPath,
+      );
+      none.description = ".claude/workflows — saved from /workflows";
+      return [none];
+    }
+    return workflows.map(
+      (wf) => new ConfigTreeItem(wf.name, "workflow", vscode.TreeItemCollapsibleState.None, wf, undefined, projectPath),
     );
   }
 

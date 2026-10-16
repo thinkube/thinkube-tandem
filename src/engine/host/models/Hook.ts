@@ -7,42 +7,69 @@
  * Hook - Claude Code hook configuration
  *
  * Hooks execute at various points in Claude Code's lifecycle.
- * Supports 12 event types and 4 hook types (command, http, prompt, agent).
+ * The events and the five hook types (command, http, prompt, agent,
+ * mcp_tool) are Claude Code's own, as the Agent SDK declares them.
  */
 
 export const HOOK_EVENTS = [
   "SessionStart",
-  "SessionEnd",
+  "Setup",
   "UserPromptSubmit",
-  "Stop",
-  "StopFailure",
+  "UserPromptExpansion",
   "PreToolUse",
-  "PostToolUse",
   "PermissionRequest",
   "PermissionDenied",
+  "PostToolUse",
+  "PostToolUseFailure",
+  "PostToolBatch",
+  "Notification",
+  "MessageDisplay",
+  "SubagentStart",
+  "SubagentStop",
+  "TaskCreated",
+  "TaskCompleted",
+  "Stop",
+  "StopFailure",
+  "TeammateIdle",
+  "InstructionsLoaded",
+  "ConfigChange",
   "CwdChanged",
+  "DirectoryAdded",
   "FileChanged",
   "WorktreeCreate",
+  "WorktreeRemove",
+  "PreCompact",
+  "PostCompact",
+  "Elicitation",
+  "ElicitationResult",
+  "SessionEnd",
 ] as const;
 
 export type HookEvent = (typeof HOOK_EVENTS)[number];
 
-type HookType = "command" | "http" | "prompt" | "agent";
+type HookType = "command" | "http" | "prompt" | "agent" | "mcp_tool";
 
 export interface HookDefinition {
   type: HookType;
   // command type
   command?: string;
+  args?: string[];
   timeout?: number;
   // http type
   url?: string;
   headers?: Record<string, string>;
-  // prompt type
+  // prompt and agent types: the prompt a model answers, or the task an agent verifies
   prompt?: string;
-  // agent type
-  agent?: string;
+  model?: string;
+  // mcp_tool type
+  server?: string;
+  tool?: string;
+  input?: Record<string, unknown>;
   // common optional fields
-  if?: string; // conditional expression
+  if?: string; // permission-rule syntax, on tool events
+  onFailure?: "continue" | "block";
+  statusMessage?: string;
+  once?: boolean;
   async?: boolean;
   asyncRewake?: boolean;
 }
@@ -61,7 +88,8 @@ export interface Hook {
   command?: string;
   url?: string;
   prompt?: string;
-  agent?: string;
+  server?: string;
+  tool?: string;
   timeout?: number;
   filePath?: string;
 }
@@ -79,7 +107,8 @@ export function createHook(
     command: hookDef.command,
     url: hookDef.url,
     prompt: hookDef.prompt,
-    agent: hookDef.agent,
+    server: hookDef.server,
+    tool: hookDef.tool,
     timeout: hookDef.timeout,
   };
 }

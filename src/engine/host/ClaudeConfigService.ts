@@ -42,6 +42,31 @@ import { McpServer, McpServerConfig } from "./models/McpServer";
 
 export type ConfigScope = "project" | "global";
 
+/** What a hook runs, as one string: the command, the URL, the prompt, or
+ *  the MCP tool — the identity its row shows and its deletion matches. */
+function hookIdentity(h: {
+  command?: string;
+  url?: string;
+  prompt?: string;
+  server?: string;
+  tool?: string;
+}): string {
+  return h.command || h.url || h.prompt || (h.server && h.tool ? `${h.server}/${h.tool}` : "") || "";
+}
+
+/** A rule file under .claude/rules, with the paths it is scoped to. */
+export interface RuleFile {
+  name: string;
+  filePath: string;
+  paths: string[];
+}
+
+/** A workflow script under .claude/workflows. */
+export interface WorkflowFile {
+  name: string;
+  filePath: string;
+}
+
 export class ClaudeConfigService {
   private _onConfigChanged = new vscode.EventEmitter<ClaudeConfig>();
   readonly onConfigChanged = this._onConfigChanged.event;
@@ -173,14 +198,15 @@ export class ClaudeConfigService {
         for (const hookDef of matcher.hooks) {
           const hookType = hookDef.type || "command";
           hooks.push({
-            id: `${event}-${matcher.matcher}-${hookDef.command || hookDef.url || hookDef.prompt || hookDef.agent || ""}`,
+            id: `${event}-${matcher.matcher}-${hookIdentity(hookDef)}`,
             event,
             matcher: matcher.matcher,
             hookType,
             command: hookDef.command,
             url: hookDef.url,
             prompt: hookDef.prompt,
-            agent: hookDef.agent,
+            server: hookDef.server,
+            tool: hookDef.tool,
             timeout: hookDef.timeout,
           });
         }
@@ -251,21 +277,8 @@ export class ClaudeConfigService {
 
     for (const matcher of matchers) {
       if (matcher.matcher === hookToDelete.matcher) {
-        matcher.hooks = matcher.hooks.filter((h) => {
-          // Match by the type-specific identifier
-          switch (h.type) {
-            case "command":
-              return h.command !== hookToDelete.command;
-            case "http":
-              return h.url !== hookToDelete.url;
-            case "prompt":
-              return h.prompt !== hookToDelete.prompt;
-            case "agent":
-              return h.agent !== hookToDelete.agent;
-            default:
-              return h.command !== hookToDelete.command;
-          }
-        });
+        // Match by the type-specific identity: what the hook runs.
+        matcher.hooks = matcher.hooks.filter((h) => hookIdentity(h) !== hookIdentity(hookToDelete));
       }
     }
 
@@ -514,6 +527,47 @@ export class ClaudeConfigService {
         this._onConfigChanged.fire(config);
       }
     }
+  }
+
+  // ========== Rules and workflows ==========
+
+  /** The rule files of .claude/rules, each with the `paths:` it is scoped to. */
+  async getRules(projectPath?: string): Promise<RuleFile[]> {
+    const config = await this.getConfig("project", projectPath);
+    if (!fs.existsSync(config.rulesDir)) return [];
+    const out: RuleFile[] = [];
+    for (const file of fs.readdirSync(config.rulesDir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      const filePath = path.join(config.rulesDir, file);
+      let paths: string[] = [];
+      try {
+        const text = fs.readFileSync(filePath, "utf8");
+        const fm = text.match(/^---\n([\s\S]*?)\n---/);
+        const line = fm?.[1].split("\n").find((l) => /^paths\s*:/.test(l));
+        if (line)
+          paths = line
+            .replace(/^paths\s*:\s*/, "")
+            .replace(/^\[|\]$/g, "")
+            .split(",")
+            .map((p) => p.trim().replace(/^["']|["']$/g, ""))
+            .filter(Boolean);
+      } catch (error) {
+        console.error(`Error reading rule ${file}:`, error);
+      }
+      out.push({ name: file.replace(/\.md$/, ""), filePath, paths });
+    }
+    return out;
+  }
+
+  /** The workflow scripts of .claude/workflows. */
+  async getWorkflows(projectPath?: string): Promise<WorkflowFile[]> {
+    const config = await this.getConfig("project", projectPath);
+    if (!fs.existsSync(config.workflowsDir)) return [];
+    return fs
+      .readdirSync(config.workflowsDir)
+      .filter((f) => /\.(m?js|ts)$/.test(f))
+      .sort()
+      .map((f) => ({ name: f.replace(/\.(m?js|ts)$/, ""), filePath: path.join(config.workflowsDir, f) }));
   }
 
   // ========== Agents ==========
@@ -781,7 +835,6 @@ export class ClaudeConfigService {
     // Create directories
     const dirs = [
       path.dirname(config.settingsPath),
-      config.commandsDir,
       config.skillsDir,
       config.agentsDir,
       config.rulesDir,

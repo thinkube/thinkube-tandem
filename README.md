@@ -26,7 +26,7 @@ for you, and the machine's data one gesture away.
 - **The Tandem view.** The *Tandem* icon in the activity bar opens two views.
   *Projects* shows products, the repositories filed under each, and their
   thinking spaces. *Configuration* shows the Claude Code configuration:
-  hooks, commands, skills, agents, MCP servers and permissions, with
+  hooks, skills, agents, rules, workflows, MCP servers and permissions, with
   commands to add, open and delete them.
 - **The store.** Spaces, products and the defect ledger are kept in the
   tandem store, by default `~/thinkube-tandem-store`
