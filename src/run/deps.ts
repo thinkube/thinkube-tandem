@@ -26,6 +26,12 @@ export interface DispatchDeps {
   model: string;
   /** Per-role model resolution (judgment raised above the base). */
   workerModel?: WorkerModelConfig;
+  /** What a unit may spend, and what it falls back to when its model is
+   *  overloaded. Both are the harness's own limits: a unit over its budget
+   *  ends with the budget named as what it did not deliver, and an
+   *  overloaded model is swapped for the fallback instead of ending the
+   *  round. Absent means no ceiling and no fallback. */
+  spend?: { unitBudgetUsd?: number; fallbackModel?: string };
   /**
    * What SOMEBODY TOLD the run about this repository — a setting, a
    * remembered file, a reading. Candidates, never trusted: the door runs

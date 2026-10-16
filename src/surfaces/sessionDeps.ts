@@ -48,6 +48,8 @@ export interface SessionDeps {
   /** Retire a merged TEP's worktrees (best-effort; injectable). */
   retire?: (tepId: string) => Promise<void>;
   workerModel?: WorkerModelConfig;
+  /** What a worker round may spend, and the model it falls back to. */
+  spend?: { unitBudgetUsd?: number; fallbackModel?: string };
   /** Frontier width for the run (v1 default 4). */
   maxConcurrent?: number;
   docsGateMode?: "blocking" | "advisory";

@@ -50,6 +50,8 @@ export interface WorkerOutcome {
    *  environment's failures, named at the moment they happened, never a
    *  verdict on the work. */
   toolFailures?: { tool: string; error: string }[];
+  /** What this round cost, in US dollars, as the harness reported it. */
+  costUsd?: number;
 }
 
 /** Tools that only look at the code. */
@@ -125,6 +127,11 @@ export interface RunWorkerDeps {
    */
   unfenced?: boolean;
   maxTurns?: number;
+  /** The most this round may spend, in US dollars; the harness ends the
+   *  round when it is reached, and the unit says so as undelivered. */
+  budgetUsd?: number;
+  /** The model the harness switches to when `model` is overloaded. */
+  fallbackModel?: string;
   /** Continue a session this run already had: the author still holds its
    *  own reasoning, so the intent behind the code survives the repair. */
   resume?: string;
@@ -378,6 +385,9 @@ export async function runUnitWorker(
   /** Stops refused for want of a report, so a worker is never made to loop. */
   let stopsRefused = 0;
   const toolFailures: { tool: string; error: string }[] = [];
+  let costUsd: number | undefined;
+  /** The harness ended the round at its budget. */
+  let overBudget = false;
   const listening = deps.pulse?.();
   try {
     const stream = query({
@@ -420,6 +430,8 @@ export async function runUnitWorker(
         strictMcpConfig: true,
         thinking: { type: "disabled" },
         maxTurns: deps.maxTurns ?? 80,
+        ...(deps.budgetUsd ? { maxBudgetUsd: deps.budgetUsd } : {}),
+        ...(deps.fallbackModel ? { fallbackModel: deps.fallbackModel } : {}),
         abortController: deps.abort,
         ...(listening ? { includePartialMessages: true } : {}),
         ...(mcpServers ? { mcpServers } : {}),
@@ -556,6 +568,8 @@ export async function runUnitWorker(
           }
         }
       } else if (rec.type === "result") {
+        if (typeof rec.total_cost_usd === "number") costUsd = rec.total_cost_usd;
+        if (rec.subtype === "error_max_budget_usd") overBudget = true;
         const turn = typeof rec.result === "string" ? rec.result : text;
         const q = extractNeedsInput(turn);
         if (q && !parkedOnce) {
@@ -574,7 +588,7 @@ export async function runUnitWorker(
     }
   } catch (err) {
     if (containment)
-      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}) };
+      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}), ...(costUsd !== undefined ? { costUsd } : {}) };
     return {
       ok: false,
       finalText: text,
@@ -588,8 +602,11 @@ export async function runUnitWorker(
   } finally {
     listening?.ended();
   }
-  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}) };
-  const undelivered = realUndelivered(text);
+  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}), ...(costUsd !== undefined ? { costUsd } : {}) };
+  const undelivered = [
+    ...realUndelivered(text),
+    ...(overBudget ? [`the round's budget of $${deps.budgetUsd} was spent before the work was finished`] : []),
+  ];
   return {
     ok: undelivered.length === 0,
     finalText: text,
@@ -597,7 +614,7 @@ export async function runUnitWorker(
     ...(sessionId ? { sessionId } : {}),
     reads,
     writes,
-    ...(toolFailures.length ? { toolFailures } : {}),
+    ...(toolFailures.length ? { toolFailures } : {}), ...(costUsd !== undefined ? { costUsd } : {}),
   };
 }
 

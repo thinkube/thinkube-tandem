@@ -462,6 +462,8 @@ export async function dispatchTep(
           role,
           blind,
           footprint: next.footprint,
+          ...(deps.spend?.unitBudgetUsd ? { budgetUsd: deps.spend.unitBudgetUsd } : {}),
+          ...(deps.spend?.fallbackModel ? { fallbackModel: deps.spend.fallbackModel } : {}),
           // A tester's turns scale with what it must write; a coder keeps the default.
           ...(role === "test" ? { maxTurns: testerTurns(next.footprint.length) } : {}),
           alsoAllowed: () => [...unionFor(tree, next.id)(), ...(tree === worktree ? testerPaths : [])],
@@ -505,6 +507,7 @@ export async function dispatchTep(
         outcome = first.outcome;
         began = first.began;
       } else outcome = await tally.worker(workerDeps, brief);
+      if (outcome.costUsd) st.spent(next.id, outcome.costUsd);
       if (outcome.sessionId) {
         sessions.set(next.id, outcome.sessionId);
         if (blind) blindSessions.add(next.id);

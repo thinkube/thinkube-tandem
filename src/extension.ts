@@ -13,6 +13,7 @@ import { catchUpOnMergedWork } from "./surfaces/runGate";
 import * as vscode from "vscode";
 import * as path from "node:path";
 import { startRunElsewhere } from "./run/spawnDriver";
+import { spendSettings } from "./run/spendSettings";
 import { checkReadiness, readinessNow } from "./run/readiness";
 import { harvestOwnRepairs } from "./engine/selfDefects";
 import { TandemSession } from "./surfaces/session";
@@ -206,6 +207,7 @@ async function ensureSession(
       workerModel: config.get<string>("workerModel", "sonnet"),
       workerModelByRole: config.get<Record<string, string>>("workerModelByRole", {}),
     },
+    spend: spendSettings(config),
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),

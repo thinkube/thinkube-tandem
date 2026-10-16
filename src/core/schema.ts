@@ -285,6 +285,11 @@ export interface Delivery {
    *  same clock reading that minted `runId` — one moment names both. */
   producedAt?: string;
   proofs: Proof[];
+  /** What the run's workers spent, in US dollars as the harness reported
+   *  it at the end of each of their rounds, added up. What a delivery
+   *  cost is part of its record: a change to how workers run is judged
+   *  by this number as much as by its verdicts. */
+  costUsd?: number;
   /** The delivery's home on the forge (pull request URL). */
   url?: string;
   /** Declared gaps from the run's workers — honest, never hidden. */

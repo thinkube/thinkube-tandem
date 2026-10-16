@@ -101,6 +101,7 @@ export async function dispatchScopePlan(args: {
         ...(args.finishedBefore?.length ? { finishedBefore: args.finishedBefore } : {}),
         model: deps.round.model,
         workerModel: deps.workerModel,
+        ...(deps.spend ? { spend: deps.spend } : {}),
         concurrency: deps.maxConcurrent,
         state: args.runState,
         spaceName: args.spaceName,

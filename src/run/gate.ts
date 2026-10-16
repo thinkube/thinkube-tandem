@@ -746,9 +746,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const moduleSizes = await treeShape(worktree);
   g.state.phase("gate", "done", "every check held");
   g.state.phase("delivery", "running", "committing the work and opening the delivery");
+  // What the workers spent, added up over every unit, for the record.
+  const costUsd = deps.state.view().units.reduce((sum, u) => sum + (u.costUsd ?? 0), 0);
   return handOver({
     tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
     ...(moduleSizes ? { moduleSizes } : {}),
+    ...(costUsd ? { costUsd } : {}),
     rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec,
     // The work goes into the project here, so the platform can start
     // building it while the record is written.

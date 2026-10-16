@@ -263,6 +263,17 @@
           "minimum": 1,
           "description": "Concurrent workers on the run's ready frontier."
         },
+        "thinkubeTandem.unitBudgetUsd": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "The most one worker round may spend, in US dollars. A round that reaches it ends with the budget named as what it did not deliver. 0 means no ceiling."
+        },
+        "thinkubeTandem.fallbackModel": {
+          "type": "string",
+          "default": "",
+          "description": "The model a worker switches to when its own is overloaded, instead of ending the round. Empty means none."
+        },
         "thinkubeTandem.docsGateMode": {
           "type": "string",
           "enum": [

@@ -25,15 +25,18 @@ export function tallied(worker: Worker): {
   let reads = 0;
   let writes = 0;
   let rounds = 0;
+  let cost = 0;
   return {
     worker: async (deps, brief) => {
       const outcome = await worker(deps, brief);
       rounds++;
       reads += outcome.reads ?? 0;
       writes += outcome.writes ?? 0;
+      cost += outcome.costUsd ?? 0;
       return outcome;
     },
     line: (unit, start) =>
-      `📖 ${unit}: ${reads} Read/Glob/Grep and ${writes} Edit/Write tool use(s) over ${rounds} round(s) — ${start}`,
+      `📖 ${unit}: ${reads} Read/Glob/Grep and ${writes} Edit/Write tool use(s) over ${rounds} round(s)` +
+      `${cost ? `, $${cost.toFixed(4)}` : ""} — ${start}`,
   };
 }

@@ -72,6 +72,8 @@ export interface RunUnitView {
    *  product takes one per criterion, and the card links them so the
    *  person looks at the same page it did. Absolute paths. */
   looks?: string[];
+  /** What this unit's rounds cost, in US dollars, added up. */
+  costUsd?: number;
 }
 
 /**
@@ -248,6 +250,14 @@ export class RunState {
     const u = this.units.get(id);
     if (!u || !files.length) return;
     u.looks = [...files];
+    this.onChange();
+  }
+
+  /** What one of the unit's rounds cost, added to the unit's account. */
+  spent(id: string, usd: number): void {
+    const u = this.units.get(id);
+    if (!u || !(usd > 0)) return;
+    u.costUsd = (u.costUsd ?? 0) + usd;
     this.onChange();
   }
 

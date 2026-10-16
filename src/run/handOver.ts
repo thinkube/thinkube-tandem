@@ -43,6 +43,8 @@ export async function handOver(a: {
   findings: { saw: string; ask?: string }[];
   /** The shape of this tree's modules, for the report to say. */
   moduleSizes?: TreeShape;
+  /** What the run's workers spent, for the record to say. */
+  costUsd?: number;
   rulings: Delivery["rulings"];
   decisions: Delivery["decisions"];
   kept: { path: string; criterionId: string }[];
@@ -86,6 +88,7 @@ export async function handOver(a: {
     id: `delivery-${tep}`,
     ...(findings.length ? { findings } : {}),
     ...(a.moduleSizes ? { moduleSizes: a.moduleSizes } : {}),
+    ...(a.costUsd ? { costUsd: a.costUsd } : {}),
     cutId: cut.id,
     branch,
     runId,

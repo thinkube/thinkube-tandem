@@ -23,6 +23,7 @@ import {
 } from "../core/workProjects";
 import { vs } from "../core/vscodeHost";
 import { checkReadiness, readinessNow, type Readiness } from "../run/readiness";
+import { spendSettings } from "../run/spendSettings";
 
 /** The multi-select over the PRODUCT's repositories (the human's boundary
  *  correction: never "whatever is open in the workspace"). Returns the
@@ -146,6 +147,7 @@ export async function ensureWorkSession(args: {
       workerModel: config.get<string>("workerModel", "sonnet"),
       workerModelByRole: config.get<Record<string, string>>("workerModelByRole", {}),
     },
+    spend: spendSettings(config),
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
