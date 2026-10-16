@@ -163,6 +163,22 @@ of them there — nothing has users.
   only for the same base commit; a unit's card says what it is doing and
   waiting on, and since when.
 
+## A worker inherits nothing of the person's (2026-10-16)
+- Every model call Tandem makes — a worker, the authoring round, a
+  grounding or volume round — passes `settingSources: []` and
+  `strictMcpConfig: true`. Without them the SDK loads the person's
+  `~/.claude/settings.json` (hooks, `env` with `TANDEM_AUTONOMOUS=1`,
+  instruction files) and the user-scope MCP servers of `~/.claude.json`,
+  so a coder under `bypassPermissions` could call thinkube-control, the
+  person's browser, and Tandem's own person-only tools. The driver of the
+  running product already did this; now all of them do.
+- The repository's project settings (`.claude/settings.json`, `CLAUDE.md`)
+  do not load for workers either. A repository's instruction file is
+  written for a person's session and can contradict the brief (commit
+  policy, deploy steps). The repository's idiom reaches a worker through
+  the brief and the digest today, and through role definitions and
+  `.claude/rules` when roles become agent definitions. Revisit then.
+
 ## Test homes are a maintain slice (2026-08-17)
 - Bringing existing test homes under a promise is its own slice, appended
   after the production slices: scheduled after the code those tests import

@@ -86,6 +86,12 @@ export async function runReadRound(
           model: deps.model,
           ...(deps.abort ? { abortController: deps.abort } : {}),
           permissionMode: "bypassPermissions",
+          // Nothing of the person's: no settings, hooks, instruction files
+          // or MCP servers. Each round would otherwise start every MCP
+          // server the person has and carry its tool list, for a call
+          // that reads code or turns text into JSON.
+          settingSources: [],
+          strictMcpConfig: true,
           thinking: { type: "adaptive" },
           effort: deps.effort ?? "high",
           maxTurns: deps.maxTurns ?? (deps.tools === "none" ? TOOLLESS_TURNS : 40),

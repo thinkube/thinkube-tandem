@@ -411,6 +411,13 @@ export async function runUnitWorker(
         env: workerEnv(),
         ...(deps.resume ? { resume: deps.resume, ...(deps.fork ? { forkSession: true } : {}) } : {}),
         permissionMode: "bypassPermissions",
+        // The worker's whole world is the brief and the tree. The person's
+        // own settings, hooks, instruction files and MCP servers belong to
+        // the person's sessions: a worker that inherits them is told to
+        // push, runs the person's hooks, and can call the platform and
+        // Tandem's own person-only tools under bypassPermissions.
+        settingSources: [],
+        strictMcpConfig: true,
         thinking: { type: "disabled" },
         maxTurns: deps.maxTurns ?? 80,
         abortController: deps.abort,
