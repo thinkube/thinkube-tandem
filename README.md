@@ -95,6 +95,7 @@ environment to the server, so the variable goes in the `env` block of
 | `answer_question` | Decides an open question by id, with the given text or its recommendation. |
 | `choose_set` | Chooses the set to build next, by id, and works out its promises. |
 | `build` | Signs the chosen set's cut (Build) and starts its run. |
+| `does_not_hold` | Says a delivered promise does not hold (It does not hold), by criterion or promise id, with what was seen; the promise goes back to be repaired. |
 | `accept_delivery` | Accepts a delivery, by id. |
 | `reject_delivery` | Rejects a delivery, by id. |
 

@@ -154,7 +154,7 @@ test("the server lists its tools, the person's among them", { timeout: 30_000 },
     assert.ok(names.includes("save_draft"));
     assert.ok(names.includes("read_draft"), "a drafted line must be readable through the server");
     assert.ok(names.includes("list_spaces"), "a server must be able to say what spaces exist");
-    for (const gate of ["build", "accept_delivery", "keep_draft", "choose_set", "answer_question"])
+    for (const gate of ["build", "accept_delivery", "keep_draft", "choose_set", "answer_question", "does_not_hold"])
       assert.ok(names.includes(gate), `${gate} must be offered; the boundary refuses it unless TANDEM_AUTONOMOUS=1`);
   }
 });

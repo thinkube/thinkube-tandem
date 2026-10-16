@@ -152,7 +152,7 @@ function deliveryReport(c: ToolCall): string {
   const d = c.session.space.deliveries[c.session.space.deliveries.length - 1];
   if (!d) return "no delivery yet";
   const proofs = (d.proofs ?? []).map(
-    (p) => `  ${p.verdict.padEnd(6)} ${p.label}${p.ref ? ` — ${p.ref}` : ""}`,
+    (p) => `  ${p.verdict.padEnd(6)} ${p.criterionId ? `[${p.criterionId}] ` : ""}${p.label}${p.ref ? ` — ${p.ref}` : ""}`,
   );
   return [
     `delivery for ${d.cutId}${d.withheld ? ` — WITHHELD: ${d.withheld}` : ""}`,
@@ -603,6 +603,34 @@ export function toolTable(): ToolDef[] {
         required: ["space", "set"],
       },
       run: async (c) => notLive(c, "build") ?? gestureReport(c, await c.session.build(str(c, "set"))),
+    },
+    {
+      name: "does_not_hold",
+      action: "contradict",
+      description:
+        "Say that a delivered promise does not hold (the editor's \"It does not hold\"), by the criterion id read_delivery shows in brackets, or by promise id, with what was seen. The promise goes back to be repaired. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...WHERE,
+          criterion: { type: "string", description: "the criterion id, as read_delivery shows it in brackets" },
+          promise: { type: "string", description: "the promise id, to say all its criteria do not hold" },
+          said: { type: "string", description: "what was seen, in plain words: a repair is told this" },
+        },
+        required: ["space", "said"],
+      },
+      run: (c) => {
+        const criterion = str(c, "criterion");
+        const promise = str(c, "promise");
+        if (!criterion && !promise) return "refused: name the criterion (or the promise) that does not hold";
+        return (
+          notLive(c, "contradict") ??
+          gestureReport(
+            c,
+            c.session.contradict(criterion ? { criterionId: criterion } : { promiseId: promise }, str(c, "said")),
+          )
+        );
+      },
     },
     {
       name: "accept_delivery",
