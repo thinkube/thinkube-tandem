@@ -15,9 +15,12 @@
  * a red like any other: repaired from the refusal's own words, built here,
  * landed, and made live again, twice at most (src/run/tryAgain.ts). A
  * refusal that judged nothing — the machinery could not run — is not
- * repaired, because a repair after no fault changes nothing.
+ * repaired, because a repair after no fault changes nothing. A repository
+ * suite the closing gate left to the pipeline is settled by the same
+ * answer (src/run/suiteInLivePhase.ts).
  */
 import type { Delivery } from "../core/schema";
+import { isSuiteInLivePhase, settleSuiteInLivePhase, type LivePhaseAnswer } from "./suiteInLivePhase";
 import { repairUntilLive, type TryAgainSteps } from "./tryAgain";
 
 /** What making it live answered. `unjudged` says it could not be tried. */
@@ -83,10 +86,20 @@ export async function goLiveAndJudge(a: {
   a.phase(went.live ? "done" : "failed", went.live ? `live at ${a.at}` : (went.why ?? "it did not go live"));
   if (!went.live) a.noProduct(went.why ?? "the work never went live");
   const heads = alsoMerged.length && d.mergedHead ? { mergedHeads: [d.mergedHead, ...alsoMerged] } : {};
+  // The suite the pipeline runs before it builds is answered by going live:
+  // live means its test step passed; a refusal is read in its own words.
+  const suite: LivePhaseAnswer | undefined = !d.proofs.some(isSuiteInLivePhase)
+    ? undefined
+    : went.live
+      ? { live: true }
+      : went.unjudged || a.halted()
+        ? { live: false, notJudged: went.why ?? "the work was never made live" }
+        : { live: false, refusal: (await a.whyItFailed()).evidence };
+  const answered = (x: Delivery): Delivery => (suite ? settleSuiteInLivePhase(x, suite) : x);
   a.record(
     went.live
-      ? { ...(await a.settle(d)), ...heads, liveAt: a.at }
-      : {
+      ? answered({ ...(await a.settle(d)), ...heads, liveAt: a.at })
+      : answered({
           ...d,
           ...heads,
           afterMerge: {
@@ -96,7 +109,7 @@ export async function goLiveAndJudge(a: {
             ...(went.why ? { detail: went.why } : {}),
             ...(tried ? { tried } : {}),
           },
-        },
+        }),
   );
   if (went.live) await a.judge(alsoMerged);
 }

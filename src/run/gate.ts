@@ -8,7 +8,9 @@
  * branch, the delivered tree is built, every check runs, assessments are
  * graded by a fresh reviewer, the honesty scan reads the diff, the
  * repository's own suite decides, the checks are recorded on the delivery
- * and discarded from the tree, and the delivery is opened.
+ * and discarded from the tree, and the delivery is opened. A suite the
+ * platform's pipeline runs as part of going live is not run here; the live
+ * phase settles its proof (src/run/suiteInLivePhase.ts).
  *
  * A red suite is not delivered. The work may satisfy its own checks and
  * still leave the repository's standing checks red; that delivery is
@@ -55,6 +57,7 @@ import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { askTheTool } from "./settles";
 import { declaredBuildPassed, IMAGE_JUDGED_BY_DEPLOY } from "./buildWords";
 import { downstreamOf } from "./survey";
+import { suiteLeftToLivePhase, suiteRunInLivePhase } from "./suiteInLivePhase";
 
 export type { GateContext } from "./state";
 
@@ -309,6 +312,14 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       .filter((p) => p.test?.enabled && p.test.command)
       .map((p) => ({ root: p.root, cmd: p.test!.command! }));
   })();
+  // A suite the platform's pipeline runs as part of going live is judged
+  // there, before the build, and the live phase settles its proof
+  // (src/run/suiteInLivePhase.ts). Running it here as well runs the same
+  // tests twice. The build still runs here: it is the product-build veto.
+  const pipelineRuns = suiteRunInLivePhase(deps.repoRoot);
+  const leftToPipeline = !!pipelineRuns && (!!g.suite || partSuites.length > 0);
+  const suite = leftToPipeline ? undefined : g.suite;
+  const suitesHere = leftToPipeline ? [] : partSuites;
   const suiteName = (root: string): string => (root === "." ? "the repository's" : `the ${root}`);
   const runSuitesLocally = async (cwd: string): Promise<{ code: number | null; output: string }> => {
     const parts: string[] = [];
@@ -320,7 +331,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
           : `not ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}`,
       );
     }
-    for (const p of partSuites) {
+    for (const p of suitesHere) {
       const at = path.join(cwd, p.root);
       const r = await boundedExec(`TEST_DATABASE_NAME=test_${app} ${p.cmd}`, at);
       if (r.code === 0) {
@@ -336,11 +347,17 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { code: red ? 1 : 0, output: parts.join("\n") };
   };
   const judgeWith = async (cmd: string, cwd: string): Promise<{ code: number | null; output: string }> =>
-    g.suite ? judgeTree(cmd, cwd) : runSuitesLocally(cwd);
+    suite ? judgeTree(cmd, cwd) : runSuitesLocally(cwd);
   // What the gate judges the tree by: the whole suite where one runs here,
   // else the build — beside which the declared part suites also run.
-  const treeCmd = g.suite ?? deps.build;
-  log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
+  const treeCmd = suite ?? deps.build;
+  if (leftToPipeline)
+    say(
+      `${tep}: the repository's suite is not run here — ${pipelineRuns} runs it in the platform pipeline's test step ` +
+        `before it builds, and the live phase settles the repo suite proof` +
+        (deps.build ? `; the tree is judged here by its ${template ? "declared" : "product"} build (${deps.build})` : ""),
+    );
+  else log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
   // judgeTree runs the product build EVERY time it judges, and folds a
   // failure into the output as a named "not ok", so the verdict below is
   // always about the tree as it stands now. An earlier reading of the
@@ -359,7 +376,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // no test asks, whether running the work again still changes anything.
   const told = thinkubeDeclaration(worktree);
   const verify = told && "declared" in told ? told.declared.verify : undefined;
-  if (!g.suite && verify) {
+  if (!leftToPipeline && !suite && verify) {
     const settled = await askTheTool({
       repoRoot: worktree,
       verify,
@@ -372,11 +389,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     log(`${tep}: the tool answered — ${settled.verdict}`);
     if (settled.verdict === "red")
       return { refusals: [`the repository's own tool says the work does not hold:\n${settled.detail}`], undelivered: [] };
-  } else if (!g.suite) {
+  } else if (!leftToPipeline && !suite) {
     log(
       deps.build
         ? `${tep}: no whole-suite command runs here — the tree is judged by its own ${template ? "declared" : "product"} build${
-            partSuites.length ? ` and the ${partSuites.map((p) => p.root).join(", ")} suite(s)` : ""
+            suitesHere.length ? ` and the ${suitesHere.map((p) => p.root).join(", ")} suite(s)` : ""
           } (${deps.build})${template ? `; ${IMAGE_JUDGED_BY_DEPLOY}` : ""}`
         : `${tep}: no whole-suite command runs here — the standing-suite veto does not apply`,
     );
@@ -387,9 +404,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // reporting it as a red suite tells a person their work broke when what
   // broke is this run's idea of how to test their repository. That is the
   // sentence a whole delivery was withheld on.
-  if (ran && g.suite && !aRunnerAnswered(ran.code, ran.output)) {
+  if (ran && suite && !aRunnerAnswered(ran.code, ran.output)) {
     const why =
-      `the command this repository proved for its whole suite (${g.suite}) did not run at the gate — ` +
+      `the command this repository proved for its whole suite (${suite}) did not run at the gate — ` +
       `no test runner answered, so nothing here is a verdict about the work. ` +
       `The branch keeps everything. What the shell said:\n${ran.output.trim().split("\n").slice(-8).join("\n").slice(0, 800)}`;
     say(`⛔ ${tep}: ${why}`);
@@ -529,10 +546,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (treeCmd)
     proofs.push({
       kind: "suite",
-      label: g.suite ? "repo suite" : template ? "the declared build" : "the product build",
+      label: suite ? "repo suite" : template ? "the declared build" : "the product build",
       verdict: verdict.green ? "green" : "red",
       ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
     });
+  if (leftToPipeline) proofs.push(suiteLeftToLivePhase(pipelineRuns!));
 
   // What the machine could not settle rides the delivery for the person to
   // weigh at Accept. A rule may only veto when its failure names an actor
