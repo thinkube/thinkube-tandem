@@ -266,8 +266,7 @@
         "thinkubeTandem.unitBudgetUsd": {
           "type": "number",
           "default": 0,
-          "minimum": 0,
-          "description": "The most one worker round may spend, in US dollars. A round that reaches it ends with the budget named as what it did not deliver. 0 means no ceiling."
+          "description": "The most one worker round may spend, in US dollars. A round that reaches it ends with the budget named as what it did not deliver. 0 or any value below 0 means no ceiling."
         },
         "thinkubeTandem.fallbackModel": {
           "type": "string",
