@@ -5,11 +5,14 @@
 
 /**
  * One SDK worker executing one execution unit inside the TEP worktree.
- * Footprint containment is the engine's doctrine re-hosted: a PostToolUse
- * check diffs the whole tree against the run's footprint union, reverts
- * ONLY offending paths, and fails the unit with containment named. A
- * parked worker (the NEEDS-INPUT sentinel) keeps its session alive while
- * the human answers through the run view — the oracle lesson's door.
+ * The footprint is enforced by the harness: it is passed as allow rules,
+ * a file tool naming a path outside them comes to the door, and the door
+ * asks the run (src/run/footprintRules.ts). The shell names no path, so a
+ * file a command writes is still found in the tree afterwards: a
+ * PostToolUse check restores ONLY offending paths, and fails the unit
+ * with containment named on the second offence. A parked worker (the
+ * NEEDS-INPUT sentinel) keeps its session alive while the human answers
+ * through the run view — the oracle lesson's door.
  */
 import { theModel } from "../engine/theModel";
 import type { RoundPulse } from "../derive/round";
@@ -22,6 +25,8 @@ import { clearanceLesson, refusedToolUse, toolsRefusedTo, clusterReach } from ".
 export { clearanceLesson, refusedToolUse, toolsRefusedTo, FENCED_TOOLS } from "./toolsAllowed";
 import { describeTool } from "./toolsAllowed";
 import { CHALLENGE_TOOL_TEXT } from "./challengeBudget";
+import { allowedFor, doorFor, pathsNamedByTool, toolsGivenTo } from "./footprintRules";
+export { pathsNamedByTool } from "./footprintRules";
 
 export interface WorkerOutcome {
   ok: boolean;
@@ -47,7 +52,8 @@ export interface RunWorkerDeps {
   model: string;
   worktree: string;
   role: "code" | "test";
-  /** What this unit is cleared to change; anything else is restored. */
+  /** What this unit is cleared to change: a file tool naming anything
+   *  else is refused at the door, and a shell write elsewhere is restored. */
   footprint: string[];
   /** What OTHER units in this tree are cleared to change — their writes are
    *  legitimate, not this unit's (the frontier runs in parallel). */
@@ -119,8 +125,10 @@ export interface RunWorkerDeps {
   fork?: boolean;
 }
 
-/** Tools whose use can leave a change on disk. */
-const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
+/** Tools whose use can leave a change on disk that no rule saw: a shell
+ *  command names no path, so the footprint is read from the tree after it
+ *  ran. A file tool names its path and is ruled on before it writes. */
+const WRITING_TOOLS = ["Bash"];
 
 /**
  * The guard, as it really runs: read what the tree has become, judge it
@@ -182,25 +190,6 @@ async function changeAt(worktree: string, path: string): Promise<string> {
   return (await git(worktree, ["diff", "--no-index", "--", "/dev/null", path])).slice(0, 8000);
 }
 
-/**
- * The repository-relative paths a tool call named, when it named any.
- *
- * `Write` and `Edit` carry `file_path`, `NotebookEdit` carries
- * `notebook_path` — each an absolute path into the worktree. `Bash` names
- * nothing: a shell command can write anywhere, so there is nothing to
- * narrow by and the guard falls back to reading the tree.
- */
-export function pathsNamedByTool(
-  h: { tool_name?: string; tool_input?: Record<string, unknown> },
-  worktree: string,
-): string[] {
-  const named = ["file_path", "notebook_path"]
-    .map((k) => h.tool_input?.[k])
-    .filter((v): v is string => typeof v === "string" && !!v);
-  const root = worktree.endsWith("/") ? worktree : `${worktree}/`;
-  return named.map((p) => (p.startsWith(root) ? p.slice(root.length) : p));
-}
-
 /** The dirty paths this tool call is answerable for. A call that named its
  *  path answers for that alone; a shell command named none, so the tree is
  *  all there is to go on. */
@@ -226,28 +215,6 @@ async function outsideClearance(
     deps.baseline,
   );
 }
-
-/**
- * What the worker is told the first time it writes outside its clearance.
- *
- * The tree is already safe — the file was restored before this is read.
- * What is left is a worker that believes it has made a change it has not,
- * and the brief's own rule is what it needs: the clearance is asked for,
- * and only then made. A unit once read "the run clears you and you make
- * the change yourself", kept the conclusion, dropped the asking, and died
- * for a single correct line it was entitled to write.
- *
- * So the first one teaches. Killing the unit there discards everything it
- * built for a change the run would almost certainly have granted, and the
- * guard has every fact needed to say so instead.
- */
-
-
-
-
-
-
-
 
 const git = (cwd: string, args: string[]): Promise<string> =>
   new Promise((resolve) => {
@@ -410,7 +377,25 @@ export async function runUnitWorker(
         // cluster; what a check needs, the runner is given by the engine.
         env: workerEnv(),
         ...(deps.resume ? { resume: deps.resume, ...(deps.fork ? { forkSession: true } : {}) } : {}),
-        permissionMode: "bypassPermissions",
+        // A fenced worker is ruled on before it writes: the footprint is
+        // its allow rules, and a file tool naming anything else comes to
+        // the door. The closer is fenced by nothing (see `unfenced`).
+        permissionMode: deps.unfenced ? "bypassPermissions" : "default",
+        tools: toolsGivenTo(deps),
+        ...(deps.unfenced
+          ? {}
+          : {
+              allowedTools: allowedFor(deps),
+              canUseTool: doorFor({
+                worktree: deps.worktree,
+                footprint: () => deps.footprint,
+                ...(deps.clearFor ? { clearFor: deps.clearFor } : {}),
+                granted: (paths) => {
+                  deps.footprint = [...new Set([...deps.footprint, ...paths])];
+                },
+                log: deps.log,
+              }),
+            }),
         // The worker's whole world is the brief and the tree. The person's
         // own settings, hooks, instruction files and MCP servers belong to
         // the person's sessions: a worker that inherits them is told to
@@ -469,8 +454,8 @@ export async function runUnitWorker(
               hooks: [
                 async (h: { tool_name?: string; tool_input?: Record<string, unknown> }) => {
                   if (deps.unfenced || !WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
-                  // What THIS call wrote, when the tool said so. A shell
-                  // command names no path, so there the tree is all there is.
+                  // A shell command names no path, so the tree is all
+                  // there is to go on.
                   const wrote = pathsNamedByTool(h, deps.worktree);
                   const wanted = await outsideClearance(deps, wrote);
                   if (wanted.length && deps.clearFor) {

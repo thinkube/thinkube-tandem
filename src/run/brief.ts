@@ -30,8 +30,9 @@ export function clearanceStanza(unit: { units?: unknown[] }): string {
   return (
     "\n\n──── WHAT YOU ARE CLEARED TO DO ────\n" +
     cleared.map((c) => `- ${say[c.action] ?? c.action.toUpperCase()} ${c.path}`).join("\n") +
-    "\nWriting anywhere else does not happen: the change is restored before your next step, so the " +
-    "edit you believe you made is gone. This is the ORDER, not a refusal — every file here is " +
+    "\nWriting anywhere else does not happen: a file tool naming another path is refused before it " +
+    "writes, and a file a shell command leaves elsewhere is restored before your next step. This is " +
+    "the ORDER, not a refusal — every file here is " +
     "reachable, and the way to reach one is to ASK FIRST. Say which file you need and which " +
     "criterion requires it. The run rules on it and clears you, waiting if another unit is changing " +
     "that file at this moment; only then do you make the change yourself, in this session. Your " +

@@ -141,7 +141,7 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
             detail: `Q: ${question.slice(0, 300)}\nA named: ${stray.join(", ")}`,
           });
           answer(
-            `That answer named ${stray.join(", ")}, which this unit may not write — an edit there is restored and the unit fails for it. ` +
+            `That answer named ${stray.join(", ")}, which this unit may not write — a file tool is refused there, and a shell command's write is restored and fails the unit. ` +
               `What you may write is exactly: ${mine.join(", ")}. Keep your work inside that, and say UNDELIVERED with the reason if the promise cannot be kept from there.`,
           );
           return;

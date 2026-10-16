@@ -465,9 +465,10 @@ export async function dispatchTep(
           alsoAllowed: () => [...unionFor(tree, next.id)(), ...(tree === worktree ? testerPaths : [])],
           baseline,
           onRestored: (kept) => restored.push(...kept),
-          // The door, on the path that needs it. Without it the guard has no
-          // grant to consult: every write outside the footprint is restored
-          // at once, and the second one kills the unit. It was wired only to
+          // The door, on the path that needs it. Without it there is no
+          // grant to consult: every file tool outside the footprint is
+          // refused, and a shell write there is restored at once, the
+          // second one killing the unit. It was wired only to
           // the check-authoring continuation below, so no ordinary coder or
           // tester could ever be cleared for a file nobody owns — three
           // units in one run hit the fence, none was granted anything, and

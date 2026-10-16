@@ -196,6 +196,8 @@ async function drive(
             // The browser and nothing else: no file, no command, no
             // network tool of its own. A driver that could read the
             // repository would judge the code again instead of the product.
+            // No built-in tool exists for it at all.
+            tools: [],
             allowedTools: withBrowser ? [...BROWSER_TOOLS] : [],
             disallowedTools: [
               // Arbitrary code in the browser server's own process, which

@@ -95,6 +95,9 @@ export async function runReadRound(
           thinking: { type: "adaptive" },
           effort: deps.effort ?? "high",
           maxTurns: deps.maxTurns ?? (deps.tools === "none" ? TOOLLESS_TURNS : 40),
+          // The built-in tools that exist for this round, as an allow list:
+          // a tool a later release adds is closed by default.
+          tools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
           allowedTools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
           disallowedTools: [
             "Write",
