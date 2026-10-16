@@ -66,7 +66,7 @@ function template(o: { yaml?: string; secrets?: string[]; facts?: Record<string,
 
 /** git, answered: HEAD (which a deploy may move), the common directory,
  *  the tracked files, origin's tags; everything else succeeds. */
-function git(o: { files?: string[]; tags?: string } = {}) {
+function git(o: { files?: string[]; tags?: string; origin?: string } = {}) {
   const calls: string[] = [];
   const state = { head: HEAD, common: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-git-")) };
   return {
@@ -82,6 +82,7 @@ function git(o: { files?: string[]; tags?: string } = {}) {
           out: args[3] === "HEAD" ? `${state.head}\n` : args[3] === "--git-common-dir" ? `${state.common}\n` : "",
         };
       if (sub === "ls-files") return { code: 0, out: (o.files ?? FILES).join("\n") };
+      if (sub === "remote") return { code: 0, out: `${o.origin ?? "https://gitea.example.com/me/app.git"}\n` };
       if (sub === "ls-remote")
         return o.tags === undefined ? { code: 128, out: "fatal: could not read from remote repository" } : { code: 0, out: o.tags };
       return { code: 0, out: "" };
@@ -248,6 +249,24 @@ test("a release tag that is not the declared version is not ready, naming both",
   const failed = await checkReadiness({ repoRoot: unreachable, home: HOME, exec: git().exec, boundedExec: door().boundedExec, control, http: web().http });
   assert.equal(item(failed, "release").ready, false);
   assert.match(item(failed, "release").say, /could not read from remote repository/, "git's own words");
+});
+
+test("a thinkube template is deployed from the branch head on a development cluster, and from its tag on a release cluster", async () => {
+  const origin = "https://github.com/thinkube/tkt-scoring.git";
+  const ask = (env: NodeJS.ProcessEnv) =>
+    checkReadiness({ repoRoot: template(), home: HOME, exec: git({ tags: "", origin }).exec, boundedExec: door().boundedExec, control, http: web().http, env });
+
+  const dev = item(await ask({ THINKUBE_BRANCH: "main" }), "release");
+  assert.equal(dev.ready, true);
+  assert.match(dev.say, /deployed from the head of main/);
+
+  const released = item(await ask({ THINKUBE_BRANCH: "release-0.1" }), "release");
+  assert.equal(released.ready, false);
+  assert.match(released.say, /origin has no vMAJOR\.MINOR\.PATCH tag/);
+
+  const unset = item(await ask({}), "release");
+  assert.equal(unset.ready, false);
+  assert.match(unset.say, /THINKUBE_BRANCH is not set/);
 });
 
 test("a secret the manifest declares and control does not hold is not ready; control out of reach is not ready either", async () => {

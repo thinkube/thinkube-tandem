@@ -113,6 +113,9 @@ interface ReadinessArgs {
   /** The setup the run will work with (`runSetup`), when the session has
    *  read the repository: proved as is, so ready means ready for that run. */
   reading?: RepositoryFacts;
+  /** THINKUBE_BRANCH, which decides whether a platform template is deployed
+   *  from its release tag or from the head of the branch. */
+  env?: NodeJS.ProcessEnv;
 }
 
 const asking = new Map<string, Promise<Readiness>>();
@@ -254,7 +257,7 @@ async function answer(
   items.push(await attempt("live checks", () => liveChecksDeclared(root, a.exec)));
   if (template) {
     items.push(await attempt("deploy declared", async () => deployDeclared(root)));
-    items.push(await attempt("release", () => releaseTagged(root, a.exec)));
+    items.push(await attempt("release", () => releaseTagged(root, a.exec, a.env ?? process.env)));
   }
   if (fs.existsSync(path.join(root, "manifest.yaml")))
     items.push(await attempt("secrets", () => secretsHeld(root, a)));
@@ -521,12 +524,29 @@ function deployDeclared(root: string): Omit<ReadinessItem, "name"> {
     : { ready: true, say: `deployed by ${d!.run.join(" && ")}, seen at ${d!.at}` };
 }
 
+/** A template in the thinkube GitHub organization, on a cluster that
+ *  follows a branch other than release-MAJOR.MINOR. */
+const PLATFORM_ORIGIN = /^(?:https:\/\/github\.com\/|git@github\.com:)thinkube\/[^/]+?(?:\.git)?$/;
+
 /** The platform deploys a template's released version, so the newest
- *  release tag on origin must be the version the tree says it is. */
-async function releaseTagged(root: string, exec: Exec): Promise<Omit<ReadinessItem, "name">> {
+ *  release tag on origin must be the version the tree says it is. The
+ *  exception is the platform's rule in thinkube-control's
+ *  template_version.py: a cluster that follows a branch other than
+ *  release-MAJOR.MINOR deploys a thinkube template from the head of that
+ *  branch, so no tag is read. */
+async function releaseTagged(root: string, exec: Exec, env: NodeJS.ProcessEnv): Promise<Omit<ReadinessItem, "name">> {
   const read = thinkubeDeclaration(root);
   const version = read && "declared" in read ? read.declared.version : undefined;
   if (!version) return { ready: false, say: "thinkube.yaml declares no metadata.version — declare the release this tree is" };
+  const origin = await exec("git", ["-C", root, "remote", "get-url", "origin"], root);
+  if (origin.code !== 0) throw new Error(`git could not read origin's address: ${origin.out.trim().slice(0, 300)}`);
+  if (PLATFORM_ORIGIN.test(origin.out.trim())) {
+    const branch = env.THINKUBE_BRANCH;
+    if (!branch)
+      return { ready: false, say: "THINKUBE_BRANCH is not set — it names the platform branch this cluster follows, which decides how a thinkube template is deployed" };
+    if (!/^release-\d+\.\d+$/.test(branch))
+      return { ready: true, say: `a thinkube template on a cluster following ${branch} is deployed from the head of ${branch}; no tag is read` };
+  }
   const r = await exec("git", ["-C", root, "ls-remote", "--tags", "--refs", "origin"], root);
   if (r.code !== 0) throw new Error(`git could not read origin's tags: ${r.out.trim().slice(0, 300)}`);
   const tags = [...r.out.matchAll(/refs\/tags\/v(\d+)\.(\d+)\.(\d+)$/gm)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])]);
