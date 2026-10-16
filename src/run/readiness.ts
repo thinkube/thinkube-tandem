@@ -37,7 +37,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { spacesHome } from "../core/spaces";
-import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
+import { imagesBuiltByPlatform, partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { controlReachedBy, type Http } from "../hostui/templateCore";
 import { isCodePath, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
 import { liveHomeRefusal } from "./liveSuite";
@@ -332,7 +332,7 @@ async function setupHolds(
     const told = {
       ...(known?.provision ? { provision: known.provision } : {}),
       ...(known?.prepare ? { prepare: known.prepare } : {}),
-      ...(known?.build ? { build: known.build } : {}),
+      ...(known?.build && !imagesBuiltByPlatform(root) ? { build: known.build } : {}),
       ...(known?.runOne ? { runOne: known.runOne } : {}),
       ...(known?.suite ? { suite: known.suite } : {}),
       ...declared,

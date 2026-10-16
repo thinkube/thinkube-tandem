@@ -45,6 +45,7 @@ import { linkProvisioned } from "./linkProvisioned";
 import { tail } from "./toolWords";
 import { repairStandingTree } from "./refresh";
 import { treeFromProof, type SetupProof } from "./setupProof";
+import { imagesBuiltByPlatform } from "../core/thinkubeYaml";
 
 export type BoundedExec = (
   cmd: string,
@@ -753,7 +754,11 @@ export async function openTheDoor(a: {
   // nothing built has no such veto, which is legitimate — and silent
   // until it is said.
   if (!ready.refusal && !a.told.build)
-    a.log("this repository ships nothing built — the product-build veto does not apply to this run");
+    a.log(
+      imagesBuiltByPlatform(a.repoRoot)
+        ? "the platform's pipeline builds this repository's images and judges that build — none is run here"
+        : "this repository ships nothing built — the product-build veto does not apply to this run",
+    );
   if (!ready.refusal || !a.resumed) return ready;
   const rebuild = async (): Promise<{ ok: boolean; words: string }> =>
     a.told.prepare

@@ -23,6 +23,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { imagesBuiltByPlatform } from "../core/thinkubeYaml";
 
 export interface RepositoryFacts {
   /** How a fresh checkout is made ready to build, or "". */
@@ -232,15 +233,17 @@ export function rememberWhatHeld(
 /**
  * The setup a run works with: the repository reading's commands, a
  * person's prepare setting over the reading's, and the product build from
- * the repository's own proved facts first. Readiness proves this same setup,
- * so what it calls ready is what the run will run.
+ * the repository's own proved facts first — none when the platform's
+ * pipeline builds the repository's images, which judges that build itself.
+ * Readiness proves this same setup, so what it calls ready is what the run
+ * will run.
  */
 export function runSetup(
   repoRoot: string,
   reading: { provision: string; prepare: string; runOne: string; build?: string; suite?: string },
   prepareCommand?: string,
 ): RepositoryFacts {
-  const build = factsOf(repoRoot)?.build || reading.build;
+  const build = imagesBuiltByPlatform(repoRoot) ? undefined : factsOf(repoRoot)?.build || reading.build;
   return {
     provision: reading.provision,
     prepare: prepareCommand || reading.prepare,

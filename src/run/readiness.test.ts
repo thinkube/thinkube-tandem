@@ -150,12 +150,8 @@ test("a template whose setup holds, whose checks land in its tests, declared, ta
     r.items.map((i) => `${i.name}: ${i.say}`).join("\n"),
   );
   assert.equal(readinessRefusal([r]), undefined);
-  assert.ok(d.ran.includes("python3 -m compileall -q app"), "the declared build was proved on the copy");
-  assert.match(
-    item(r, "setup").say,
-    /the declared build \(python3 -m compileall -q app\) passes; that is not the image: the image is built, and its tests run, only by the platform's deploy/,
-  );
-  assert.doesNotMatch(item(r, "setup").say, /product build/, "a template's declared build is not said to build the product");
+  assert.ok(!d.ran.includes("python3 -m compileall -q app"), "a repository the platform builds is not built beside the editor");
+  assert.doesNotMatch(item(r, "setup").say, /product build/, "no build is said to have been proved here");
   assert.ok(g.calls.some((c) => /^git worktree add --detach .* a{40}$/.test(c)), "the setup ran on a copy of HEAD");
   assert.ok(g.calls.some((c) => /^git worktree remove --force /.test(c)), "and the copy was removed");
   assert.match(item(r, "check homes").say, /tests\/main_AC-1_test\.py/);
@@ -180,7 +176,7 @@ test("a setup that does not hold on a clean copy is not ready, in the door's wor
     repoRoot: root,
     home: HOME,
     exec: git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` }).exec,
-    boundedExec: door({ cmd: "python3 -m compileall -q app", output: "SyntaxError: invalid syntax (main.py, line 3)" }).boundedExec,
+    boundedExec: door({ cmd: "pip install -r requirements.txt", output: "ERROR: No matching distribution found for fastapi==99.0" }).boundedExec,
     invoke: deployer().invoke,
     http: web().http,
     control,
@@ -188,8 +184,8 @@ test("a setup that does not hold on a clean copy is not ready, in the door's wor
   });
   const setup = item(r, "setup");
   assert.equal(setup.ready, false);
-  assert.match(setup.say, /product build \(python3 -m compileall -q app\) fails/);
-  assert.match(setup.say, /SyntaxError: invalid syntax/);
+  assert.match(setup.say, /provisioning step \(pip install -r requirements\.txt\) fails/);
+  assert.match(setup.say, /No matching distribution found for fastapi==99\.0/);
   assert.match(readinessRefusal([r]) ?? "", /^not ready to sign — setup: /);
 });
 
