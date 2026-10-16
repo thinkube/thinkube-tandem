@@ -25,6 +25,7 @@ import { factsOf, rememberWhatHeld, type RepositoryFacts } from "./facts";
 import { missing, provisional, type Proved } from "./proved";
 import { downstreamOf, partsOf } from "./survey";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
+import { singleCheckFor } from "./plainRunOne";
 
 /**
  * Each declared part's own single-test command, as `thinkube.yaml` says it:
@@ -147,7 +148,20 @@ export async function whatWeKnow(a: {
   // Candidates, not facts: the door runs each one again here, so a file
   // somebody edited by hand fails now rather than at a judgement.
   const known: RepositoryFacts | undefined = knownUnderDeclaration(factsOf(deps.repoRoot), declared.suite);
-  const toldOne = declared.runOne || deps.told?.runOne;
+  // The declared single-check command runs in the pipeline's fresh
+  // container, so it may install again on every check. The door installs
+  // once per tree, and the repository's own facts may name the plain runner.
+  const single = declared.runOne
+    ? singleCheckFor({
+        worktree: a.worktree,
+        declared: declared.runOne,
+        ...(deps.told?.provision ? { provision: deps.told.provision } : {}),
+        ...(known?.runOne ? { facts: known.runOne } : {}),
+      })
+    : { kind: "declared" as const };
+  if (single.kind !== "declared") a.log(single.why);
+  const plainRunOne = single.kind === "plain" ? single.plain : undefined;
+  const toldOne = plainRunOne || declared.runOne || deps.told?.runOne;
   const ready = await openTheDoor({
     worktree: a.worktree,
     repoRoot: deps.repoRoot,
@@ -157,6 +171,7 @@ export async function whatWeKnow(a: {
       ...deps.told,
       ...declared,
       ...(declared.runOne ? { runOneDeclared: true } : {}),
+      ...(plainRunOne ? { plainRunOne } : {}),
       ...(deps.resetup ? { resetup: deps.resetup } : {}),
       ...(deps.proveSetup ? { proveSetup: deps.proveSetup } : {}),
     },

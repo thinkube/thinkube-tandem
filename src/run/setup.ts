@@ -130,6 +130,11 @@ export interface SetupArgs {
   /** `runOne` is what the repository declares (`thinkube.yaml` test.one):
    *  a corrected setup answer changes how the tree is installed, never it. */
   runOneDeclared?: boolean;
+  /** The repository's own single-check command, proved before the declared
+   *  `runOne` because the declared one installs again on every check
+   *  (src/run/plainRunOne.ts). When it does not hold, the declared one is
+   *  proved, and the log says so. */
+  plainRunOne?: string;
   /** Re-read the setup facts with a failure as evidence; the door tries the
    *  corrected answer once before refusing. */
   resetup?: (
@@ -396,7 +401,7 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // Each command that RAN here is minted; one that did not is absent, not
   // an empty string. An empty string was accepted by every consumer and
   // executed by one of them.
-  const one = await proveRunOne(args);
+  const one = await proveSingleCheck(args);
   // Tried on a real test and failed is not "nothing to prove it on": a run
   // that starts here has no way to judge a single check, and every unit
   // would end "not judged". Refused at the door, naming what failed.
@@ -454,6 +459,21 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
 const TEST_RUNNERS: { tool: string; install: string; when: RegExp }[] = [
   { tool: "pytest", install: "python3 -m pip install --break-system-packages pytest", when: /\.py$/ },
 ];
+
+/**
+ * The repository-wide single-test command: the repository's own plain
+ * runner first when the door was given one, else the declared command.
+ */
+async function proveSingleCheck(args: SetupArgs): Promise<{ held: string; tried: boolean; sample?: string; why?: string }> {
+  if (!args.plainRunOne) return proveRunOne(args);
+  const plain = await proveRunOne({ ...args, runOne: args.plainRunOne });
+  if (plain.held || !plain.tried) return plain;
+  args.log(
+    `  the repository's own single-test command did not hold on ${plain.sample} — single checks run with the declared one, ` +
+      `which installs again on every check: ${args.runOne ?? ""}`,
+  );
+  return proveRunOne(args);
+}
 
 /**
  * The single-test command, tried on one of the repository's own tests.
@@ -603,7 +623,7 @@ function setupArgsFor(a: {
     dependencies?: string[];
     parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
   };
-  told: { provision?: string; prepare?: string; build?: string; runOne?: string; runOneDeclared?: boolean; suite?: string };
+  told: { provision?: string; prepare?: string; build?: string; runOne?: string; runOneDeclared?: boolean; plainRunOne?: string; suite?: string };
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -627,6 +647,7 @@ function setupArgsFor(a: {
     ...(a.told.build ? { build: a.told.build } : {}),
     ...(a.told.runOne ? { runOne: a.told.runOne } : {}),
     ...(a.told.runOne && a.told.runOneDeclared ? { runOneDeclared: true } : {}),
+    ...(a.told.plainRunOne ? { plainRunOne: a.told.plainRunOne } : {}),
     ...(a.resetup ? { resetup: a.resetup } : {}),
     ...(a.proven ? { proven: a.proven } : {}),
   };
@@ -658,6 +679,8 @@ export async function openTheDoor(a: {
     runOne?: string;
     /** `runOne` is the repository's declaration, which a corrected answer keeps. */
     runOneDeclared?: boolean;
+    /** The repository's own single-check command, proved before the declared one. */
+    plainRunOne?: string;
     suite?: string;
     /** Each part's own commands, as the repository declares them. */
     parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
