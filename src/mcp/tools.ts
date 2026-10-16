@@ -24,7 +24,7 @@ import { createThinkingSpace } from "../core/spaces";
 import { execFileSync } from "node:child_process";
 import { allCards } from "../core/cards";
 import { catalogOf, controlReachedBy, createAppFromTemplate } from "../hostui/templateCore";
-import { requestStop } from "../run/record";
+import { readRun, requestStop } from "../run/record";
 import type { Readiness } from "../run/readiness";
 import { runSetup } from "../run/facts";
 
@@ -533,15 +533,17 @@ export function toolTable(): ToolDef[] {
         "Ask the run to stop, whoever is driving it. The process that owns the run reads the request and ends itself.",
       inputSchema: IN_SPACE,
       run: (c) => {
-        const cut = c.session.unrunCut();
-        if (!cut) return "there is no run to stop";
+        // The run on record, whichever process drives it: a run this server
+        // did not start is as stoppable as one it did.
+        const last = readRun(c.storeDir, () => {});
+        if (!last?.running) return "there is no run to stop";
         // Written, not called: the run may be driven by another process,
         // and one process must never reach into another's to end it.
-        const asked = requestStop(c.storeDir, cut.id, new Date().toISOString());
+        const asked = requestStop(c.storeDir, last.cutId, new Date().toISOString());
         if (c.session.running) c.session.runState?.halt();
         return asked
-          ? "stop asked for — the run ends at its next heartbeat"
-          : "could not write the stop request; no run record to ask";
+          ? `stop asked for ${last.cutId} — the run ends at its next heartbeat`
+          : `could not write the stop request: ${last.cutId} has no run record`;
       },
     },
     {

@@ -27,6 +27,8 @@ test("the budget is spent per check: a spent check refuses, another check still 
   let judged = 0;
   const challenge = makeChallenge({
     testerWt,
+    worktree: testerWt,
+    exec: async () => ({ code: 0, out: "" }),
     sliceProbes: new Map([["SL-1", ["tests/x_AC-1_test.py", "tests/x_AC-2_test.py"]]]),
     criterionOf: (_slice: string, ac: number) => ({ id: `c-${ac}`, text: `criterion ${ac}` }),
     model: "sonnet",

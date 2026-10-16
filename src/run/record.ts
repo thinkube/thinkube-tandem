@@ -121,53 +121,70 @@ const dirFor = (storeDir: string): string => path.join(storeDir, "runs");
  * Best effort: the delivery carries the verdicts, so a failed write
  * loses the account of the run, never its result.
  */
+/** A run record written whole: the file is replaced by a rename, so the
+ *  driver and the processes writing requests on it never read half of one. */
+function writeRecord(file: string, record: object): void {
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(record, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+/** A run record, or undefined when none is on file. One that cannot be
+ *  read throws, naming the file. */
+function readRecord(file: string): RunRecord | undefined {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw e;
+  }
+  try {
+    return JSON.parse(raw) as RunRecord;
+  } catch (e) {
+    throw new Error(`the run record ${file} cannot be read: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 export function saveRun(
   storeDir: string,
   record: Omit<RunRecord, "units" | "logs" | "stepLogs">,
   state: RunState,
 ): void {
-  try {
-    const dir = dirFor(storeDir);
-    fs.mkdirSync(dir, { recursive: true });
-    const full: RunRecord = {
-      ...record,
-      units: [...state.units.values()],
-      ...(state.plan?.length ? { plan: state.plan } : {}),
-      logs: state.logs.slice(-KEPT_LINES),
-      phases: {
-        door: { ...state.phases.door },
-        gate: { ...state.phases.gate },
-        delivery: { ...state.phases.delivery },
-        live: { ...state.phases.live },
-      },
-      stepLogs: Object.fromEntries(
-        [...state.stepLogs].map(([k, v]) => [k, v.slice(-KEPT_LINES)]),
-      ),
-      ...(state.sliceChecks.size
-        ? { sliceChecks: Object.fromEntries([...state.sliceChecks].map(([k, v]) => [k, [...v]])) }
-        : {}),
-    };
-    // What others wrote on the record — a stop, an answer — is theirs to
-    // keep; the driver's save must not erase a request it has not read.
-    const file = path.join(dir, `${record.cutId}.json`);
-    const asked = readAsked(file);
-    fs.writeFileSync(file, JSON.stringify({ ...asked, ...full }, null, 2));
-  } catch {
-    /* the run's verdicts already live on the delivery */
-  }
+  const dir = dirFor(storeDir);
+  fs.mkdirSync(dir, { recursive: true });
+  const full: RunRecord = {
+    ...record,
+    units: [...state.units.values()],
+    ...(state.plan?.length ? { plan: state.plan } : {}),
+    logs: state.logs.slice(-KEPT_LINES),
+    phases: {
+      door: { ...state.phases.door },
+      gate: { ...state.phases.gate },
+      delivery: { ...state.phases.delivery },
+      live: { ...state.phases.live },
+    },
+    stepLogs: Object.fromEntries(
+      [...state.stepLogs].map(([k, v]) => [k, v.slice(-KEPT_LINES)]),
+    ),
+    ...(state.sliceChecks.size
+      ? { sliceChecks: Object.fromEntries([...state.sliceChecks].map(([k, v]) => [k, [...v]])) }
+      : {}),
+  };
+  // What others wrote on the record — a stop, an answer — is theirs to
+  // keep; the driver's save must not erase a request it has not read.
+  const file = path.join(dir, `${record.cutId}.json`);
+  writeRecord(file, { ...readAsked(file), ...full });
 }
 
 /** The requests written on a record by processes that are not driving it. */
 function readAsked(file: string): Pick<RunRecord, "stopRequestedAt" | "answers"> {
-  try {
-    const r = JSON.parse(fs.readFileSync(file, "utf8")) as RunRecord;
-    return {
-      ...(r.stopRequestedAt ? { stopRequestedAt: r.stopRequestedAt } : {}),
-      ...(r.answers?.length ? { answers: r.answers } : {}),
-    };
-  } catch {
-    return {};
-  }
+  const r = readRecord(file);
+  if (!r) return {};
+  return {
+    ...(r.stopRequestedAt ? { stopRequestedAt: r.stopRequestedAt } : {}),
+    ...(r.answers?.length ? { answers: r.answers } : {}),
+  };
 }
 
 /**
@@ -185,41 +202,32 @@ function readAsked(file: string): Pick<RunRecord, "stopRequestedAt" | "answers">
  * there is one record per cut, and a resume overwrites its own evidence.
  */
 export function slicesFinished(storeDir: string, cutId: string): string[] {
-  try {
-    const record = JSON.parse(
-      fs.readFileSync(path.join(dirFor(storeDir), `${cutId}.json`), "utf8"),
-    ) as RunRecord;
-    const bySlice = new Map<string, RunUnitView[]>();
-    for (const u of record.units ?? []) bySlice.set(u.slice, [...(bySlice.get(u.slice) ?? []), u]);
-    return [...bySlice]
-      .filter(([, units]) => units.length > 0 && units.every((u) => u.state === "done"))
-      .map(([slice]) => slice);
-  } catch {
-    // No record, or one this version cannot read: the run falls back to
-    // what the branch's commits say, which is where it stood before.
-    return [];
-  }
+  // No record: this cut never ran, and nothing of it is finished.
+  const record = readRecord(path.join(dirFor(storeDir), `${cutId}.json`));
+  if (!record) return [];
+  const bySlice = new Map<string, RunUnitView[]>();
+  for (const u of record.units ?? []) bySlice.set(u.slice, [...(bySlice.get(u.slice) ?? []), u]);
+  return [...bySlice]
+    .filter(([, units]) => units.length > 0 && units.every((u) => u.state === "done"))
+    .map(([slice]) => slice);
 }
 
 /** Every run this space has on file, newest first. */
 export function runsOnFile(storeDir: string): RunRecord[] {
+  const dir = dirFor(storeDir);
+  let names: string[];
   try {
-    const dir = dirFor(storeDir);
-    return fs
-      .readdirSync(dir)
-      .filter((f) => f.endsWith(".json"))
-      .map((f) => {
-        try {
-          return JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as RunRecord;
-        } catch {
-          return undefined;
-        }
-      })
-      .filter((r): r is RunRecord => !!r?.units)
-      .sort((a, b) => (a.at < b.at ? 1 : -1));
-  } catch {
-    return [];
+    names = fs.readdirSync(dir);
+  } catch (e) {
+    // No runs directory: this space has run nothing.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw e;
   }
+  return names
+    .filter((f) => f.endsWith(".json"))
+    .map((f) => readRecord(path.join(dir, f)))
+    .filter((r): r is RunRecord => !!r?.units)
+    .sort((a, b) => (a.at < b.at ? 1 : -1));
 }
 
 /** The last run this space ran, or nothing if it has never run one. */
@@ -313,48 +321,31 @@ export function runSituation(
 /** Ask a run to stop, from a process that is not driving it. The owner
  *  reads the request and ends itself — nobody kills another's run. */
 export function requestStop(storeDir: string, cutId: string, at: string): boolean {
-  try {
-    const file = path.join(dirFor(storeDir), `${cutId}.json`);
-    const r = JSON.parse(fs.readFileSync(file, "utf8")) as RunRecord;
-    fs.writeFileSync(file, JSON.stringify({ ...r, stopRequestedAt: at }, null, 2));
-    return true;
-  } catch {
-    return false;
-  }
+  const file = path.join(dirFor(storeDir), `${cutId}.json`);
+  const r = readRecord(file);
+  if (!r) return false;
+  writeRecord(file, { ...r, stopRequestedAt: at });
+  return true;
 }
 
 /** Has a stop been asked for since this run began? */
 export function stopWasRequested(storeDir: string, cutId: string, since: string): boolean {
-  try {
-    const r = JSON.parse(
-      fs.readFileSync(path.join(dirFor(storeDir), `${cutId}.json`), "utf8"),
-    ) as RunRecord;
-    return !!r.stopRequestedAt && r.stopRequestedAt > since;
-  } catch {
-    return false;
-  }
+  const r = readRecord(path.join(dirFor(storeDir), `${cutId}.json`));
+  return !!r?.stopRequestedAt && r.stopRequestedAt > since;
 }
 
 /** Answer a parked worker from a process that is not driving the run. The
  *  owner reads the answer at its next heartbeat and hands it to the worker. */
 export function requestAnswer(storeDir: string, cutId: string, unit: string, text: string, at: string): boolean {
-  try {
-    const file = path.join(dirFor(storeDir), `${cutId}.json`);
-    const r = JSON.parse(fs.readFileSync(file, "utf8")) as RunRecord;
-    const answers = [...(r.answers ?? []), { unit, text, at }];
-    fs.writeFileSync(file, JSON.stringify({ ...r, answers }, null, 2));
-    return true;
-  } catch {
-    return false;
-  }
+  const file = path.join(dirFor(storeDir), `${cutId}.json`);
+  const r = readRecord(file);
+  if (!r) return false;
+  writeRecord(file, { ...r, answers: [...(r.answers ?? []), { unit, text, at }] });
+  return true;
 }
 
 /** The answers written since this run began, oldest first. */
 export function answersRequested(storeDir: string, cutId: string, since: string): AnswerRequest[] {
-  try {
-    const r = JSON.parse(fs.readFileSync(path.join(dirFor(storeDir), `${cutId}.json`), "utf8")) as RunRecord;
-    return (r.answers ?? []).filter((a) => a.at > since);
-  } catch {
-    return [];
-  }
+  const r = readRecord(path.join(dirFor(storeDir), `${cutId}.json`));
+  return (r?.answers ?? []).filter((a) => a.at > since);
 }
