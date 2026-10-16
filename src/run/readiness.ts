@@ -40,7 +40,7 @@ import { spacesHome } from "../core/spaces";
 import { imagesBuiltByPlatform, partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { controlReachedBy, type Http } from "../hostui/templateCore";
 import { isCodePath, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
-import { liveHomeRefusal } from "./liveSuite";
+import { liveHomeRefusal, readsLiveUrl } from "./liveSuite";
 import { haltableExecs } from "./execs";
 import { factsOf, type RepositoryFacts } from "./facts";
 import type { Invoke } from "./makeLive";
@@ -489,7 +489,7 @@ async function liveChecksDeclared(root: string, exec: Exec): Promise<Omit<Readin
   const listed = await exec("git", ["-C", root, "ls-files"], root);
   if (listed.code !== 0) throw new Error(`git could not list the repository's files: ${listed.out.trim().slice(0, 300)}`);
   const repoFiles = listed.out.split("\n").map((l) => l.trim()).filter(Boolean);
-  const why = liveHomeRefusal(d.live.home, repoFiles, partsDeclared(read!.declared));
+  const why = liveHomeRefusal(d.live.home, repoFiles, partsDeclared(read!.declared), readsLiveUrl(root));
   if (why) return { ready: false, say: `${why} — declare a live.home of its own` };
   // The home, or the first of its ancestors that exists, must be a directory.
   const segs = d.live.home.split("/");

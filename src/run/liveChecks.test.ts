@@ -85,11 +85,20 @@ test("a live check is never run at the gate or by a slice's oracle, and still ri
   assert.deepEqual(closingVerifications(slices, runOne).verifs.map((v) => v.run), ["python3 -m pytest -q tests/storage_AC-1_test.py"]);
 });
 
+/** No file reads the live address. */
+const none = () => false;
+
 test("a live home is refused inside the unit suite's directory or a declared part, and accepted apart from them", () => {
-  assert.match(liveHomeRefusal("tests/live", REPO, []) ?? "", /inside `tests`, where the unit suite's tests live/);
-  assert.match(liveHomeRefusal("app/live", REPO, [{ root: "app" }]) ?? "", /inside the declared part `app`/);
-  assert.match(liveHomeRefusal("tests", REPO, []) ?? "", /already holds the unit test tests\/test_storage\.py/);
-  assert.equal(liveHomeRefusal("live", [...REPO, "live/storage_AC-2_test.py"], [{ root: "." }]), undefined);
+  assert.match(liveHomeRefusal("tests/live", REPO, [], none) ?? "", /inside `tests`, where the unit suite's tests live/);
+  assert.match(liveHomeRefusal("app/live", REPO, [{ root: "app" }], none) ?? "", /inside the declared part `app`/);
+  assert.match(liveHomeRefusal("tests", REPO, [], none) ?? "", /already holds the unit test tests\/test_storage\.py/);
+  assert.equal(liveHomeRefusal("live", [...REPO, "live/storage_AC-2_test.py"], [{ root: "." }], none), undefined);
+});
+
+test("a standing live check in the live home is not a unit test; a unit test there still refuses it", () => {
+  const files = [...REPO, "live/test_storage.py"];
+  assert.equal(liveHomeRefusal("live", files, [], (f) => f === "live/test_storage.py"), undefined);
+  assert.match(liveHomeRefusal("live", files, [], none) ?? "", /already holds the unit test live\/test_storage\.py/);
 });
 
 test("a live check's exit: 0 is green, a runner's failure is red, a command that ran no check is unjudged", () => {

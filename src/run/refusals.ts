@@ -34,7 +34,7 @@ import { validateDag } from "../engine/methodology/parallelSlices";
 import { coderTestPaths } from "./plan";
 import { checksInAnotherLanguage, houseLiveChecks, pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
 import { isLiveCheckUnit } from "./liveChecks";
-import { liveHomeRefusal, liveSuiteDeclared } from "./liveSuite";
+import { liveHomeRefusal, liveSuiteDeclared, readsLiveUrl } from "./liveSuite";
 import { verifyCutSignature } from "../gates/sign";
 
 interface SliceLike extends SliceForDag {
@@ -240,7 +240,7 @@ export async function refusedBeforeDispatch(a: {
       },
     };
   if (live && hasLive) {
-    const why = liveHomeRefusal(live.home, repoFiles, parts);
+    const why = liveHomeRefusal(live.home, repoFiles, parts, readsLiveUrl(a.repoRoot));
     if (why) return { dag: buildUnitDag(a.slices), refusal: { trigger: "live-home", refusal: why } };
     const housed = houseLiveChecks(a.slices, live.home, repoFiles, new Set([...onBranch, ...(a.recordedChecks ?? [])]));
     if (housed.length) a.log(`${housed.length} live check(s) minted under ${live.home}, e.g. ${housed[0].to}`);

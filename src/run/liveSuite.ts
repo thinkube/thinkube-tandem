@@ -16,6 +16,8 @@
  * every directory the unit suite collects, read from where the repository
  * keeps its unit tests and the parts it declares.
  */
+import * as fs from "fs";
+import * as path from "path";
 import { thinkubeDeclaration, type ThinkubeLive } from "../core/thinkubeYaml";
 import { isProbePath, isTestPath } from "../core/testShape";
 
@@ -35,22 +37,36 @@ function isUnder(f: string, dir: string): boolean {
   return f === dir || f.startsWith(`${dir}/`);
 }
 
+/** The environment variable a live check reads the service's address from. */
+export const LIVE_URL_ENV = "TANDEM_LIVE_URL";
+
+/** Whether a repository file reads the live address, which makes it a live
+ *  check whatever it is named. */
+export function readsLiveUrl(repoRoot: string): (rel: string) => boolean {
+  return (rel) => {
+    const at = path.join(repoRoot, rel);
+    return fs.existsSync(at) && fs.readFileSync(at, "utf8").includes(LIVE_URL_ENV);
+  };
+}
+
 /**
  * Why live checks may not be kept at `home`, or nothing when they may.
  *
  * Refused when the home is a file, when it already holds a unit test, when
  * it sits inside a top-level directory that holds the repository's unit
  * tests, and when it sits inside a declared part other than the whole
- * repository, whose own suite runs over its tree.
+ * repository, whose own suite runs over its tree. A test that reads the
+ * live address is a live check, kept as a standing one, not a unit test.
  */
 export function liveHomeRefusal(
   home: string,
   repoFiles: readonly string[],
   parts: readonly { root: string }[],
+  isLive: (rel: string) => boolean,
 ): string | undefined {
   const files = repoFiles.filter(Boolean);
   if (files.includes(home)) return `live.home \`${home}\` is a file in the repository, not a directory`;
-  const unit = files.filter((f) => isTestPath(f) && !isProbePath(f));
+  const unit = files.filter((f) => isTestPath(f) && !isProbePath(f) && !isLive(f));
   const inside = unit.find((f) => isUnder(f, home));
   if (inside)
     return `live.home \`${home}\` already holds the unit test ${inside} — the unit suite runs there, so it would collect the live checks`;
