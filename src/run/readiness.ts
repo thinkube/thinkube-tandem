@@ -123,8 +123,17 @@ const asking = new Map<string, Promise<Readiness>>();
 /** The files whose content decides the answer, beside the HEAD commit. */
 const READ = ["thinkube.yaml", "manifest.yaml", path.join(".tandem", "setup.json")];
 
+/** The version of Tandem giving the answer: a newer Tandem may judge the
+ *  same tree differently, so it never reads an older one's answer. */
+const TANDEM_VERSION: string = (() => {
+  const at = path.join(__dirname, "..", "..", "package.json");
+  const v = (JSON.parse(fs.readFileSync(at, "utf8")) as { version?: unknown }).version;
+  if (typeof v !== "string" || !v) throw new Error(`${at} declares no version`);
+  return v;
+})();
+
 function keyOf(root: string, head: string): string {
-  const h = crypto.createHash("sha256").update(`${root}\0${head}`);
+  const h = crypto.createHash("sha256").update(`${TANDEM_VERSION}\0${root}\0${head}`);
   for (const f of READ) {
     const at = path.join(root, f);
     h.update(`\0${f}\0`).update(fs.existsSync(at) ? fs.readFileSync(at) : "(absent)");
