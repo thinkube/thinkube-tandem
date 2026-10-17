@@ -132,5 +132,7 @@ test("a suite an actor reported red is reproduced here, and the delivery is with
 test("a reported red suite that passes here does not withhold", async () => {
   const { out, suiteRan } = await gate({ code: 0, output: "30 passed in 1.0s" });
   assert.deepEqual(suiteRan, ["./run_tests.sh"], "the suite ran once, to answer the report");
-  assert.ok(!out.delivery?.withheld, JSON.stringify(out.delivery?.withheld ?? out.refusals));
+  // The test tree has no branch to land, so only the suite's part is asked.
+  assert.doesNotMatch(String(out.delivery?.withheld ?? ""), /standing checks are red/);
+  assert.ok(!out.refusals.some((r) => /standing checks are red/.test(r)), out.refusals.join("\n"));
 });
