@@ -54,7 +54,13 @@ export async function repairAfterTheMerge(a: {
   /** The repair is of what the reviewers found on the running product,
    *  not of a build the platform refused: their lines are the criteria,
    *  and an unchanged tree is not a repair, whatever the build says. */
-  onTheProduct?: { criteria: string[] };
+  onTheProduct?: {
+    criteria: string[];
+    /** Run the live checks of these promises again, against what is
+     *  deployed now. A live check judges the deployed service, not the
+     *  tree, so its last result is never reused. */
+    recheck?: () => Promise<{ green: boolean; evidence: string }>;
+  };
 }): Promise<{ green: boolean; report: string }> {
   const step = `live#repair-${a.attempt}`;
   const suite = a.testStep && !a.onTheProduct ? a.deps.suite : undefined;
@@ -78,7 +84,17 @@ export async function repairAfterTheMerge(a: {
   };
   const measure = async (): Promise<{ green: boolean; score: number; evidence: string; alsoOwn: string[] }> =>
     a.onTheProduct
-      ? measureOnTheProduct({ build: await build(), buildCommand: a.deps.build, changed: await changed(), evidence: a.evidence })
+      ? await (async () => {
+          const moved = await changed();
+          const recheck = a.onTheProduct!.recheck;
+          return measureOnTheProduct({
+            build: await build(),
+            buildCommand: a.deps.build,
+            changed: moved,
+            evidence: a.evidence,
+            ...(!moved && recheck ? { rechecked: await recheck() } : {}),
+          });
+        })()
       : suite
         ? measureTheSuite({ build: await build(), buildCommand: a.deps.build, suite: await a.suiteExec(suite, a.worktree), suiteCommand: suite })
         : measureTheBuild({ build: await build(), buildCommand: a.deps.build });
@@ -197,7 +213,23 @@ export function measureOnTheProduct(a: {
   buildCommand?: string;
   changed: boolean;
   evidence: string;
+  /** The live checks, run again just now against the deployed service. */
+  rechecked?: { green: boolean; evidence: string };
 }): { green: boolean; score: number; evidence: string; alsoOwn: string[] } {
+  if (!a.changed && a.rechecked)
+    return a.rechecked.green
+      ? {
+          green: true,
+          score: 0,
+          evidence: "the live checks were run again just now against the deployed service, and they hold — nothing in the tree needed to change",
+          alsoOwn: [],
+        }
+      : {
+          green: false,
+          score: 1,
+          evidence: `THE LIVE CHECKS WERE RUN AGAIN JUST NOW against the deployed service and still do not hold, and nothing in the tree has changed:\n${a.rechecked.evidence.slice(0, 6000)}`,
+          alsoOwn: [],
+        };
   if (!a.changed)
     return {
       green: false,

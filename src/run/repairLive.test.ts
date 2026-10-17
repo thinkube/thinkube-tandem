@@ -96,3 +96,24 @@ test("nothing is pushed after a test-step repair until the check before pushing 
   assert.deepEqual(given, [true]);
   assert.equal(landed, 0, "a red suite here pushes nothing");
 });
+
+test("an unchanged tree is judged by the live checks run again now, not by their last result", () => {
+  const held = measureOnTheProduct({
+    build: { ok: true, output: "" },
+    changed: false,
+    evidence: "  - a compare request without a seed gets 422 — got 200",
+    rechecked: { green: true, evidence: "" },
+  });
+  assert.equal(held.green, true);
+  assert.match(held.evidence, /run again just now against the deployed service, and they hold/);
+  const still = measureOnTheProduct({
+    build: { ok: true, output: "" },
+    changed: false,
+    evidence: "  - stale words",
+    rechecked: { green: false, evidence: "  - got 200 at 10:33" },
+  });
+  assert.equal(still.green, false);
+  assert.match(still.evidence, /RUN AGAIN JUST NOW/);
+  assert.match(still.evidence, /got 200 at 10:33/);
+  assert.doesNotMatch(still.evidence, /stale words/, "the last result is not replayed");
+});

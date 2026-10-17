@@ -795,14 +795,41 @@ export async function dispatchTep(
         st,
         say: (l) => log(l, "live"),
         doing: (l) => st.phase("live", "running", l),
-        repair: (found, attempt) =>
+        repair: (found, attempt, recheck) =>
           repairAfterTheMerge({
             tep, attempt, worktree, deps, st, exec, boundedExec, suiteExec,
             evidence: `judged on the running product at ${at}, these do not hold:\n${found.evidence}`,
             files: found.files,
             log: (l) => log(l, "live"),
-            onTheProduct: { criteria: found.evidence.split("\n").filter((l) => l.startsWith("  - ")).map((l) => l.slice(4)) },
+            onTheProduct: {
+              criteria: found.evidence.split("\n").filter((l) => l.startsWith("  - ")).map((l) => l.slice(4)),
+              ...(recheck ? { recheck } : {}),
+            },
           }),
+        // Only the live checks run again here: they judge the deployed
+        // service, so their last result says nothing about it now.
+        ...(liveSuite
+          ? {
+              recheck: async (promises: string[]) => {
+                if (outcome.delivery)
+                  outcome = {
+                    ...outcome,
+                    delivery: await judgeByLiveChecks({
+                      delivery: outcome.delivery,
+                      checks: liveChecks,
+                      only: (p) => promises.includes(p),
+                      suite: liveSuite,
+                      tree: worktree,
+                      control: deps.reachControl ?? controlReachedBy,
+                      run: deps.invokeLive ?? runInShell,
+                      log: (l) => log(l, "live"),
+                      doing: (l) => st.phase("live", "running", l),
+                    }),
+                  };
+                return outcome;
+              },
+            }
+          : {}),
         buildsHere: async () => {
           if (!deps.build) return { ok: true, output: "" };
           const b = await boundedExec(deps.build, worktree);

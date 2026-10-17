@@ -70,8 +70,13 @@ export async function repairWhatDidNotHold(a: {
   st: RunState;
   say: (line: string) => void;
   doing: (line: string) => void;
-  /** Repair the tree from the reviewers' words, bounded to those files. */
-  repair: (r: OnTheProductRepair, attempt: number) => Promise<{ green: boolean; report: string }>;
+  /** Repair the tree from the reviewers' words, bounded to those files.
+   *  `recheck` runs the live checks of those promises again, now. */
+  repair: (
+    r: OnTheProductRepair,
+    attempt: number,
+    recheck?: () => Promise<{ green: boolean; evidence: string }>,
+  ) => Promise<{ green: boolean; report: string }>;
   /** The repository's own build, here. Nothing is pushed until it passes. */
   buildsHere: () => Promise<{ ok: boolean; output: string }>;
   /** Put the repair in the project. `moved` says whether anything new
@@ -81,6 +86,9 @@ export async function repairWhatDidNotHold(a: {
   waitUntilLive: () => Promise<{ live: boolean; why?: string }>;
   /** Ask the reviewers again, about these promises only. */
   judgeAgain: (promises: string[]) => Promise<DispatchOutcome>;
+  /** Run the live checks of these promises again, against what is
+   *  deployed now; never a replay of their last result. */
+  recheck?: (promises: string[]) => Promise<DispatchOutcome>;
   outcome: DispatchOutcome;
   space: Space;
   cut: Cut;
@@ -98,7 +106,14 @@ export async function repairWhatDidNotHold(a: {
       }`,
     );
     a.doing(`repairing what the reviewers found (${tried} of ${attempts})`);
-    const fixed = await a.repair(found, tried);
+    const recheck = a.recheck
+      ? async (): Promise<{ green: boolean; evidence: string }> => {
+          outcome = await a.recheck!(found.promises);
+          const left = whatDidNotHold({ space: a.space, cut: a.cut, outcome });
+          return left ? { green: false, evidence: left.evidence } : { green: true, evidence: "" };
+        }
+      : undefined;
+    const fixed = await a.repair(found, tried, recheck);
     if (!fixed.green) {
       a.say(`the repair did not settle it: ${fixed.report.split("\n").slice(-2).join(" ").slice(0, 300)}`);
       return outcome;
@@ -117,6 +132,12 @@ export async function repairWhatDidNotHold(a: {
     // Nothing new in the project means nothing for the platform to build,
     // so there is no new version to wait for and nothing to judge again.
     if (landed.moved === false) {
+      // The live checks run again may have found the deployed service
+      // holding: then nothing needed to change.
+      if (!whatDidNotHold({ space: a.space, cut: a.cut, outcome })) {
+        a.say("the live checks hold on the service as deployed now — nothing needed to change");
+        return outcome;
+      }
       a.say("the repair changed nothing — there is nothing new for the platform to build");
       return outcome;
     }
