@@ -14,6 +14,12 @@
  * health path is its first container's `health`. Nothing here knows how
  * the deploy works.
  *
+ * A deploy that returns has started a rollout, not finished it: the old
+ * pods answer the health path until the new ones replace them. So after a
+ * deploy, the app's Deployment (`<app>-<container>` in namespace `<app>`)
+ * is waited for until a new revision has rolled out and none of the old
+ * one runs (src/run/rollout.ts); only then is the health path asked.
+ *
  * A commit already recorded as deployed is not deployed again: the deploy
  * takes minutes, and asking twice about the same tree must not pay twice.
  * Its health is still asked, because a thing deployed once may be gone.
@@ -32,6 +38,7 @@ import { controlReachedBy, type ControlAuth, type Http } from "../hostui/templat
 import { makeLive, type Invoke } from "./makeLive";
 import { defaultExec, type Exec } from "./oracle";
 import { waitOrStop } from "./waiting";
+import { kubectlDeployment, waitForRollout, type ReadDeployment } from "./rollout";
 
 /** How often the health path is asked, and how many times, before the
  *  deploy is judged not to have gone live: five minutes, which covers a
@@ -106,6 +113,8 @@ export async function validationDeploy(a: {
   control?: ReachControl;
   wait?: (ms: number) => Promise<unknown>;
   log?: (line: string) => void;
+  /** How the app's Deployment is read, to wait for its rollout. */
+  readDeployment?: ReadDeployment;
 }): Promise<Validated> {
   const read = thinkubeDeclaration(a.repoRoot);
   if (!read) return { ok: false, stage: "declaration", why: "the repository has no thinkube.yaml" };
@@ -127,9 +136,21 @@ export async function validationDeploy(a: {
   const url = `${deploy.at.replace(/\/+$/, "")}${health.startsWith("/") ? health : `/${health}`}`;
 
   const exec = a.exec ?? defaultExec;
+  const wait = a.wait ?? ((ms: number) => waitOrStop(ms));
   const already = (await deployedCommitOf(a.repoRoot, exec)) === a.head;
   if (already) a.log?.(`${a.head.slice(0, 8)} is already deployed — asking ${url} only`);
   else {
+    const app = read.declared.name;
+    const container = read.declared.containers[0]?.name;
+    if (!app || !container)
+      return {
+        ok: false,
+        stage: "declaration",
+        why: "thinkube.yaml declares no spec.deployment.name and first container name, so the Deployment that serves the new version cannot be named to wait for its rollout",
+      };
+    const deployment = { namespace: app, name: `${app}-${container}` };
+    const readDeployment = a.readDeployment ?? kubectlDeployment;
+    const before = await readDeployment(deployment.namespace, deployment.name);
     const env = controlEnvOf(a.control);
     if (!env) a.log?.("thinkube-control cannot be reached from here — the deploy runs without its address and token");
     const went = await makeLive({
@@ -140,13 +161,15 @@ export async function validationDeploy(a: {
       ...(a.log ? { log: a.log } : {}),
     });
     if (!went.live) return { ok: false, stage: "deploy", why: went.detail ?? "the deploy did not succeed" };
+    // A rollout that never completes is a deploy that did not go live.
+    const stuck = await waitForRollout({ ...deployment, before, read: readDeployment, wait, ...(a.log ? { log: a.log } : {}) });
+    if (stuck) return { ok: false, stage: "health", why: stuck };
   }
   // What the deploy left: a release commit when it made one, the same
   // commit when nothing was deployed.
   const live = already ? a.head : await headOf(a.repoRoot, exec);
 
   const get = a.http ?? fetch;
-  const wait = a.wait ?? ((ms: number) => waitOrStop(ms));
   let last = "it was not asked";
   for (let i = 0; i < HEALTH_TRIES; i++) {
     let status: number | undefined;

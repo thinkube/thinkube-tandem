@@ -36,6 +36,7 @@ import { liveSuiteDeclared } from "./liveSuite";
 import type { Invoke } from "./makeLive";
 import type { Exec } from "./oracle";
 import type { ReachControl } from "./validationDeploy";
+import type { ReadDeployment } from "./rollout";
 
 export function templateGoesLive(a: {
   repoRoot: string;
@@ -45,6 +46,7 @@ export function templateGoesLive(a: {
   http?: Http;
   control?: ReachControl;
   wait?: (ms: number) => Promise<unknown>;
+  readDeployment?: ReadDeployment;
 }): {
   goLive: () => Promise<Went>;
   whyItFailed: () => Promise<{ evidence: string; files: string[]; testStep: boolean }>;

@@ -32,6 +32,7 @@ import type { Exec } from "./oracle";
 import { headOf, validationDeploy, type ReachControl, type Validated } from "./validationDeploy";
 import { settledOnTheLiveProduct } from "../derive/ground";
 import { liveSuiteDeclared } from "./liveSuite";
+import type { ReadDeployment } from "./rollout";
 
 /** The control API's base URL for a gitops app, from the repository's own
  *  remote: `git.<domain>` names the platform, `control.<domain>` runs the
@@ -505,6 +506,7 @@ export async function validateTemplate(a: {
   http?: ControlHttp;
   control?: ReachControl;
   wait?: (ms: number) => Promise<unknown>;
+  readDeployment?: ReadDeployment;
 }): Promise<Validation> {
   try {
     const head = await headOf(a.repoRoot, a.exec);
@@ -517,6 +519,7 @@ export async function validateTemplate(a: {
       ...(a.http ? { http: a.http } : {}),
       ...(a.control ? { control: a.control } : {}),
       ...(a.wait ? { wait: a.wait } : {}),
+      ...(a.readDeployment ? { readDeployment: a.readDeployment } : {}),
       log: a.log,
     });
   } catch (e) {
@@ -605,6 +608,7 @@ export async function settleTemplateAfterAccept(a: {
   http?: ControlHttp;
   control?: ReachControl;
   wait?: (ms: number) => Promise<unknown>;
+  readDeployment?: ReadDeployment;
   now?: () => string;
 }): Promise<{ live: boolean; at?: string }> {
   const now = a.now ?? (() => new Date().toISOString());

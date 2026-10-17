@@ -31,6 +31,8 @@ function template(): string {
     path.join(root, "thinkube.yaml"),
     [
       "spec:",
+      "  deployment:",
+      "    name: svc",
       "  containers:",
       "    - name: svc",
       "      build: .",
@@ -81,6 +83,8 @@ async function phaseOf(deployFails?: string) {
     http: async () => new Response("ok", { status: 200 }),
     control: () => ({ base: "https://control.example.com", token: "tok" }),
     wait: async () => {},
+    // A new revision rolls out with every deploy that ran.
+    readDeployment: async () => ({ revision: String(deploys.length), generation: 1, observedGeneration: 1, replicas: 1, current: 1, updated: 1, available: 1 }),
   });
   const seen = {
     phases: [] as string[],
@@ -205,6 +209,8 @@ async function alreadyThere(o: { deploys: boolean; recorded?: boolean; answers?:
     http: async () => new Response("ok", { status: 200 }),
     control: () => ({ base: "https://control.example.com", token: "tok" }),
     wait: async () => {},
+    // A new revision rolls out with every deploy that ran.
+    readDeployment: async () => ({ revision: String(deploys.length), generation: 1, observedGeneration: 1, replicas: 1, current: 1, updated: 1, available: 1 }),
   });
   await liveWhenAlreadyThere({
     at: "https://svc.example.com",

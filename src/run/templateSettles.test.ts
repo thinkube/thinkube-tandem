@@ -28,6 +28,8 @@ function repo(deploy = true): string {
       "metadata:",
       '  version: "0.1.0"',
       "spec:",
+      "  deployment:",
+      "    name: svc",
       "  containers:",
       "    - name: svc",
       "      build: .",
@@ -80,6 +82,8 @@ async function settle(root: string, o: { deployFails?: string } = {}) {
     http: async () => new Response("ok", { status: 200 }),
     control: () => ({ base: "https://control.example.com", token: "tok" }),
     wait: async () => {},
+    // A new revision rolls out with every deploy that ran.
+    readDeployment: async () => ({ revision: String(ran.length), generation: 1, observedGeneration: 1, replicas: 1, current: 1, updated: 1, available: 1 }),
     update: (d, note) => updates.push({ d, note }),
     log: () => {},
     now: () => "2026-10-15T11:00:00.000Z",

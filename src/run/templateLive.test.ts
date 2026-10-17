@@ -39,6 +39,8 @@ function template(): string {
     path.join(root, "thinkube.yaml"),
     [
       "spec:",
+      "  deployment:",
+      "    name: scoring",
       "  containers:",
       "    - name: scoring",
       "      build: .",
@@ -67,6 +69,7 @@ function live(control: (url: string) => Response) {
     },
     control: () => ({ base: "https://control.example.com", token: "tok" }),
     wait: async () => {},
+    readDeployment: async () => ({ revision: String(1), generation: 1, observedGeneration: 1, replicas: 1, current: 1, updated: 1, available: 1 }),
   });
   return { byDeploy, asked };
 }

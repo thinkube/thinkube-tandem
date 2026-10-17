@@ -161,6 +161,8 @@ export interface ThinkubeVerify {
 export interface ThinkubeDeclaration {
   /** `app`, `knative`, `component`, or `none` when the platform does not deploy it. */
   deploymentType: string;
+  /** `spec.deployment.name`: the app the platform deploys it as. */
+  name?: string;
   containers: ThinkubeContainer[];
   /** Which container answers at which path of the address. The one that
    *  answers at the root serves the pages a person opens. */
@@ -229,7 +231,7 @@ export function thinkubeDeclaration(
     const doc = parseYaml(raw) as {
       metadata?: { version?: unknown };
       spec?: {
-        deployment?: { type?: string };
+        deployment?: { type?: string; name?: unknown };
         parts?: { name?: string; root?: string; test?: { enabled?: boolean; command?: string; image?: string; one?: string } }[];
         docs?: { root?: unknown };
         deploy?: { run?: unknown; in?: unknown; at?: unknown; live?: unknown };
@@ -275,6 +277,8 @@ export function thinkubeDeclaration(
           ...(live ? { live: live.live } : {}),
         }
       : undefined;
+    const declaredName = doc?.spec?.deployment?.name;
+    const appName = typeof declaredName === "string" && declaredName.trim() ? declaredName.trim() : undefined;
     const declaredVersion = doc?.metadata?.version;
     const version =
       typeof declaredVersion === "string" && declaredVersion.trim()
@@ -294,6 +298,7 @@ export function thinkubeDeclaration(
     return {
       declared: {
         deploymentType: doc?.spec?.deployment?.type ?? "app",
+        ...(appName ? { name: appName } : {}),
         containers,
         routes,
         parts,
