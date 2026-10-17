@@ -311,6 +311,16 @@ export function pulseOf(a: Pick<OracleFactoryArgs, "pulse">, who: string): { pul
   return open ? { pulse: () => open(who) } : {};
 }
 
+/** The brief the slice's unit was given, which its supervisor reads. A
+ *  slice with none recorded, or an empty one, is an error naming it: a
+ *  supervisor reading no brief discloses against nothing. */
+export function briefOf(a: Pick<OracleFactoryArgs, "briefBySlice">, slice: string): string {
+  const brief = a.briefBySlice.get(slice);
+  if (!brief?.trim())
+    throw new Error(`no brief is recorded for ${slice}: its unit's brief must be recorded before its supervisor is asked`);
+  return brief;
+}
+
 /**
  * The run supervisor for a slice's red rounds: it reads the coder's brief
  * against the failing checks' source and answers with one verdict. A
@@ -335,6 +345,15 @@ export function makeSupervisor(
         if (seen.has(key)) return undefined;
         seen.add(key);
         seenFailures.set(slice, seen);
+      }
+      let brief: string;
+      try {
+        brief = briefOf(a, slice);
+      } catch (e) {
+        // Said in the run's log as well: the engine does not let a
+        // supervisor's error stop the round.
+        logFor(slice)(`⛔ ${(e as Error).message}`);
+        throw e;
       }
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
@@ -374,7 +393,7 @@ export function makeSupervisor(
         `  the failing checks: ${probes.filter((rel) => failingAcs.some((ac) => isCheckOf(rel, ac))).join(", ") || "(none)"}`,
         "",
         "──── THE CODER'S BRIEF ────",
-        (a.briefBySlice.get(slice) ?? "(brief unavailable)").slice(0, 60000),
+        brief.slice(0, 60000),
         "",
         "──── FAILING CHECK SOURCE (never quote it) ────",
         probeSrc.slice(0, 16000),

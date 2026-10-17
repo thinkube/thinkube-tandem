@@ -399,7 +399,9 @@ export async function dispatchTep(
       role, tree, probes: sliceProbes.get(next.slice) ?? [],
       owned: next.footprint.filter((f) => !isProbePath(f)),
     });
-    if (role !== "test") briefBySlice.set(next.slice, withNames);
+    // The brief every supervised unit was given — a coder's, or a
+    // maintainer's — is what its supervisor reads against the checks.
+    if (oracle) briefBySlice.set(next.slice, withNames);
     // A tester's fixtures and seams are read when it starts, so a shared
     // fixture committed before it is among those listed.
     const ownsFixture = fixturePlan?.owner === next.id ? fixturePlan : undefined;
