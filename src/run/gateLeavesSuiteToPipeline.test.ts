@@ -147,6 +147,7 @@ async function livePhase(went: { live: boolean; why?: string; unjudged?: boolean
       recorded = d;
     },
     judge: async () => {},
+    defect: () => {},
   });
   return recorded!.proofs.find((p) => p.label === "repo suite")!;
 }

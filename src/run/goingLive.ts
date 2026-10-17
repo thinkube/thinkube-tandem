@@ -20,6 +20,7 @@
  * answer (src/run/suiteInLivePhase.ts).
  */
 import type { Delivery } from "../core/schema";
+import type { DefectType } from "../engine/defectLog";
 import { isSuiteInLivePhase, settleSuiteInLivePhase, type LivePhaseAnswer } from "./suiteInLivePhase";
 import { repairUntilLive, type TryAgainSteps } from "./tryAgain";
 
@@ -57,10 +58,26 @@ export async function goLiveAndJudge(a: {
   record: (d: Delivery) => void;
   /** Judge the live product, repairing what does not hold there. */
   judge: (alsoMerged: string[]) => Promise<void>;
+  /** The defect log: every refusal to go live, and every proof it leaves pending. */
+  defect: (entry: { activity: string; trigger: string; type?: DefectType; impact: string; detail: string }) => void;
 }): Promise<void> {
   const d = a.delivery;
   a.phase("running", a.waiting);
-  let went = await a.goLive();
+  // Every time making it live is refused, in the refusal's own words. A
+  // stop is the person's act, not a refusal.
+  const goLive = async (): Promise<Went> => {
+    const w = await a.goLive();
+    if (!w.live && !a.halted())
+      a.defect({
+        activity: "live phase",
+        trigger: "live-refused",
+        type: w.unjudged ? "infrastructure" : "code",
+        impact: w.unjudged ? "the work could not be made live, so nothing is known about it" : "the merged work did not go live",
+        detail: `${a.said}: ${w.why ?? "it gave no reason"}`.slice(0, 4000),
+      });
+    return w;
+  };
+  let went = await goLive();
   let tried = 0;
   const alsoMerged: string[] = [];
   if (!went.live && !went.unjudged && !a.halted()) {
@@ -75,7 +92,7 @@ export async function goLiveAndJudge(a: {
         if (l.head && l.moved) alsoMerged.push(l.head);
         return l;
       },
-      waitUntilLive: a.goLive,
+      waitUntilLive: goLive,
       say: a.say,
       doing: (l) => a.phase("running", l),
       halted: a.halted,
@@ -96,21 +113,31 @@ export async function goLiveAndJudge(a: {
         ? { live: false, notJudged: went.why ?? "the work was never made live" }
         : { live: false, refusal: (await a.whyItFailed()).evidence };
   const answered = (x: Delivery): Delivery => (suite ? settleSuiteInLivePhase(x, suite) : x);
-  a.record(
-    went.live
-      ? answered({ ...(await a.settle(d)), ...heads, liveAt: a.at })
-      : answered({
-          ...d,
-          ...heads,
-          afterMerge: {
-            at: new Date().toISOString(),
-            outcome: went.unjudged ? "unjudged" : "broke",
-            said: a.said,
-            ...(went.why ? { detail: went.why } : {}),
-            ...(tried ? { tried } : {}),
-          },
-        }),
-  );
+  const recorded = went.live
+    ? answered({ ...(await a.settle(d)), ...heads, liveAt: a.at })
+    : answered({
+        ...d,
+        ...heads,
+        afterMerge: {
+          at: new Date().toISOString(),
+          outcome: went.unjudged ? "unjudged" : "broke",
+          said: a.said,
+          ...(went.why ? { detail: went.why } : {}),
+          ...(tried ? { tried } : {}),
+        },
+      });
+  a.record(recorded);
+  // A proof the live phase was to settle and could not, because the work
+  // never went live, stays pending; each is said in the defect log.
+  if (!went.live && !a.halted())
+    for (const p of recorded.proofs.filter((x) => x.verdict === "pending" && x.settledBy))
+      a.defect({
+        activity: "live phase",
+        trigger: "proof-pending",
+        type: went.unjudged ? "infrastructure" : "code",
+        impact: "a proof settled after the merge is left pending",
+        detail: `${p.label}${p.criterionId ? ` (${p.criterionId})` : ""} — settled by ${p.settledBy}${p.ref ? `: ${p.ref}` : ""}`.slice(0, 2000),
+      });
   if (went.live) await a.judge(alsoMerged);
 }
 

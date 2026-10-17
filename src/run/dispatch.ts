@@ -921,6 +921,7 @@ export async function dispatchTep(
         judge: async (alsoMerged) => {
           outcome = await judgeAndRepair(at, alsoMerged);
         },
+        defect,
       });
     if (!at) {
       st.phase("live", "done", "this repository is not deployed by the platform");

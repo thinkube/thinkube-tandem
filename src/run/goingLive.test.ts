@@ -88,6 +88,7 @@ async function phaseOf(deployFails?: string) {
     repairs: [] as string[],
     judged: 0,
     recorded: undefined as Delivery | undefined,
+    defects: [] as { trigger: string; detail: string }[],
   };
   await goLiveAndJudge({
     at: "https://svc.example.com",
@@ -113,6 +114,7 @@ async function phaseOf(deployFails?: string) {
     judge: async () => {
       seen.judged++;
     },
+    defect: (e) => seen.defects.push(e),
   });
   return { ...seen, deploys, state };
 }
@@ -158,6 +160,22 @@ test("a deploy that could not run is reported in its own words, and nothing is r
   assert.equal(r.recorded?.afterMerge?.outcome, "unjudged");
   assert.match(r.recorded?.afterMerge?.detail ?? "", /THINKUBE_API_TOKEN is not set/);
   assert.equal(r.recorded?.afterMerge?.said, "a validation deployment through thinkube-control");
+});
+
+test("a refused deploy and the proof it leaves pending are written to the defect log", async () => {
+  const words = "Error: THINKUBE_API_TOKEN is not set — unauthorized";
+  const r = await phaseOf(words);
+  const refused = r.defects.filter((e) => e.trigger === "live-refused");
+  assert.equal(refused.length, 1);
+  assert.match(refused[0].detail, /^a validation deployment through thinkube-control: `python3 scripts\/deploy\.py svc` exited 1\nError: THINKUBE_API_TOKEN is not set/);
+  const pending = r.defects.filter((e) => e.trigger === "proof-pending");
+  assert.equal(pending.length, 1);
+  assert.match(pending[0].detail, /^the deployed service answers \/segments \(c1\) — settled by a validation deployment/);
+});
+
+test("a deploy that goes live writes nothing to the defect log", async () => {
+  const r = await phaseOf();
+  assert.deepEqual(r.defects, []);
 });
 
 /** The live phase for work the project already had: a template with its
@@ -212,6 +230,7 @@ async function alreadyThere(o: { deploys: boolean; recorded?: boolean; answers?:
               judge: async () => {
                 judged++;
               },
+              defect: () => {},
             }),
         }
       : {}),
