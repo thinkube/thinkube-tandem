@@ -26,10 +26,12 @@
  *   proves that something was written, never that anything works.
  * - It must DRIVE SOMETHING THIS CUT BUILDS. A check importing nothing this
  *   run touches is green before the run starts and stays green whatever the
- *   coders do.
+ *   coders do. A live check is the exception: it is a client of the
+ *   deployed service and never imports the repository's code.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { liveSuiteDeclared } from "./liveSuite";
 
 export interface ProbeFault {
   probe: string;
@@ -37,13 +39,86 @@ export interface ProbeFault {
   detail: string;
 }
 
-/** Relative import specifiers a file names. */
+/** Relative import specifiers a JavaScript or TypeScript file names. */
 function importsOf(source: string): string[] {
   const out = new Set<string>();
   for (const m of source.matchAll(/\bfrom\s+["'](\.[^"']+)["']/g)) out.add(m[1]);
   for (const m of source.matchAll(/\bimport\s*\(\s*["'](\.[^"']+)["']\s*\)/g)) out.add(m[1]);
   for (const m of source.matchAll(/\brequire\s*\(\s*["'](\.[^"']+)["']\s*\)/g)) out.add(m[1]);
   return [...out];
+}
+
+/**
+ * The modules a Python file imports, dotted: `import a.b, c as d` names
+ * `a.b` and `c`; `from a.b import x, y` names `a.b`, and `a.b.x`, `a.b.y`
+ * in case those are submodules. A relative `from .m import x` is resolved
+ * against the file's own package, written with its leading dots kept.
+ */
+export function pythonImportsOf(source: string): string[] {
+  const out = new Set<string>();
+  // A parenthesised import list may run over several lines.
+  const flat = source.replace(/\(([^)]*)\)/g, (_m, inner: string) => inner.replace(/\s*\n\s*/g, " "));
+  for (const raw of flat.split(/\r?\n/)) {
+    const line = raw.replace(/#.*$/, "").trim();
+    const from = /^from\s+(\.*[\w.]*)\s+import\s+(.+)$/.exec(line);
+    if (from) {
+      const mod = from[1];
+      if (mod.replace(/^\.+/, "")) out.add(mod);
+      for (const name of from[2].split(",")) {
+        const n = name.trim().split(/\s+as\s+/)[0].trim();
+        if (/^\w+$/.test(n)) out.add(mod.endsWith(".") ? `${mod}${n}` : `${mod}.${n}`);
+      }
+      continue;
+    }
+    const imp = /^import\s+(.+)$/.exec(line);
+    if (imp)
+      for (const name of imp[1].split(",")) {
+        const n = name.trim().split(/\s+as\s+/)[0].trim();
+        if (/^[\w.]+$/.test(n)) out.add(n);
+      }
+  }
+  return [...out];
+}
+
+/**
+ * Where a dotted Python module can live in the repository, as
+ * repository-relative paths: a module file (`a/b.py`) or a package
+ * directory (`a/b`), from the repository root and from the check's own
+ * directory. A relative module is resolved from the check's directory only.
+ */
+function pythonModulePaths(probe: string, mod: string): { file: string; pkg: string }[] {
+  const dir = path.posix.dirname(probe);
+  const dots = /^\.*/.exec(mod)![0].length;
+  const rest = mod.slice(dots).split(".").filter(Boolean).join("/");
+  if (!rest) return [];
+  const bases = dots
+    ? [path.posix.normalize(path.posix.join(dir, ...Array<string>(dots - 1).fill("..")))]
+    : [".", dir];
+  return [...new Set(bases)].map((b) => {
+    const at = path.posix.normalize(path.posix.join(b, rest));
+    return { file: `${at}.py`, pkg: at };
+  });
+}
+
+/** Whether a check imports a file this cut plans: a JavaScript relative
+ *  import naming it, or a Python import of its module or of the package
+ *  it lies in. */
+function importsPlanned(probe: string, source: string, planned: readonly string[]): boolean {
+  if (probe.endsWith(".py"))
+    return pythonImportsOf(source).some((mod) =>
+      pythonModulePaths(probe, mod).some(({ file, pkg }) => planned.some((p) => p === file || p.startsWith(`${pkg}/`))),
+    );
+  return importsOf(source).some((spec) => {
+    const rel = path.posix.normalize(path.posix.join(path.posix.dirname(probe), spec));
+    return planned.some((p) => p === rel || p.replace(/\.[^./]+$/, "") === rel.replace(/\.[^./]+$/, ""));
+  });
+}
+
+/** Whether a check lies under the live home the repository declares
+ *  (`spec.deploy.live.home` in thinkube.yaml). */
+function isLiveCheck(probe: string, root: string): boolean {
+  const home = liveSuiteDeclared(root)?.home?.replace(/^\.\//, "").replace(/\/+$/, "");
+  return !!home && (probe === home || probe.startsWith(`${home}/`));
 }
 
 /** Module-loader interception: the mark of a simulator, whatever it fakes. */
@@ -126,14 +201,13 @@ export function auditProbe(
     }
   }
   // Nothing of this cut is imported: whatever it asserts, no coder can
-  // change its verdict.
+  // change its verdict. A live check drives the deployed service and must
+  // import none of the repository's code, so the rule is not its.
   if (
     planned.length &&
     !faults.some((f) => f.kind === "import-shape") &&
-    !importsOf(source).some((spec) => {
-      const rel = path.posix.normalize(path.posix.join(path.posix.dirname(probe), spec));
-      return planned.some((p) => p === rel || p.replace(/\.[^./]+$/, "") === rel.replace(/\.[^./]+$/, ""));
-    })
+    !isLiveCheck(probe, root) &&
+    !importsPlanned(probe, source, planned)
   )
     faults.push({
       probe,
