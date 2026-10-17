@@ -31,8 +31,8 @@ of them there — nothing has users.
 - **Author slug** = git user.name lowercased/hyphenated; "user" fallback.
 
 - **knip governs v2-authored code only.** The imported engine's public
-  surface is canonical v1 API — pinned by the split-fidelity manifest, not
-  by usage analysis. Un-exporting it would alter imported code (I1). The
+  surface is canonical v1 API, judged by reading rather than by usage
+  analysis. Un-exporting it would alter imported code (I1). The
   engine's own uncalled surface is judged instead in ENGINE-WIRING.md, a
   ledger derived from the source tree (`src/derive/engineWiring.ts`), not
   by knip.

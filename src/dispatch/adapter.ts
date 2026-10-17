@@ -11,7 +11,7 @@
  * a space-namespaced probe footprint, `consumes` edges derived from
  * cross-slice needs, and the contract injected verbatim. Enrichment lives
  * only inside fields the engine already threads; engine code is never
- * edited to fit (the engine-hash gate enforces that).
+ * edited to fit.
  */
 import { Change, Cut, Space } from "../core/schema";
 import { formUnits } from "../core/cluster";
