@@ -17,6 +17,10 @@
  * the runtime recording what it executed; the promise's own files are then
  * looked for in that record.
  *
+ * Node records itself when `NODE_V8_COVERAGE` names a directory; a Python
+ * process is recorded by a `sitecustomize` put first on its path
+ * (src/run/wiringPython.ts), into the same directory, in the same shape.
+ *
  * What this does NOT do is guess. When the runtime a check runs under
  * cannot report what it executed, the answer is **unknown**, said plainly
  * and carried onto the delivery — never a pass, and never a failure
@@ -25,6 +29,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { pythonRecorder } from "./wiringPython";
 
 type Executed = "yes" | "no" | "unknown";
 
@@ -199,12 +204,14 @@ export async function provedByExecution(a: {
   // second time under a recorder buys nothing.
   a = { ...a, subjects: runnable };
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tandem-wiring-"));
+  const pyDir = await fs.mkdtemp(path.join(os.tmpdir(), "tandem-wiring-py-"));
   try {
-    // The recorder is an environment variable of the runtime itself, so a
+    // The recorders are set through the runtimes' own environment, so a
     // check runs exactly the way it ran when it went green — no flags of
     // ours in its command, nothing about its runner assumed.
+    const python = await pythonRecorder(pyDir, dir);
     const t0 = Date.now();
-    const r = await a.exec(`NODE_V8_COVERAGE='${dir}' ${a.run}`, a.worktree);
+    const r = await a.exec(`NODE_V8_COVERAGE='${dir}' ${python} ${a.run}`, a.worktree);
     const took = Date.now() - t0;
     const { files: ran, read } = await executedFiles(dir);
     // Nothing to read, or nothing understood: that is a fact about the
@@ -236,6 +243,7 @@ export async function provedByExecution(a: {
         `(exit ${r.code ?? "null"} in ${took}ms; it did execute: ${ran.slice(0, 5).join(", ")}${ran.length > 5 ? ` and ${ran.length - 5} more` : ""})`,
     };
   } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rm(pyDir, { recursive: true, force: true });
   }
 }
