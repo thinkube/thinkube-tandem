@@ -171,6 +171,12 @@ export function stepJudged(log: string): { judged: boolean; said: string } {
   return { judged: false, said: (machinery ?? lines[0] ?? "nothing in its log says what happened").slice(0, 200) };
 }
 
+/** Whether a pipeline step is a test step, by the name the platform gives
+ *  it: `run-test`, `test-<component>`, `tests`. */
+export function isTestStep(name: string): boolean {
+  return /(^|[-_])tests?([-_]|$)/i.test(name);
+}
+
 /**
  * Run a component's own validation playbook and read the recap.
  *

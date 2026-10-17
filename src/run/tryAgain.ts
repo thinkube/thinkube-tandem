@@ -26,6 +26,9 @@ interface Attempt {
   evidence: string;
   /** The files its words name — the only ones the repair may touch. */
   files: string[];
+  /** The refused step is the pipeline's test step: the repair is measured
+   *  by the repository's whole suite, which reproduces that step. */
+  testStep?: boolean;
 }
 
 export interface TryAgainSteps {
@@ -33,8 +36,9 @@ export interface TryAgainSteps {
   whyItFailed: () => Promise<Attempt>;
   /** Repair the tree from that evidence. Green means it believes it done. */
   repair: (a: Attempt, attempt: number) => Promise<{ green: boolean; report: string }>;
-  /** The repository's own build, here. Nothing is pushed until it passes. */
-  buildsHere: () => Promise<{ ok: boolean; output: string }>;
+  /** The repository's own build, here — and its whole suite, when the
+   *  refused step was the test step. Nothing is pushed until it passes. */
+  buildsHere: (a: Attempt) => Promise<{ ok: boolean; output: string }>;
   /** Put the repaired work in the project again. `moved` is false when the
    *  merge and push changed nothing — a repair that committed nothing. */
   land: () => Promise<{ ok: boolean; why?: string; moved?: boolean }>;
@@ -74,7 +78,7 @@ export async function repairUntilLive(
       break;
     }
     steps.doing("building it here before pushing anything");
-    const built = await steps.buildsHere();
+    const built = await steps.buildsHere(found);
     if (!built.ok) {
       why = `the repair does not build here, so it was not pushed: ${built.output.split("\n").slice(-2).join(" ").slice(0, 300)}`;
       steps.say(why);

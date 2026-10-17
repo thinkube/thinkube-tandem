@@ -795,7 +795,7 @@ export async function dispatchTep(
         doing: (l) => st.phase("live", "running", l),
         repair: (found, attempt) =>
           repairAfterTheMerge({
-            tep, attempt, worktree, deps, st, exec, boundedExec,
+            tep, attempt, worktree, deps, st, exec, boundedExec, suiteExec,
             evidence: `judged on the running product at ${at}, these do not hold:\n${found.evidence}`,
             files: found.files,
             log: (l) => log(l, "live"),
@@ -883,14 +883,23 @@ export async function dispatchTep(
             : stampPending(x, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt), !!liveSuite),
         repair: (found, attempt) =>
           repairAfterTheMerge({
-            tep, attempt, worktree, deps, st, exec, boundedExec,
+            tep, attempt, worktree, deps, st, exec, boundedExec, suiteExec,
             evidence: found.evidence, files: found.files,
+            ...(found.testStep ? { testStep: true } : {}),
             log: (l) => log(l, "live"),
           }),
-        buildsHere: async () => {
-          if (!deps.build) return { ok: true, output: "" };
-          const b = await boundedExec(deps.build, worktree);
-          return { ok: b.code === 0, output: b.output };
+        // A refusal of the pipeline's test step is reproduced by the whole
+        // suite, so nothing is pushed until it passes here.
+        buildsHere: async (found) => {
+          if (deps.build) {
+            const b = await boundedExec(deps.build, worktree);
+            if (b.code !== 0) return { ok: false, output: b.output };
+          }
+          if (!found.testStep) return { ok: true, output: "" };
+          if (!deps.suite)
+            return { ok: false, output: "the setup facts (.tandem/setup.json) name no `suite` to reproduce the platform's test step here" };
+          const s = await suiteExec(deps.suite, worktree);
+          return { ok: s.code === 0, output: s.output };
         },
         land: async () => {
           try {

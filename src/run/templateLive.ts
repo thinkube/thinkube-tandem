@@ -30,7 +30,7 @@
 import type { Delivery } from "../core/schema";
 import { controlReachedBy, type Http } from "../hostui/templateCore";
 import type { Went } from "./goingLive";
-import { stampByValidation, stepJudged, validateTemplate, type Validation } from "./harvest";
+import { isTestStep, stampByValidation, stepJudged, validateTemplate, type Validation } from "./harvest";
 import { namedFiles } from "./live";
 import { liveSuiteDeclared } from "./liveSuite";
 import type { Invoke } from "./makeLive";
@@ -47,17 +47,19 @@ export function templateGoesLive(a: {
   wait?: (ms: number) => Promise<unknown>;
 }): {
   goLive: () => Promise<Went>;
-  whyItFailed: () => Promise<{ evidence: string; files: string[] }>;
+  whyItFailed: () => Promise<{ evidence: string; files: string[]; testStep: boolean }>;
   settle: (d: Delivery) => Promise<Delivery>;
 } {
   let last: Validation | undefined;
   // The logs of the failed build steps, when the deploy's output named a
   // failed build workflow and Control gave them.
   let stepLogs = "";
+  let failedSteps: string[] = [];
   return {
     goLive: async () => {
       last = await validateTemplate(a);
       stepLogs = "";
+      failedSteps = [];
       if (last.ok) return { live: true };
       if (last.stage === "health") return { live: false, why: last.why };
       if (last.stage === "deploy" && stepJudged(last.why).judged) return { live: false, why: last.why };
@@ -74,6 +76,7 @@ export function templateGoesLive(a: {
           return { live: false, unjudged: true, why };
         }
         stepLogs = read.log;
+        failedSteps = read.steps;
         if (stepJudged(read.log).judged) return { live: false, why: last.why };
       }
       return { live: false, unjudged: true, why: last.why };
@@ -81,7 +84,7 @@ export function templateGoesLive(a: {
     whyItFailed: async () => {
       if (!last || last.ok) throw new Error("the validation deployment has not refused anything to repair");
       const evidence = stepLogs ? `${last.why}\n${stepLogs}` : last.why;
-      return { evidence, files: namedFiles(evidence, a.repoRoot) };
+      return { evidence, files: namedFiles(evidence, a.repoRoot), testStep: failedSteps.some(isTestStep) };
     },
     settle: async (d) => {
       if (!last) throw new Error("the validation deployment has not run, so there is nothing to settle");
@@ -114,7 +117,7 @@ export async function failedStepLogs(a: {
   workflow: string;
   control: ReachControl;
   http: Http;
-}): Promise<{ log: string } | { refused: string }> {
+}): Promise<{ log: string; steps: string[] } | { refused: string }> {
   const auth = a.control();
   if ("reason" in auth) return { refused: auth.reason };
   const ask = async (route: string): Promise<{ body: unknown } | { refused: string }> => {
@@ -158,5 +161,5 @@ export async function failedStepLogs(a: {
       return { refused: `Control's answer for the log of ${s.stageName ?? s.podName} carries no \`logs\`` };
     parts.push(`── ${s.stageName ?? s.podName} (${a.workflow}) ──\n${logs}`);
   }
-  return { log: parts.join("\n") };
+  return { log: parts.join("\n"), steps: stages.map((s) => s.stageName ?? s.podName!) };
 }

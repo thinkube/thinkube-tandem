@@ -11,7 +11,7 @@
  * of, and a repository the platform does not deploy simply has no address.
  */
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
-import { controlUrlOf, readPipeline, type PipelineReading } from "./harvest";
+import { controlUrlOf, isTestStep, readPipeline, type PipelineReading } from "./harvest";
 import { controlReachedBy } from "../hostui/templateCore";
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
@@ -95,7 +95,7 @@ export async function readLive(repoRoot: string, app: string, since: string): Pr
  * which is what names the files to repair. Nothing is inferred: a step
  * that says nothing leaves the evidence thin, and the loop says so.
  */
-export async function whyItFailed(repoRoot: string, app: string, since: string): Promise<{ evidence: string; files: string[] }> {
+export async function whyItFailed(repoRoot: string, app: string, since: string): Promise<{ evidence: string; files: string[]; testStep: boolean }> {
   const auth = await platformAuth(repoRoot);
   const reading = await readLive(repoRoot, app, since);
   const broke = (reading.stages ?? []).filter((s) => /fail|error/i.test(s.status));
@@ -108,7 +108,7 @@ export async function whyItFailed(repoRoot: string, app: string, since: string):
     }
   }
   const evidence = parts.join("\n").slice(-8000) || `the platform's build ended ${reading.phase ?? "without succeeding"}`;
-  return { evidence, files: namedFiles(evidence, repoRoot) };
+  return { evidence, files: namedFiles(evidence, repoRoot), testStep: broke.some((s) => isTestStep(s.name)) };
 }
 
 /**
