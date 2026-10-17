@@ -142,8 +142,7 @@ to call and where the agent must stop for the person.
 | `thinkubeTandem.workerModel` | `sonnet` | Base model for every run worker. |
 | `thinkubeTandem.workerModelByRole` | `{}` | Per-role models that raise a role above the base, for example `{"judge": "opus"}`. |
 | `thinkubeTandem.maxConcurrent` | `4` | Workers that run at the same time. |
-| `thinkubeTandem.unitBudgetUsd` | `0` | The most one worker round may spend, in US dollars. A round that reaches it ends with the budget named as what it did not deliver. A value of `0` or below means no ceiling. What every unit spent is on its card and on the delivery. |
-| `thinkubeTandem.fallbackModel` | empty | The model a worker switches to when its own is overloaded, instead of ending the round. Empty means none. |
+| `thinkubeTandem.fallbackModel` | empty | The model a worker switches to when its own is overloaded, instead of ending the round. Empty means none. What every unit spent, as the harness reports it, is on its card and on the delivery; a round is bounded by its turns, never by a sum of money. |
 | `thinkubeTandem.suiteCommand` | `npm test` | The project's test suite. Its verdict is a delivery proof. |
 | `thinkubeTandem.prepareCommand` | empty | Build or typecheck command run before checks execute. |
 | `thinkubeTandem.docsGateMode` | `blocking` | Whether an unmet documentation obligation blocks accepting a delivery (`blocking`) or not (`advisory`). Documentation is required for every cut at signing either way. |

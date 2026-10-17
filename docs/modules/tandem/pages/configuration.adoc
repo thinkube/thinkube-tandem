@@ -57,9 +57,7 @@ The *Projects* view also carries *New Product*, *New here…*, *Set Product…*,
 
 |`thinkubeTandem.maxConcurrent` |`4` |How many workers run at the same time.
 
-|`thinkubeTandem.unitBudgetUsd` |`0` |The most one worker round may spend, in US dollars. A round that reaches it stops, and the delivery says the budget was spent before the work was finished. A value of `0` or below means no ceiling. What each unit spent is shown on its card and on the delivery.
-
-|`thinkubeTandem.fallbackModel` |empty |The model a worker switches to when its own is overloaded, instead of stopping. Empty means none.
+|`thinkubeTandem.fallbackModel` |empty |The model a worker switches to when its own is overloaded, instead of stopping. Empty means none. What each unit spent is shown on its card and on the delivery.
 
 |`thinkubeTandem.suiteCommand` |`npm test` |The project's own test suite. The closing gate runs it, and its verdict is on the report.
 

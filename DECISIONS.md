@@ -179,6 +179,17 @@ of them there — nothing has users.
   the brief and the digest today, and through role definitions and
   `.claude/rules` when roles become agent definitions. Revisit then.
 
+## A round is bounded by its turns, never by a sum of money (2026-10-17)
+- The ceiling on what a round may spend (`unitBudgetUsd`, the harness's
+  `maxBudgetUsd`) is gone. It ended a round wherever the worker stood, and
+  the run then repaired the gap in a resumed session that spent again: a
+  ceiling set low cost more than it saved, and `maxTurns` already ends a
+  worker that loops without cutting one that is simply working on
+  something big.
+- What a round cost is still read from the harness and recorded on the
+  unit, its log line and the delivery: the record is what lets a change to
+  how workers run be judged. The fallback model stays.
+
 ## The Claude Code surface ships as a plugin (2026-10-16)
 - `claude-plugins/` is a Claude Code marketplace beside the code, with one
   plugin, `tandem`: the MCP server (through the version-independent
