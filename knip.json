@@ -12,6 +12,9 @@
         "@vscode/vsce",
         "antora",
         "asciidoctor-kroki"
+      ],
+      "ignoreBinaries": [
+        "kubectl"
       ]
     },
     "webview/map": {

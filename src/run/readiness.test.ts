@@ -12,6 +12,7 @@
  * answer is kept per HEAD and per declaration, so the second question
  * about the same tree runs nothing.
  */
+import type { ReadDeployment } from "./rollout";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -25,6 +26,13 @@ const HEAD = "a".repeat(40);
 const HOME = { storeRoot: fs.mkdtempSync(path.join(os.tmpdir(), "tandem-readiness-store-")), repoId: "svc-abc123" };
 const FILES = ["app/main.py", "app/store.py", "tests/test_main.py", "run_tests.sh", "thinkube.yaml", "manifest.yaml"];
 
+/** A Deployment that has rolled out a new revision every time it is read,
+ *  so a deploy is always followed by a complete rollout. */
+function rollingOut(): ReadDeployment {
+  let revision = 0;
+  return async () => ({ revision: String(++revision), generation: 1, observedGeneration: 1, replicas: 1, current: 1, updated: 1, available: 1 });
+}
+
 function thinkubeYaml(o: { version?: string; deploy?: boolean; health?: boolean; live?: string[] } = {}): string {
   return [
     "apiVersion: thinkube.io/v1",
@@ -32,6 +40,8 @@ function thinkubeYaml(o: { version?: string; deploy?: boolean; health?: boolean;
     "metadata:",
     `  version: "${o.version ?? "0.1.0"}"`,
     "spec:",
+    "  deployment:",
+    "    name: svc",
     "  containers:",
     "    - name: svc",
     "      build: .",
@@ -144,7 +154,7 @@ test("a template whose setup holds, whose checks land in its tests, declared, ta
   const d = door();
   const w = web();
   const live = deployer();
-  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {} });
+  const r = await checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {}, readDeployment: rollingOut() });
   assert.deepEqual(
     r.items.map((i) => [i.name, i.ready]),
     [["setup", true], ["check homes", true], ["live checks", true], ["deploy declared", true], ["release", true], ["secrets", true], ["deploy works", true]],
@@ -165,7 +175,7 @@ test("a template whose setup holds, whose checks land in its tests, declared, ta
 
   // The same tree asked again: neither the setup nor the deploy runs again.
   const doorRuns = d.ran.length;
-  const again = await checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {} });
+  const again = await checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: w.http, control, wait: async () => {}, readDeployment: rollingOut() });
   assert.deepEqual(again, r);
   assert.equal(d.ran.length, doorRuns, "the door did not run again");
   assert.equal(live.ran.length, 1, "nothing was deployed again");
@@ -182,6 +192,7 @@ test("a setup that does not hold on a clean copy is not ready, in the door's wor
     http: web().http,
     control,
     wait: async () => {},
+    readDeployment: rollingOut(),
   });
   const setup = item(r, "setup");
   assert.equal(setup.ready, false);
@@ -218,6 +229,7 @@ test("a template that declares no deploy is not ready, and its deploy is not tri
     http: web().http,
     control,
     wait: async () => {},
+    readDeployment: rollingOut(),
   });
   assert.equal(item(r, "deploy declared").ready, false);
   assert.match(item(r, "deploy declared").say, /does not declare `run`.* or `at`/);
@@ -236,6 +248,7 @@ test("a release tag that is not the declared version is not ready, naming both",
     http: web().http,
     control,
     wait: async () => {},
+    readDeployment: rollingOut(),
   });
   const release = item(r, "release");
   assert.equal(release.ready, false);
@@ -280,6 +293,7 @@ test("a secret the manifest declares and control does not hold is not ready; con
     http: web({ secrets: ["DB_URL"] }).http,
     control,
     wait: async () => {},
+    readDeployment: rollingOut(),
   });
   assert.equal(item(r, "secrets").ready, false);
   assert.match(item(r, "secrets").say, /holds no secret named API_KEY/);
@@ -294,6 +308,7 @@ test("a secret the manifest declares and control does not hold is not ready; con
     http: web().http,
     control: () => ({ reason: "no way to reach thinkube-control" }),
     wait: async () => {},
+    readDeployment: rollingOut(),
   });
   assert.equal(item(out, "secrets").ready, false);
   assert.match(item(out, "secrets").say, /cannot be asked whether DB_URL exist: no way to reach thinkube-control/);
@@ -311,6 +326,7 @@ test("a deploy that fails is not ready in its own words; one already recorded fo
     http: web().http,
     control,
     wait: async () => {},
+    readDeployment: rollingOut(),
   });
   assert.equal(item(r, "deploy works").ready, false);
   assert.match(item(r, "deploy works").say, /release v0\.1\.0 not found in the catalog/);
@@ -333,6 +349,7 @@ test("a deploy that fails is not ready in its own words; one already recorded fo
     wait: async () => {
       waits++;
     },
+    readDeployment: rollingOut(),
   });
   assert.equal(live.ran.length, 0, "HEAD is already deployed, so nothing is deployed again");
   assert.equal(item(sick, "deploy works").ready, false);
@@ -346,7 +363,7 @@ test("the commit recorded is the one the deploy left, and asking again at that H
   const g = git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` });
   const live = deployer(undefined, { state: g.state, to: RELEASE });
   const ask = () =>
-    checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: door().boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {} });
+    checkReadiness({ repoRoot: root, home: HOME, exec: g.exec, boundedExec: door().boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {}, readDeployment: rollingOut() });
   const first = await ask();
   assert.equal(item(first, "deploy works").ready, true, item(first, "deploy works").say);
   assert.match(item(first, "deploy works").say, /deployed dddddddd \(the deploy moved HEAD from aaaaaaaa\)/);
@@ -496,18 +513,18 @@ test("a kept answer reuses what the tree decided and asks again what depends on 
   const g = git({ tags: `${HEAD}\trefs/tags/v0.1.0\n` });
   const d = door();
   const down = { http: async () => new Response("", { status: 503 }) };
-  const first = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: deployer().invoke, http: down.http, control, wait: async () => {} });
+  const first = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: deployer().invoke, http: down.http, control, wait: async () => {}, readDeployment: rollingOut() });
   assert.match(item(first, "secrets").say, /answered 503/);
   assert.equal(item(first, "setup").ready, true);
   const setupRuns = d.ran.length;
 
   const live = deployer();
-  const again = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {} });
+  const again = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: web().http, control, wait: async () => {}, readDeployment: rollingOut() });
   assert.equal(item(again, "secrets").ready, true, item(again, "secrets").say);
   assert.equal(item(again, "deploy works").ready, true, item(again, "deploy works").say);
   assert.equal(d.ran.length, setupRuns, "the setup the tree decided is not run again");
 
-  const third = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: down.http, control, wait: async () => {} });
+  const third = await checkReadiness({ repoRoot: root, home, exec: g.exec, boundedExec: d.boundedExec, invoke: live.invoke, http: down.http, control, wait: async () => {}, readDeployment: rollingOut() });
   assert.equal(third.at, again.at, "an answer with nothing to ask again is kept whole");
 });
 
@@ -524,7 +541,7 @@ test("a setup whose check could not run is asked again", async () => {
       return { code: 0, output: "1 passed" };
     },
   };
-  const args = { repoRoot: root, home, exec: g.exec, boundedExec: flaky.boundedExec, invoke: deployer().invoke, http: web().http, control, wait: async () => {} };
+  const args = { repoRoot: root, home, exec: g.exec, boundedExec: flaky.boundedExec, invoke: deployer().invoke, http: web().http, control, wait: async () => {}, readDeployment: rollingOut() };
   const first = await checkReadiness(args);
   assert.equal(item(first, "setup").ready, false);
   assert.match(item(first, "setup").say, /^could not be checked: /);

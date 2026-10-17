@@ -30,6 +30,7 @@
  * run that starts at the same commit with the same setup facts takes that
  * proof at its own door instead of running it again.
  */
+import type { ReadDeployment } from "./rollout";
 import { execFileSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
@@ -108,6 +109,8 @@ interface ReadinessArgs {
   http?: Http;
   control?: ReachControl;
   wait?: (ms: number) => Promise<unknown>;
+  /** How the app's Deployment is read, to wait for its rollout after a deploy. */
+  readDeployment?: ReadDeployment;
   log?: (line: string) => void;
   now?: () => string;
   /** The setup the run will work with (`runSetup`), when the session has
@@ -607,6 +610,7 @@ async function deployWorks(a: ReadinessArgs, head: string): Promise<Omit<Readine
     ...(a.http ? { http: a.http } : {}),
     ...(a.control ? { control: a.control } : {}),
     ...(a.wait ? { wait: a.wait } : {}),
+    ...(a.readDeployment ? { readDeployment: a.readDeployment } : {}),
     ...(a.log ? { log: a.log } : {}),
   });
   if (v.ok)
