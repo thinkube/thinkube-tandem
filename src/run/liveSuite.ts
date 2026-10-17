@@ -44,8 +44,15 @@ const LIVE_URL_ENV = "TANDEM_LIVE_URL";
  *  check whatever it is named. */
 export function readsLiveUrl(repoRoot: string): (rel: string) => boolean {
   return (rel) => {
+    if (!rel) return false;
     const at = path.join(repoRoot, rel);
-    return fs.existsSync(at) && fs.readFileSync(at, "utf8").includes(LIVE_URL_ENV);
+    let isFile = false;
+    try {
+      isFile = fs.statSync(at).isFile();
+    } catch {
+      return false;
+    }
+    return isFile && fs.readFileSync(at, "utf8").includes(LIVE_URL_ENV);
   };
 }
 

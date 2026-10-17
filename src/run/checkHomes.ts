@@ -283,10 +283,19 @@ export function rehouseChecks(
    *  that part's idiom, and a declared part is a tree that runs tests
    *  whether or not it holds one yet. */
   parts: readonly PartAt[] = [],
+  /** A file that is a live check — it drives the deployed service and is
+   *  kept apart from the unit suite — says nothing about where this
+   *  repository keeps its unit tests. One live check named like a unit
+   *  test, in a directory of its own, once made a Python service's `tests/`
+   *  look like one directory among two, and every check of the next cut
+   *  was minted beside its module in `app/`, inside the image. */
+  isLive: (rel: string) => boolean = () => false,
 ): { from: string; to: string }[] {
   const partRoots = parts.map((p) => p.root);
-  if (!inferTestIdiom(repoFiles) && !partRoots.length) return [];
-  const runnable = runnableRootsOf(repoFiles, parts);
+  // The unit tests, which say where tests go; the live checks say nothing.
+  const unitFiles = repoFiles.filter((f) => !isLive(f));
+  if (!inferTestIdiom(unitFiles) && !partRoots.length) return [];
+  const runnable = runnableRootsOf(unitFiles, parts);
   const treeOf = (f: string): string =>
     [...partRoots].filter((r) => r !== "." && (f === r || f.startsWith(`${r}/`))).sort((a, b) => b.length - a.length)[0] ??
     f.split("/")[0];
@@ -323,7 +332,7 @@ export function rehouseChecks(
     // or a document another slice writes — still has its checks run by the
     // repository's runner: they go to the one directory the repository
     // keeps its tests in, named for the slice, in that directory's idiom.
-    const shared = found ? undefined : sharedTestHome(repoFiles);
+    const shared = found ? undefined : sharedTestHome(unitFiles);
     const subject = found ?? (shared ? `${shared.dir}${sliceStem(s.handle)}${path.extname(shared.suffix)}` : undefined);
     if (!subject) continue;
     // The idiom of the subject's own tree, so a Python module gets a Python
@@ -333,15 +342,15 @@ export function rehouseChecks(
     // takes the check. Failing both, the idiom the subject's language
     // wears everywhere — never another language's, which minted Python
     // checks beside a Vue view.
-    const own = inferTestIdiom(repoFiles, treeOf(subject));
+    const own = inferTestIdiom(unitFiles, treeOf(subject));
     const ownSpeaks = !!own && (!partRoots.length || languageOf(own.suffix) === languageOf(subject));
     const idiom =
       shared ??
       (ownSpeaks ? own : undefined) ??
-      (own && partRoots.length ? testHomeInPartOfLanguage(repoFiles, partRoots, subject) : undefined) ??
-      sharedTestDirFor(repoFiles, subject) ??
+      (own && partRoots.length ? testHomeInPartOfLanguage(unitFiles, partRoots, subject) : undefined) ??
+      sharedTestDirFor(unitFiles, subject) ??
       idiomOfLanguage(subject) ??
-      inferTestIdiom(repoFiles);
+      inferTestIdiom(unitFiles);
     if (!idiom) continue;
     for (const u of units) {
       // A live check has its own home, given by houseLiveChecks.
@@ -494,9 +503,13 @@ function testRootsOf(repoFiles: readonly string[]): string[] {
 export function checksInAnotherLanguage(
   slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
   repoFiles: readonly string[],
+  /** A live check is not a unit test of the repository (see `rehouseChecks`). */
+  isLive: (rel: string) => boolean = () => false,
 ): { where: string[]; languages: string[] } {
   const languages = [
-    ...new Set(repoFiles.filter((f) => f && isTestPath(f) && !isProbePath(f) && suffixOf(f)).map(languageOf)),
+    ...new Set(
+      repoFiles.filter((f) => f && !isLive(f) && isTestPath(f) && !isProbePath(f) && suffixOf(f)).map(languageOf),
+    ),
   ].sort();
   if (!languages.length) return { where: [], languages };
   const where: string[] = [];
@@ -526,8 +539,10 @@ export function unreachableCheckHomes(
   slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
   repoFiles: readonly string[],
   parts: readonly PartAt[] = [],
+  /** A live check is not a unit test of the repository (see `rehouseChecks`). */
+  isLive: (rel: string) => boolean = () => false,
 ): { where: string[]; roots: string[] } {
-  const roots = runnableRootsOf(repoFiles, parts);
+  const roots = runnableRootsOf(repoFiles.filter((f) => !isLive(f)), parts);
   if (!roots.length) return { where: [], roots };
   const under = (f: string): boolean => roots.some((r) => r === "." || f === r || f.startsWith(`${r}/`));
   const where: string[] = [];

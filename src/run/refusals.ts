@@ -245,11 +245,15 @@ export async function refusedBeforeDispatch(a: {
     const housed = houseLiveChecks(a.slices, live.home, repoFiles, new Set([...onBranch, ...(a.recordedChecks ?? [])]));
     if (housed.length) a.log(`${housed.length} live check(s) minted under ${live.home}, e.g. ${housed[0].to}`);
   }
+  // What is a live check here is what readiness read as one: a file that
+  // reads the live address, wherever it sits.
+  const isLive = readsLiveUrl(a.repoRoot);
   const rehoused = rehouseChecks(
     a.slices,
     repoFiles,
     new Set([...onBranch, ...(a.recordedChecks ?? [])]),
     parts,
+    isLive,
   );
   if (rehoused.length)
     a.log(`${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
@@ -278,7 +282,7 @@ export async function refusedBeforeDispatch(a: {
   // it never runs — and the unit holding it is failed for work that was
   // correct. The fix is a build configuration no worker is cleared for, so
   // the placement is refused here, before anybody spends a round on it.
-  const stranded = unreachableCheckHomes(a.slices, repoFiles, parts);
+  const stranded = unreachableCheckHomes(a.slices, repoFiles, parts, isLive);
   if (stranded.where.length)
     return {
       dag,
@@ -292,7 +296,7 @@ export async function refusedBeforeDispatch(a: {
 
   // A check left at the run's own coordinate in a language the repository
   // does not test in is run by a runner that runs nothing of it.
-  const foreign = checksInAnotherLanguage(a.slices, repoFiles);
+  const foreign = checksInAnotherLanguage(a.slices, repoFiles, isLive);
   if (foreign.where.length)
     return {
       dag,

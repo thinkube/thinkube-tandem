@@ -450,9 +450,9 @@ async function checksLandWhereTestsRun(root: string, exec: Exec): Promise<Omit<R
       ],
     },
   ];
-  rehouseChecks(slices, repoFiles, new Set(), parts);
+  rehouseChecks(slices, repoFiles, new Set(), parts, readsLiveUrl(root));
   const minted = slices[0].workUnits[1].footprint[0];
-  const stranded = unreachableCheckHomes(slices, repoFiles, parts);
+  const stranded = unreachableCheckHomes(slices, repoFiles, parts, readsLiveUrl(root));
   if (stranded.where.length)
     return {
       ready: false,
