@@ -69,8 +69,10 @@ function template(): { dir: string; base: string } {
   return { dir, base: execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim() };
 }
 
-/** A template gate whose build is red once, so the finisher runs and
- *  reports the whole suite red; the suite here answers as `suiteHere`. */
+/** A template gate whose build is red when the gate judges the tree (its
+ *  second build: the first prepares the tree for the checks), so the
+ *  finisher runs and reports the whole suite red; the suite here answers
+ *  as `suiteHere`. */
 async function gate(suiteHere: { code: number; output: string }) {
   const st = new RunState(() => {});
   const { dir: worktree, base } = template();
@@ -107,7 +109,8 @@ async function gate(suiteHere: { code: number; output: string }) {
         return { code: e.status ?? 1, out: `${e.stdout ?? ""}${e.stderr ?? ""}` };
       }
     },
-    boundedExec: async () => (builds++ === 0 ? { code: 1, output: "SyntaxError: app/main.py" } : { code: 0, output: "built" }),
+    boundedExec: async (cmd: string) =>
+      cmd === "npm run build" && ++builds === 2 ? { code: 1, output: "SyntaxError: app/main.py" } : { code: 0, output: "built" },
     suiteExec: async (cmd: string) => (suiteRan.push(cmd), suiteHere),
     state: st,
     sessionOf: () => undefined,

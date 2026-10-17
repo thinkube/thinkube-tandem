@@ -22,10 +22,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 /** The variable naming the directory the recorder writes to. */
-export const PYTHON_TRACE_ENV = "TANDEM_PYTHON_TRACE_DIR";
+const PYTHON_TRACE_ENV = "TANDEM_PYTHON_TRACE_DIR";
 
 /** The recorder, as Python source. */
-export const SITECUSTOMIZE = `
+const SITECUSTOMIZE = `
 import atexit
 import json
 import os

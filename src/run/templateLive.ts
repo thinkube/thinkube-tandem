@@ -113,7 +113,7 @@ const STEP_LOG_LINES = 2000;
  * pipeline API: the workflow's stages, then each failed stage's log. A
  * refusal says what Control answered, in its words.
  */
-export async function failedStepLogs(a: {
+async function failedStepLogs(a: {
   workflow: string;
   control: ReachControl;
   http: Http;
