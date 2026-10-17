@@ -29,6 +29,7 @@ import { close, probesForClosing, readProbes } from "./closer";
 import { repairByAuthors } from "./authorRepair";
 import type { RedCriterion } from "./authorRepair";
 import { prepareAtGate } from "./setup";
+import { liveSuiteDeclared } from "./liveSuite";
 import type { BoundedExec } from "./setup";
 import type { DispatchDeps } from "./dispatch";
 import type { Exec } from "./oracle";
@@ -226,16 +227,37 @@ export async function repairUnkept(a: {
      * measurement is always that: a second draw on an unchanged tree.
      */
     let judgedOn: string | undefined;
+    /** What the last re-judgement ran, or why it ran nothing: the closer's
+     *  verify says it, so an answer is never silent. */
+    let asked = "";
+    const liveHome = liveSuiteDeclared(deps.repoRoot)?.home.replace(/\/+$/, "");
+    /** The files changed since the tree `before` names: committed or not. */
+    const changedSince = async (before: string): Promise<string[]> => {
+      const head = before.split("\n")[0];
+      const diff = (await exec("git", ["-C", worktree, "diff", "--name-only", head], worktree)).out;
+      const untracked = (await exec("git", ["-C", worktree, "status", "--porcelain"], worktree)).out
+        .split("\n")
+        .filter((l) => l.startsWith("?? "))
+        .map((l) => l.slice(3));
+      return [...new Set([...diff.split("\n"), ...untracked].map((l) => l.trim()).filter(Boolean))];
+    };
     const rejudge = async (): Promise<Proof[]> => {
       await prepareAtGate(deps.prepare, worktree, boundedExec, log);
       const tree = await treeNow();
       const moved = judgedOn !== undefined && tree !== judgedOn;
       const first = judgedOn === undefined;
+      const previous = judgedOn;
       judgedOn = tree;
       if (!moved) {
         if (!first) log(`${tep}: nothing changed the tree — the standing verdicts are not asked again`);
+        asked = first
+          ? "the verdicts the gate reached on this tree"
+          : "nothing changed the tree since the last reading, so no check and no review was asked again";
         return proofs.filter(unkeptProof);
       }
+      const changed = await changedSince(previous!);
+      const onlyLive =
+        !!liveHome && changed.length > 0 && changed.every((f) => f === liveHome || f.startsWith(`${liveHome}/`));
       // A red assessment is re-graded by a fresh reviewer over the repaired
       // tree, exactly as a check is re-run. Frozen first-pass verdicts held
       // three repaired promises red while the closer's edits could move
@@ -293,6 +315,12 @@ export async function repairUnkept(a: {
         proof.verdict = "green";
         proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
+      asked =
+        `${changed.length} file(s) changed; re-ran ${again.length} check(s)` +
+        (redReviews.size ? ` and asked ${redReviews.size} review(s) again` : "") +
+        (onlyLive
+          ? `. Every change is under the live home (${liveHome}), whose checks run against the deployed service after the deploy, so none of them ran here`
+          : "");
       return proofs.filter(unkeptProof);
     };
     // The checks it is judged by, led by those behind the promises still
@@ -330,8 +358,10 @@ export async function repairUnkept(a: {
         return {
           green: still.length === 0,
           score: still.length,
-          evidence: still
-            .map((p) => `- ${p.label}\n  ${(p.ref ?? "").split("\n").slice(0, 3).join("\n  ")}`)
+          evidence: [
+            `${still.length ? `RED — ${still.length} promise(s) not kept` : "GREEN — every promise is kept"}. What ran: ${asked}.`,
+            ...still.map((p) => `- ${p.label}\n  ${(p.ref ?? "").split("\n").slice(0, 3).join("\n  ")}`),
+          ]
             .join("\n")
             .slice(0, 8000),
         };
