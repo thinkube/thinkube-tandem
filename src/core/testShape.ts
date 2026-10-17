@@ -32,6 +32,13 @@ export function isTestPath(rel: string): boolean {
   );
 }
 
+/** Shared test setup a runner loads for the tests beside it — pytest's
+ *  `conftest.py` — which is test-shaped but is not itself a test: run as
+ *  one, it collects nothing. */
+export function isSharedTestSetup(rel: string): boolean {
+  return /(^|\/)conftest\.py$/.test(rel.replace(/\\/g, "/"));
+}
+
 /**
  * A check this run authored — held-out evidence, never a test home the
  * repository maintains.

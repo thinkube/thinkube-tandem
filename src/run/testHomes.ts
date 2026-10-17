@@ -24,7 +24,7 @@ import { ignoredFor, worthWalking } from "../core/ignored";
 /** The one rule for what is test-shaped or probe-shaped — read by the
  *  adapter, the write fence, the read block, the blast-radius fold and
  *  re-homing alike. Defined once, in src/core/testShape.ts. */
-export { isProbePath, isTestPath } from "../core/testShape";
+export { isProbePath, isSharedTestSetup, isTestPath } from "../core/testShape";
 import { isProbePath, isTestPath, testKind } from "../core/testShape";
 
 /** Every existing test home a slice's tester owns — test-shaped, not a probe:
