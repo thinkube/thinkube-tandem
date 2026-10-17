@@ -67,6 +67,10 @@ export async function repairUnkept(a: {
   boundedExec: BoundedExec;
   suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   log: (line: string, step?: string) => void;
+  /** Criteria someone said do not hold, with their words. Their checks
+   *  passing does not keep them: each stays red, with those words as its
+   *  evidence, until a repair changes the tree. */
+  saidNotToHold?: Map<string, string>;
   /** The closer's report, for what it says beyond the promises. */
   onReport?: (report: string) => void;
   defect: (entry: {
@@ -82,6 +86,41 @@ export async function repairUnkept(a: {
   }) => void;
 }): Promise<Proof[]> {
   const { tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, exec, boundedExec, log, defect } = a;
+  /** This tree, exactly: what is committed and everything not yet. */
+  const treeAsItStands = async (): Promise<string> =>
+    [
+      (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim(),
+      (await exec("git", ["-C", worktree, "status", "--porcelain"], worktree)).out.trim(),
+    ].join("\n");
+  // What a person said against a criterion is evidence no check re-run on
+  // the same tree can answer: the criterion is red, in their words, while
+  // the tree is the one they judged. Once a repair changed it, the checks
+  // and reviews decide again, and a proof none of them re-judged returns
+  // to what it was.
+  const said = a.saidNotToHold ?? new Map<string, string>();
+  const before = new Map<Proof, Pick<Proof, "verdict" | "ref">>();
+  for (const p of proofs) {
+    const words = p.criterionId ? said.get(p.criterionId) : undefined;
+    if (!words) continue;
+    before.set(p, { verdict: p.verdict, ref: p.ref });
+    p.verdict = "red";
+    p.ref = words;
+  }
+  const judgedTree = before.size ? await treeAsItStands() : undefined;
+  const holdWhatWasSaid = async (): Promise<void> => {
+    if (!before.size) return;
+    const unchanged = (await treeAsItStands()) === judgedTree;
+    for (const [p, was] of before) {
+      const words = said.get(p.criterionId!)!;
+      if (unchanged) {
+        p.verdict = "red";
+        p.ref = words;
+      } else if (p.ref === words) {
+        p.verdict = was.verdict;
+        p.ref = was.ref;
+      }
+    }
+  };
   let unkept = proofs.filter(unkeptProof);
   // Each red criterion goes back to the unit that wrote its code, as the
   // next message in that unit's own session, with the drive's evidence and
@@ -145,6 +184,7 @@ export async function repairUnkept(a: {
         proof.verdict = "green";
         proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
+      await holdWhatWasSaid();
       unkept = proofs.filter(unkeptProof);
       log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`, "gate");
     }
@@ -284,7 +324,9 @@ export async function repairUnkept(a: {
         // closer had already fixed, and withheld the delivery for a
         // document that was correct on disk.
         settled.clear();
-        const still = await rejudge();
+        await rejudge();
+        await holdWhatWasSaid();
+        const still = proofs.filter(unkeptProof);
         return {
           green: still.length === 0,
           score: still.length,

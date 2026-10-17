@@ -50,6 +50,7 @@ import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from 
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore, readProbes } from "./closer";
 import { suiteRedIn } from "./suiteReport";
+import { contradictedAmong, contradictionWords } from "../core/contradiction";
 import { repairUnkept } from "./unkept";
 import { unsettledReviews, withheldDelivery } from "./withheld";
 import { treeShape } from "../gates/moduleSizes";
@@ -631,6 +632,13 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // A criterion nothing could judge is neither repaired nor withheld: only
   // a change to what was asked settles it, so it reaches the person.
   proposeRewording(tep, proofs, log, defect);
+  // A criterion someone said does not hold reaches the repair with their
+  // words, even when its checks pass: those words are the evidence.
+  const saidNotToHold = new Map(
+    [...contradictedAmong(space, cut.changeIds)].map(([id, c]) => [id, contradictionWords(c)] as const),
+  );
+  if (saidNotToHold.size)
+    log(`${tep}: ${saidNotToHold.size} criterion(a) were said not to hold since they were last proved — they are repaired from those words`);
   let unkept = proofs.filter(unkeptProof);
   unkept = await repairUnkept({
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe,
@@ -641,6 +649,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     ...(g.clearFor ? { clearFor: g.clearFor } : {}),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
     onReport: (r) => reports.push(r),
+    saidNotToHold,
   });
   // A suite left to the pipeline is not run here, but an actor at the gate
   // that ran it and saw it red has found a red suite: nothing is merged

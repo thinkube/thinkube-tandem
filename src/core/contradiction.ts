@@ -53,6 +53,22 @@ export function contradicted(space: Space): Map<string, Contradiction> {
   return out;
 }
 
+/** The criteria of these promises that do not hold, with the newest word
+ *  against each. */
+export function contradictedAmong(space: Space, changeIds: readonly string[]): Map<string, Contradiction> {
+  const against = contradicted(space);
+  const mine = new Set(
+    space.nodes.filter((n) => changeIds.includes(n.id)).flatMap((n) => n.acceptance.map((a) => a.id)),
+  );
+  return new Map([...against].filter(([id]) => mine.has(id)));
+}
+
+/** A contradiction as the evidence a repair works from: who said it, and
+ *  their words, on one line. */
+export function contradictionWords(c: Contradiction): string {
+  return `${c.by} said it does not hold: ${c.said.replace(/\s*\n\s*/g, " ").trim()}`;
+}
+
 /** The promises a contradiction makes unkept, with the word against each. */
 export function unkeptPromises(space: Space): Map<string, Contradiction> {
   const against = contradicted(space);
