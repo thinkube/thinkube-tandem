@@ -67,6 +67,8 @@ export async function repairUnkept(a: {
   boundedExec: BoundedExec;
   suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   log: (line: string, step?: string) => void;
+  /** The closer's report, for what it says beyond the promises. */
+  onReport?: (report: string) => void;
   defect: (entry: {
     slice?: string;
     unit?: string;
@@ -302,6 +304,7 @@ export async function repairUnkept(a: {
       defect: (e) => defect({ unit: "gate#closer", ...e }),
       ...(deps.worker ? { worker: deps.worker } : {}),
     });
+    a.onReport?.(closed.report);
     unkept = proofs.filter(unkeptProof);
     log(`${tep}: after the closer, ${unkept.length} promise(s) are ${closed.green ? "kept" : "still unkept"}`, "gate");
   }

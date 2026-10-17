@@ -49,6 +49,7 @@ import type { GateContext } from "./state";
 import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore, readProbes } from "./closer";
+import { suiteRedIn } from "./suiteReport";
 import { repairUnkept } from "./unkept";
 import { unsettledReviews, withheldDelivery } from "./withheld";
 import { treeShape } from "../gates/moduleSizes";
@@ -417,6 +418,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   let verdict = ran
     ? suiteVerdictOf(ran.code, ran.output, worktree)
     : { green: true, failures: [] as SuiteFailure[], summary: "no standing suite runs here" };
+  // What the finisher and the closers report, read for a red suite they saw.
+  const reports: string[] = [];
   if (ran && !verdict.green) {
     // The tests that bit at this gate are run early, at every slice, next time.
     deps.rememberSuiteReds?.(verdict.failures.map((f) => f.file).filter((f): f is string => !!f));
@@ -436,6 +439,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       defect,
     });
     verdict = repaired.verdict;
+    reports.push(...repaired.reports);
     // The finisher is spent and the tree still does not stand: the closer
     // takes the whole delivery, with full sight and authority (§4).
     if (!verdict.green && !g.state.halted) {
@@ -495,6 +499,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         defect: (e) => defect({ unit: `${GATE_STEP}#closer`, ...e }),
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
+      reports.push(closed.report);
       // What the closer saw and left alone, in its own words.
       for (const f of findingsIn(closed.report)) {
         findings.push({ ...f, saw: `the closer: ${f.saw}` });
@@ -585,8 +590,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     findings.push(...verdict.failures.map((f) => ({ saw: `${f.name}${f.file ? ` (${f.file})` : ""} — ${f.detail.split("\n")[0].slice(0, 200)}` })));
     verdict = { ...verdict, green: true };
   }
-  if (!verdict.green) {
-    const names = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
+  /** Withhold the delivery for a suite that stays red: recorded, committed
+   *  on the branch, never handed over. */
+  const withholdRedSuite = async (failures: SuiteFailure[]): Promise<DispatchOutcome> => {
+    const names = failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
     say(`⛔ ${tep}: the repository's suite is red after the work and the finisher could not bring it under — the delivery is withheld: ${names.join("; ").slice(0, 600)}`);
     defect({
       activity: "closing gate",
@@ -594,11 +601,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       type: "code",
       impact: "delivery withheld",
       // The names, and each test's own words — never the tail of a log.
-      detail: verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
+      detail: failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
     });
     if (deps.storeDir)
       await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults, runId, producedAt });
-    undelivered.push(...docsObligations(slices, worktree));
+    for (const o of docsObligations(slices, worktree)) if (!undelivered.includes(o)) undelivered.push(o);
     await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
     await exec("git", ["commit", "-m", `tandem: ${tep} (suite red — withheld)`], worktree);
     // Withheld is still on the record: what was checked and why it stopped
@@ -611,7 +618,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       reason: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
     });
     return { refusals: [RED_SUITE_REFUSAL], undelivered, delivery: withheld };
-  }
+  };
+  if (!verdict.green) return withholdRedSuite(verdict.failures);
 
   undelivered.push(...docsObligations(slices, worktree));
 
@@ -632,7 +640,47 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     ...(g.restored?.length ? { restored: g.restored } : {}),
     ...(g.clearFor ? { clearFor: g.clearFor } : {}),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
+    onReport: (r) => reports.push(r),
   });
+  // A suite left to the pipeline is not run here, but an actor at the gate
+  // that ran it and saw it red has found a red suite: nothing is merged
+  // past it. Where the repository's suite runs here, it is run once more
+  // to reproduce the report, repaired like any red suite, and withheld
+  // while red; where it cannot run here, the report stands and withholds.
+  // A suite this gate ran has already decided, whatever an actor says.
+  const reportedRed = suite ? undefined : reports.map(suiteRedIn).find((r) => !!r);
+  if (reportedRed && !g.state.halted) {
+    const reported: SuiteFailure[] = reportedRed.files.length
+      ? reportedRed.files.map((f) => ({ name: f, file: f, detail: "an actor at the gate ran the whole suite and reported this file red" }))
+      : [{ name: "the repository's suite", detail: "an actor at the gate ran the whole suite and reported it red, naming no file" }];
+    say(
+      `${tep}: an actor at the gate reported the repository's whole suite red (${reported.map((f) => f.name).join(", ").slice(0, 400)}) — nothing is merged while it is red`,
+    );
+    let still = reported;
+    if (g.suite) {
+      const r = await g.suiteExec(g.suite, worktree);
+      if (aRunnerAnswered(r.code, r.output)) {
+        let v = suiteVerdictOf(r.code, r.output, worktree);
+        if (!v.green)
+          v = (
+            await repairSuiteAtGate({
+              suite: g.suite, tep, worktree, baseSha: g.baseSha, deps, state: g.state, exec,
+              suiteExec: g.suiteExec, verdict: v, log, defect,
+            })
+          ).verdict;
+        still = v.green ? [] : v.failures;
+        if (v.green) say(`${tep}: the repository's whole suite (${g.suite}) passes here — the report is answered`);
+      } else say(`${tep}: the repository's whole suite (${g.suite}) does not run here, so the report stands`);
+    }
+    if (still.length) {
+      const left = proofs.find((p) => p.kind === "suite" && p.verdict === "pending");
+      if (left) {
+        left.verdict = "red";
+        left.ref = `reported red at the gate: ${still.map((f) => f.file ?? f.name).join(", ")}`.slice(0, 400);
+      }
+      return withholdRedSuite(still);
+    }
+  }
   // A check proves a promise once; it does not join the repository's suite
   // because it exists. Its source and its verdict are kept on the delivery
   // record — where a person can read what was driven — and when a delivery
