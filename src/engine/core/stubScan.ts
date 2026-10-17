@@ -60,6 +60,19 @@ function markerIsAName(line: string): boolean {
   return !STUB_CONFESSION_RE.test(stripped);
 }
 
+/** A string literal on one line: double-, single- or back-quoted. */
+const STRING_LITERAL_RE = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\\n]|\\.)*`/g;
+
+/**
+ * True when every confession marker on the line sits inside a string
+ * literal. In a test that is the data it feeds — `["zzz yyy xxx"] * 5` —
+ * not a word about the work; in production a quoted marker can still be a
+ * confession, so the caller decides where this applies.
+ */
+export function markerOnlyInStrings(line: string): boolean {
+  return STUB_CONFESSION_RE.test(line) && !STUB_CONFESSION_RE.test(line.replace(STRING_LITERAL_RE, '""'));
+}
+
 /** Code-file extensions the stub scan reads — markers in prose/docs are not deferrals. */
 const CODE_FILE_RE =
   /\.(ts|tsx|js|jsx|mjs|cjs|py|rs|go|java|kt|c|h|cc|cpp|hpp|cs|rb|php|swift|sh|bash|zsh|ps1|sql|vue|svelte)$/i;
