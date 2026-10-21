@@ -151,7 +151,7 @@ For a template, the build Tandem runs is only the build the repository declares.
 
 Press *Build these N*. The strip says *building — <the thing's name>*, the run page opens, and *Stop* is the only other button.
 
-=== Live checks
+==== Live checks
 
 Some promises only the running service can answer, for example _the storage service returns the document's XLIFF for a key_. A test in the worktree cannot answer them, and a browser cannot call an API. A live check can. Declare where live checks are kept and how one runs, beside the deploy in `thinkube.yaml`:
 
