@@ -30,7 +30,8 @@
  */
 import type { Claim, Space, Spec, Subject } from "../core/schema";
 import type { RoundDeps } from "./round";
-import { runReadRound } from "./round";
+import { jsonSchemaOf, readAnswer, runReadRound } from "./round";
+import { z } from "zod";
 
 /** A proposal, before the person has agreed to it. */
 export interface ProposedSpecs {
@@ -39,16 +40,10 @@ export interface ProposedSpecs {
   loose: string[];
 }
 
-function parseJson(raw: string): Record<string, unknown> | undefined {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return undefined;
-  try {
-    return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-}
+/** The shape the grouping round answers in. */
+const SpecsAnswer = z.object({
+  specs: z.array(z.object({ name: z.string(), subjects: z.array(z.number()) })),
+});
 
 export function specsPrompt(subjects: readonly Subject[], claims: readonly Claim[]): string {
   const claimsOf = (id: string): string[] =>
@@ -88,18 +83,14 @@ export async function proposeSpecs(
 ): Promise<ProposedSpecs | undefined> {
   const subjects = space.subjects ?? [];
   if (subjects.length < 2) return undefined;
-  const raw = await round(deps, specsPrompt(subjects, space.claims ?? []));
-  const parsed = raw ? parseJson(raw) : undefined;
-  const proposed = Array.isArray(parsed?.specs) ? (parsed!.specs as unknown[]) : [];
+  const raw = await round({ ...deps, schema: jsonSchemaOf(SpecsAnswer) }, specsPrompt(subjects, space.claims ?? []));
+  const proposed = readAnswer(SpecsAnswer, raw)?.specs ?? [];
   const taken = new Set<string>();
   const specs: { name: string; subjectIds: string[] }[] = [];
-  for (const p of proposed) {
-    if (typeof p !== "object" || p === null) continue;
-    const rec = p as Record<string, unknown>;
-    const name = typeof rec.name === "string" ? rec.name.trim() : "";
-    const at = Array.isArray(rec.subjects) ? rec.subjects : [];
-    const subjectIds = at
-      .map((n) => (typeof n === "number" ? subjects[n - 1] : undefined))
+  for (const rec of proposed) {
+    const name = rec.name.trim();
+    const subjectIds = rec.subjects
+      .map((n) => subjects[n - 1])
       // One subject belongs to one set: a subject in two sets is in two
       // deliveries, and the second one rebuilds what the first delivered.
       .filter((s): s is Subject => !!s && !taken.has(s.id))

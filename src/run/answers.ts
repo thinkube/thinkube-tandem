@@ -21,7 +21,7 @@ import * as path from "node:path";
 import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
-import { clearedPaths } from "./oracle";
+import { clearedPaths, pulseOf } from "./oracle";
 import { clearanceNote } from "./clearance";
 
 /** Repo-relative file paths an answer names, in the forms an answer writes
@@ -101,9 +101,13 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
           model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
           repoRoot: a.worktree,
           log: (line) => a.log(line, unit),
+          ...pulseOf(a, unit),
         },
         prompt,
-      ).catch(() => null);
+      ).catch((e) => {
+        a.log(`⛔ ${unit}: the supervisor round failed — ${e instanceof Error ? e.message : String(e)}`, unit);
+        return null;
+      });
       const first = (reply ?? "").trimStart();
       if (/^(CLEAR|WIDEN):/i.test(first) && a.clearance) {
         // The key, not a permit: the door may hold while another unit finishes
@@ -137,7 +141,7 @@ export function makeParkAnswerer(a: OracleFactoryArgs) {
             detail: `Q: ${question.slice(0, 300)}\nA named: ${stray.join(", ")}`,
           });
           answer(
-            `That answer named ${stray.join(", ")}, which this unit may not write — an edit there is restored and the unit fails for it. ` +
+            `That answer named ${stray.join(", ")}, which this unit may not write — a file tool is refused there, and a shell command's write is restored and fails the unit. ` +
               `What you may write is exactly: ${mine.join(", ")}. Keep your work inside that, and say UNDELIVERED with the reason if the promise cannot be kept from there.`,
           );
           return;
@@ -211,6 +215,7 @@ export function makeEndAnswerer(a: OracleFactoryArgs) {
           model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
           repoRoot: a.testerWt,
           log: (line) => a.log(line, unit),
+          ...pulseOf(a, unit),
         },
         [
           "You are the RUN SUPERVISOR. A worker finished its unit and left this line, which",
@@ -236,7 +241,10 @@ export function makeEndAnswerer(a: OracleFactoryArgs) {
           "──── THE UNIT'S BRIEF ────",
           (a.briefBySlice.get(slice) ?? "").slice(0, 16000),
         ].join("\n"),
-      ).catch(() => null);
+      ).catch((e) => {
+        a.log(`⛔ ${unit}: the supervisor round failed — ${e instanceof Error ? e.message : String(e)}`, unit);
+        return null;
+      });
       const first = (reply ?? "").trimStart();
       if (/^CONTRACT:/i.test(first)) {
         const text = first.replace(/^CONTRACT:\s*/i, "").split("\n")[0].trim().slice(0, 400);

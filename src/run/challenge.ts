@@ -18,8 +18,29 @@ import { resolveWorkerModel } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import type { OracleFactoryArgs } from "./oracle";
+import { pulseOf } from "./oracle";
+import { environmentSigns, environmentStanza } from "./environmentFailure";
+import { testHomeStanza } from "./testHomeExamples";
+import { isCheckOf } from "../core/testShape";
+import { formatVerifyReply, type VerifyResult } from "../engine/verifyOracle";
+import { CHALLENGE_BUDGET } from "./challengeBudget";
+import { installedVersions } from "./installed";
+import { fixturesStanza } from "./brief";
+import { productionSeams, sharedFixtures } from "./seams";
 
-const CHALLENGE_BUDGET = 2;
+/** What the coder's last verify printed for one check — the failing
+ *  assertion and its traceback — or why there is nothing to judge yet. */
+function verifyOutputFor(result: VerifyResult | undefined, ac: number): { output: string } | { refusal: string } {
+  if (!result) return { refusal: `check ${ac} has not run yet — run verify first; a challenge is judged against what the check printed.` };
+  if (result.kind === "results") {
+    const r = result.results.find((x) => x.ac === ac);
+    if (!r) return { refusal: `check ${ac} did not run in your last verify — run verify first; a challenge is judged against what the check printed.` };
+    if (r.pass) return { refusal: `check ${ac} passed in your last verify — there is nothing to challenge.` };
+    return { output: r.evidence };
+  }
+  if (result.kind === "build-failed") return { output: result.output };
+  return { output: formatVerifyReply(result) };
+}
 
 /**
  * The coder's challenge, adjudicated. The coder never sees the probe; the
@@ -33,34 +54,43 @@ const CHALLENGE_BUDGET = 2;
  */
 export function makeChallenge(
   a: OracleFactoryArgs,
-): (slice: string) => (ac: number, argument: string) => Promise<string> {
+): (slice: string, lastVerify: () => VerifyResult | undefined) => (ac: number, argument: string) => Promise<string> {
   const spent = new Map<string, number>();
-  return (slice: string) =>
+  return (slice: string, lastVerify: () => VerifyResult | undefined) =>
     async (ac: number, argument: string): Promise<string> => {
       const used = spent.get(`${slice}#${ac}`) ?? 0;
       if (used >= CHALLENGE_BUDGET)
         return `check ${ac} has been challenged ${CHALLENGE_BUDGET} times — meet it as it stands, or report UNDELIVERED with your evidence.`;
       const criterion = a.criterionOf?.(slice, ac);
-      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, ac));
       if (!criterion || !rel) return `no check ${ac} exists on this slice.`;
-      spent.set(`${slice}#${ac}`, used + 1);
+      const ran = verifyOutputFor(lastVerify(), ac);
+      if ("refusal" in ran) return ran.refusal;
       let probeSrc = "";
       try {
         probeSrc = (await fs.readFile(path.join(a.testerWt, rel), "utf8")).slice(0, 12000);
       } catch {
         return `check ${ac} has no probe yet — nothing to challenge; run verify first.`;
       }
+      spent.set(`${slice}#${ac}`, used + 1);
+      const listed = await a.exec("git", ["-C", a.worktree, "ls-files"], a.worktree);
+      if (listed.code !== 0) throw new Error(`git could not list the worktree's files: ${listed.out.trim().slice(0, 300)}`);
+      const signs = environmentSigns(ran.output, listed.out.split("\n").map((l) => l.trim()).filter(Boolean));
       const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
       const reply = await (a.supervisorRound ?? runReadRound)(
-        { model: judge, repoRoot: a.testerWt, log: a.log },
+        { model: judge, repoRoot: a.testerWt, log: a.log, ...pulseOf(a, a.acting?.(slice)?.unit ?? slice) },
         [
           "You are the ORACLE ruling on a coder's CHALLENGE to one check. You see",
           "everything; the coder saw only its own failures. Judge ONE question:",
           "does the probe faithfully render the criterion? A probe that asserts",
           "implementation details the criterion never demands, contradicts a",
           "stated rule of the run, or cannot be satisfied by ANY correct",
-          "implementation is DEFECTIVE. A probe the coder merely finds hard is",
-          "FAITHFUL. The criterion itself is not on trial.",
+          "implementation is DEFECTIVE. A probe that relies on behaviour the",
+          "INSTALLED version of a library lacks is DEFECTIVE — judge the library",
+          "by the versions below and what it printed, never by the version you",
+          "remember. A probe whose environment cannot load what it exercises,",
+          "though the tree holds it, is DEFECTIVE. A probe the coder merely",
+          "finds hard is FAITHFUL. The criterion itself is not on trial.",
           "Your FIRST line must be exactly DEFECTIVE or FAITHFUL, then one plain",
           "sentence of reason.",
           "",
@@ -69,8 +99,15 @@ export function makeChallenge(
           "──── THE PROBE'S SOURCE ────",
           probeSrc,
           "",
+          "──── WHAT IT PRINTED in the coder's last verify (the failing assertion and its traceback) ────",
+          ran.output.slice(0, 6000),
+          "",
+          "──── THE INSTALLED VERSIONS of the libraries the probe touches ────",
+          installedVersions(a.testerWt, rel),
+          "",
           "──── THE CODER'S ARGUMENT ────",
           argument.slice(0, 4000),
+          ...(signs.length ? ["", environmentStanza(signs)] : []),
         ].join("\n"),
       );
       const granted = !!reply?.trimStart().toUpperCase().startsWith("DEFECTIVE");
@@ -97,15 +134,27 @@ export function makeChallenge(
     };
 }
 
+/** A file's text, or "" when it does not exist: a probe not written yet is
+ *  an empty one. Any other read failure is thrown. */
+async function textOrAbsent(file: string): Promise<string> {
+  try {
+    return await fs.readFile(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return "";
+    throw e;
+  }
+}
+
 /** Rewrite one probe from its criterion, in the tester's tree, and keep it
- *  past the next snapshot. Used by a granted challenge and by the repair
- *  loop alike: the criterion is the spec, the reason is context. */
+ *  past the next snapshot. Used by a granted challenge, the repair loop and
+ *  the supervisor's TEST-FAULT alike: the criterion is the spec, the reason
+ *  is context. */
 async function reauthorCheck(
   a: OracleFactoryArgs,
   args: { slice: string; rel: string; criterion: string; because: string; error?: string },
 ): Promise<boolean> {
   const judge = resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge");
-  const before = await fs.readFile(path.join(a.testerWt, args.rel), "utf8").catch(() => "");
+  const before = await textOrAbsent(path.join(a.testerWt, args.rel));
   // The re-author starts where the tester started: told where it is, how
   // checks are written here, and which sibling probes run — not blind.
   const siblings = (a.sliceProbes.get(args.slice) ?? []).filter((p) => p !== args.rel).slice(0, 3);
@@ -126,6 +175,8 @@ async function reauthorCheck(
         : []),
       ...(siblings.length ? [`SIBLING PROBES of this slice, written to the same conventions — read one first: ${siblings.join(", ")}`] : []),
       ...(a.digest ? ["", "THE REPOSITORY, READ FOR YOU:", a.digest.slice(0, 6000)] : []),
+      fixturesStanza(await sharedFixtures(a.testerWt), await productionSeams(a.testerWt)),
+      await testHomeStanza(a.testerWt, [args.rel]),
       "",
       "Write a complete, runnable probe file proving only that criterion,",
       "against the repository as this tree shows it. Do not weaken the",
@@ -136,10 +187,84 @@ async function reauthorCheck(
   );
   if (rewritten === null) return false;
   // A re-author that left the file as it was did nothing, whatever it said.
-  const after = await fs.readFile(path.join(a.testerWt, args.rel), "utf8").catch(() => "");
+  const after = await textOrAbsent(path.join(a.testerWt, args.rel));
   if (after === before) return false;
-  await a.persistProbe?.(args.rel).catch(() => {});
+  await a.persistProbe?.(args.rel);
   return true;
+}
+
+/** Re-authors one check may take on the supervisor's TEST-FAULT. */
+const TEST_FAULT_BUDGET = 1;
+
+/**
+ * The supervisor's TEST-FAULT, acted on: a check that contradicts the intent
+ * or fakes a seam differently from the code is re-authored from its
+ * criterion at once, before the coder's next verify. No challenge is spent:
+ * the fault was found by the run, not argued by the coder. The checks
+ * re-authored are the failing ones the verdict names by path, file name,
+ * `AC-n` or `check n`; the supervisor is shown only the failing checks, so
+ * a verdict that names none of them is about all of them. Returns what the
+ * coder reads.
+ */
+export function makeTestFault(
+  a: OracleFactoryArgs,
+): (slice: string, verdict: string, failingAcs: readonly number[]) => Promise<string> {
+  const spent = new Map<string, number>();
+  return async (slice, verdict, failingAcs) => {
+    const probes = a.sliceProbes.get(slice) ?? [];
+    const failing = failingAcs.flatMap((ac) => {
+      const rel = probes.find((p) => isCheckOf(p, ac));
+      return rel ? [{ ac, rel }] : [];
+    });
+    const named = failing.filter(
+      (f) =>
+        verdict.includes(f.rel) ||
+        verdict.includes(path.posix.basename(f.rel)) ||
+        new RegExp(`\\b(?:AC-|check\\s+)${f.ac}\\b`, "i").test(verdict),
+    );
+    const why = verdict.replace(/^\s*TEST-FAULT:?\s*/i, "").trim();
+    const log = (line: string) => a.log(line, a.acting?.(slice)?.unit);
+    const rewritten: number[] = [];
+    const standing: number[] = [];
+    for (const f of named.length ? named : failing) {
+      const key = `${slice}#${f.ac}`;
+      const used = spent.get(key) ?? 0;
+      const criterion = a.criterionOf?.(slice, f.ac);
+      if (used >= TEST_FAULT_BUDGET || !criterion) {
+        standing.push(f.ac);
+        continue;
+      }
+      spent.set(key, used + 1);
+      const ok = await reauthorCheck(a, {
+        slice,
+        rel: f.rel,
+        criterion: criterion.text,
+        because:
+          `The run's supervisor read this check against the code it drives and ruled it at fault: ${why.slice(0, 1500)} ` +
+          "A double implements EVERY method the production path calls on its seam; a shared fixture is used where one exists.",
+      });
+      a.onRuling?.({ slice, criterionId: criterion.id, granted: ok, reason: `TEST-FAULT: ${why.split("\n")[0].slice(0, 300)}` });
+      a.defect({
+        slice,
+        activity: "verify-oracle supervision",
+        trigger: "supervisor",
+        type: "test",
+        stage: "check",
+        impact: ok ? "check re-authored on the supervisor's TEST-FAULT — no challenge spent" : "TEST-FAULT re-author failed — the check stands",
+        detail: `check ${f.ac}: ${why.slice(0, 900)}`,
+      });
+      log(ok ? `🔧 ${slice}: check ${f.ac} is at fault — re-authored from its criterion before the next verify` : `⚠ ${slice}: check ${f.ac} is at fault and the re-author failed`);
+      (ok ? rewritten : standing).push(f.ac);
+    }
+    return [
+      ...(rewritten.length
+        ? [`TEST-FAULT — check(s) ${rewritten.join(", ")} did not render their criteria faithfully and were re-authored from them; no challenge was spent. Run verify again.`]
+        : []),
+      ...(standing.length
+        ? [`TEST-FAULT on check(s) ${standing.join(", ")}, which stand as written: ${why.slice(0, 1500)}\nDo NOT conform to them — challenge them.`]
+        : []),
+    ].join("\n");
+  };
 }
 
 const REPAIR_BUDGET = 1;
@@ -156,7 +281,7 @@ const REPAIR_BUDGET = 1;
 export function makeReauthor(a: OracleFactoryArgs): (slice: string, ac: number, why: string) => Promise<boolean> {
   return async (slice, ac, why) => {
     const criterion = a.criterionOf?.(slice, ac);
-    const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+    const rel = (a.sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, ac));
     if (!criterion || !rel) return false;
     const ok = await reauthorCheck(a, {
       slice,
@@ -164,7 +289,6 @@ export function makeReauthor(a: OracleFactoryArgs): (slice: string, ac: number, 
       criterion: criterion.text,
       because: `the oracle ran this check and ruled it DEFECTIVE: ${why}. Write it so a correct implementation CAN pass: if its tests share module state, make each test load the module fresh after installing its own fakes.`,
     });
-    if (ok) await a.persistProbe?.(rel).catch(() => {});
     return ok;
   };
 }
@@ -180,7 +304,7 @@ export function makeRepair(
       const used = spent.get(key) ?? 0;
       if (used >= REPAIR_BUDGET) continue;
       const criterion = a.criterionOf?.(slice, f.ac);
-      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${f.ac}.`));
+      const rel = (a.sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, f.ac));
       if (!criterion || !rel) continue;
       spent.set(key, used + 1);
       const head = f.evidence.split("\n").find((l) => /Error|Cannot|timed out|did not exit/i.test(l))?.trim().slice(0, 200) ?? "the check could not run";
@@ -206,5 +330,3 @@ export function makeRepair(
     return repaired;
   };
 }
-
-/** One oracle per slice, memoized; undefined when the slice has no probes. */

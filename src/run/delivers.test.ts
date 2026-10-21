@@ -163,6 +163,11 @@ for (const shape of SHAPES.filter((s) => s.runOne) as readonly RepoShape[])
       said.some((l) => /src\/greet_AC-1\.test\.mjs/.test(l)),
       "and it is named for its subject and its criterion",
     );
+    // Each unit's end says how much it read against how much it wrote.
+    assert.ok(
+      said.some((l) => /📖 \S+: \d+ Read\/Glob\/Grep and \d+ Edit\/Write tool use\(s\) over \d+ round\(s\)/.test(l)),
+      "the run log carries each unit's read counter",
+    );
 
     // One tree per repository. A second tree inside a repository is what
     // the probe store, the runner overlay and the closer's misplaced fix

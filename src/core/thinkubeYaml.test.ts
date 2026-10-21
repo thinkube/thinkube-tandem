@@ -135,3 +135,57 @@ test("an application's parts are its containers, by build directory, with how on
     [["backend", "pytest <file>"], ["frontend", undefined]],
   );
 });
+
+/**
+ * A repository declares its live checks beside its deploy: where they are
+ * minted and how one runs. Both are required once `live` is written, and a
+ * declaration missing one is refused by name, never read as no live checks.
+ */
+const withLive = (live: string): string =>
+  `spec:\n  deploy:\n    run: ./deploy.sh\n    at: https://svc.example.com\n${live}`;
+
+test("the live checks are read from spec.deploy.live: their home and how one runs", () => {
+  const r = thinkubeDeclaration(
+    tmp(withLive(`    live:\n      home: ./live/\n      one: "python3 -m pytest -q -p no:cacheprovider <file>"\n`)),
+  );
+  assert.ok(r && "declared" in r);
+  assert.deepEqual(r.declared.deploy?.live, { home: "live", one: "python3 -m pytest -q -p no:cacheprovider <file>" });
+});
+
+test("a live block without `one` is refused, naming what is missing", () => {
+  const r = thinkubeDeclaration(tmp(withLive(`    live:\n      home: live\n`)));
+  assert.ok(r && "unreadable" in r);
+  assert.match(r.unreadable, /spec\.deploy\.live declares no `one`/);
+  assert.doesNotMatch(r.unreadable, /`home`/);
+});
+
+test("a live block without `home` is refused, naming what is missing", () => {
+  const r = thinkubeDeclaration(tmp(withLive(`    live:\n      one: "pytest <file>"\n`)));
+  assert.ok(r && "unreadable" in r);
+  assert.match(r.unreadable, /spec\.deploy\.live declares no `home`/);
+});
+
+test("an empty live block is refused for both fields", () => {
+  const r = thinkubeDeclaration(tmp(withLive(`    live:\n`)));
+  assert.ok(r && "unreadable" in r);
+  assert.match(r.unreadable, /no `home`.*and no `one`/);
+});
+
+test("a live home outside the repository, or at its root, is refused", () => {
+  for (const home of ["../elsewhere", "/abs/live", "."]) {
+    const r = thinkubeDeclaration(tmp(withLive(`    live:\n      home: "${home}"\n      one: "pytest <file>"\n`)));
+    assert.ok(r && "unreadable" in r, `${home} must be refused`);
+  }
+});
+
+test("a live command that cannot be told which check to run is refused", () => {
+  const r = thinkubeDeclaration(tmp(withLive(`    live:\n      home: live\n      one: "pytest -q"\n`)));
+  assert.ok(r && "unreadable" in r);
+  assert.match(r.unreadable, /does not contain <file>/);
+});
+
+test("live checks with no address to run against are refused", () => {
+  const r = thinkubeDeclaration(tmp(`spec:\n  deploy:\n    run: ./deploy.sh\n    live:\n      home: live\n      one: "pytest <file>"\n`));
+  assert.ok(r && "unreadable" in r);
+  assert.match(r.unreadable, /needs spec\.deploy\.at/);
+});

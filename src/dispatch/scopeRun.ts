@@ -10,9 +10,11 @@
  * open workspace. A scope that is not open, a refused adapter, or a
  * refused run stops the sequence with the reason spoken.
  */
+import * as path from "node:path";
 import { Cut, Delivery, Space } from "../core/schema";
 import { SessionDeps } from "../surfaces/session";
 import { tepSlices } from "./adapter";
+import { liveSuiteDeclared } from "../run/liveSuite";
 import { qualifyProbes, qualifySpace, ScopePlan } from "./scopes";
 import { dispatchTep, DispatchOutcome } from "../run/dispatch";
 import { RunState } from "../run/state";
@@ -80,6 +82,7 @@ export async function dispatchScopePlan(args: {
         cut: scopedCut,
         spaceName: deps.scope?.projectId ?? args.spaceName,
         handlePrefix: sc ? `${sc}.` : "",
+        live: !!liveSuiteDeclared(target.gitRoot),
       });
       qualifyProbes(slices, prefix);
     } catch (err) {
@@ -98,6 +101,7 @@ export async function dispatchScopePlan(args: {
         ...(args.finishedBefore?.length ? { finishedBefore: args.finishedBefore } : {}),
         model: deps.round.model,
         workerModel: deps.workerModel,
+        ...(deps.spend ? { spend: deps.spend } : {}),
         concurrency: deps.maxConcurrent,
         state: args.runState,
         spaceName: args.spaceName,
@@ -132,6 +136,14 @@ export async function dispatchScopePlan(args: {
         ...(sc === "" && args.proveSetup ? { proveSetup: args.proveSetup } : {}),
         ...(sc === "" && args.affected ? { affected: args.affected } : {}),
         ...(sc === "" && args.digest ? { digest: args.digest } : {}),
+        // What readiness proved about each repository's setup, read from
+        // the store when the door asks, so a run in another process finds it.
+        ...(deps.readinessKept
+          ? {
+              setupProven: (root: string) =>
+                deps.readinessKept!().find((r) => path.resolve(r.repoRoot) === path.resolve(root))?.setupProof,
+            }
+          : {}),
       },
       args.space(),
       scopedCut,

@@ -10,6 +10,7 @@
  * broken round never blocks the space.
  */
 import { theModel } from "../engine/theModel";
+import { z } from "zod";
 
 export interface RoundDeps {
   model: string;
@@ -25,6 +26,48 @@ export interface RoundDeps {
   log?: (line: string) => void;
   /** Cancels the round mid-flight (the human pressed Cancel). */
   abort?: AbortController;
+  /** Opens a listener on this round's stream. Given one, the round streams
+   *  partial messages, so a model that thinks for minutes without calling a
+   *  tool is still heard moving. */
+  pulse?: () => RoundPulse;
+  /** The shape of the answer, as a JSON schema (`jsonSchemaOf`). Given one,
+   *  the harness holds the model to it and retries a malformed answer
+   *  itself; the round's text is then the answer and nothing else. */
+  schema?: Record<string, unknown>;
+}
+
+/**
+ * A round's answer shape as the harness takes it: the JSON schema of a zod
+ * shape, without the dialect marker the API does not want.
+ */
+export function jsonSchemaOf(shape: z.ZodType): Record<string, unknown> {
+  const out = z.toJSONSchema(shape) as Record<string, unknown>;
+  delete out.$schema;
+  return out;
+}
+
+/**
+ * A round's answer, read against its shape. The harness validated it
+ * before it came back, so this is the typed reading; a round that failed,
+ * or a fake that answers prose, reads as nothing.
+ */
+export function readAnswer<T>(shape: z.ZodType<T>, raw: string | null): T | undefined {
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  const read = shape.safeParse(parsed);
+  return read.success ? read.data : undefined;
+}
+
+/** What a listener hears of one running round: every event its stream
+ *  yields, and its end. */
+export interface RoundPulse {
+  heard: () => void;
+  ended: () => void;
 }
 
 /** The volume variant of a round's deps: cheap model, one turn, no tools,
@@ -75,10 +118,20 @@ export async function runReadRound(
           model: deps.model,
           ...(deps.abort ? { abortController: deps.abort } : {}),
           permissionMode: "bypassPermissions",
+          // Nothing of the person's: no settings, hooks, instruction files
+          // or MCP servers. Each round would otherwise start every MCP
+          // server the person has and carry its tool list, for a call
+          // that reads code or turns text into JSON.
+          settingSources: [],
+          strictMcpConfig: true,
           thinking: { type: "adaptive" },
           effort: deps.effort ?? "high",
           maxTurns: deps.maxTurns ?? (deps.tools === "none" ? TOOLLESS_TURNS : 40),
+          // The built-in tools that exist for this round, as an allow list:
+          // a tool a later release adds is closed by default.
+          tools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
           allowedTools: deps.tools === "none" ? [] : ["Read", "Grep", "Glob"],
+          ...(deps.schema ? { outputFormat: { type: "json_schema", schema: deps.schema } } : {}),
           disallowedTools: [
             "Write",
             "Edit",
@@ -91,9 +144,11 @@ export async function runReadRound(
             "ExitPlanMode",
           ],
           additionalDirectories: [deps.repoRoot],
+          ...(deps.pulse ? { includePartialMessages: true } : {}),
         },
       }),
     deps.log,
+    deps.pulse,
   );
 }
 
@@ -116,7 +171,9 @@ function describeUse(b: Record<string, unknown>): string {
 export async function collectText(
   stream: () => AsyncIterable<unknown>,
   log?: (line: string) => void,
+  pulse?: () => RoundPulse,
 ): Promise<string | null> {
+  const listening = pulse?.();
   let text = "";
   // What a round SPENDS, as it spends it: a round that takes minutes and
   // reports nothing cannot be made faster by anyone — every lever (fewer
@@ -127,6 +184,7 @@ export async function collectText(
   const at = (): string => `${((Date.now() - began) / 1000).toFixed(0)}s`;
   try {
     for await (const msg of stream()) {
+      listening?.heard();
       const rec = msg as Record<string, unknown>;
       if (rec.type === "assistant") {
         const m = rec.message as { content?: unknown } | undefined;
@@ -139,8 +197,11 @@ export async function collectText(
             log?.(`  ${at()} ⚙ ${describeUse(b)}`);
           }
         }
-      } else if (rec.type === "result" && typeof rec.result === "string") {
-        text = rec.result;
+      } else if (rec.type === "result") {
+        // A round held to a shape answers with the shape; the text is then
+        // that answer and nothing else. Any other round answers in words.
+        if (rec.structured_output !== undefined) text = JSON.stringify(rec.structured_output);
+        else if (typeof rec.result === "string") text = rec.result;
         log?.(`  ${at()} ✓ round done — ${turns} tool use(s)`);
       }
     }
@@ -152,6 +213,8 @@ export async function collectText(
     }
     log?.(`round errored: ${why}`);
     return null;
+  } finally {
+    listening?.ended();
   }
   return text;
 }

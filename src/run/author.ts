@@ -60,8 +60,14 @@ export async function runAuthoringRound(
           model: deps.model,
           cwd: deps.cwd,
           permissionMode: "bypassPermissions",
+          // Nothing of the person's: no settings, hooks, instruction files
+          // or MCP servers. The round knows the brief and the tree.
+          settingSources: [],
+          strictMcpConfig: true,
           thinking: { type: "adaptive" },
           maxTurns: deps.maxTurns ?? 40,
+          // The built-in tools that exist for this round, as an allow list.
+          tools: ["Read", "Grep", "Glob", "Write", "Edit"],
           allowedTools: ["Read", "Grep", "Glob", "Write", "Edit"],
           // A tool that moves the session's working directory would let a
           // relative write land outside the fence: none of those.

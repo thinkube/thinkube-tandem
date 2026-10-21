@@ -30,6 +30,7 @@ import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { configureDocsRoots, docsRootsOf } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
 import { startRunElsewhere } from "../run/spawnDriver";
+import { checkReadiness, readinessNow } from "../run/readiness";
 
 /** Where the editor keeps approvals and the signing key. A session that
  *  reads anywhere else sees every signed cut as unapproved. */
@@ -42,7 +43,7 @@ export function storeRootOf(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** The project a directory belongs to, by its card in the store. */
-function projectAt(repoRoot: string, storeRoot: string): EnabledProject | undefined {
+export function projectAt(repoRoot: string, storeRoot: string): EnabledProject | undefined {
   return discoverProjects(repoRoot, storeRoot, 0)[0] ?? discoverProjects(repoRoot, storeRoot, 2)[0];
 }
 
@@ -54,7 +55,9 @@ export interface AttachArgs {
   space: string;
   storeRoot?: string;
   storageDir?: string;
-  onChanged?: (message?: string) => void;
+  /** Hears every change the session announces, with the directory of the
+   *  space it was announced in. */
+  onChanged?: (message: string | undefined, storeDir: string) => void;
   /** Drive runs in this process. Only the driver itself says so; every
    *  other caller hands a run to a driver process and follows its record. */
   driveHere?: boolean;
@@ -123,7 +126,19 @@ export async function attach(args: AttachArgs): Promise<Attached> {
     maxConcurrent: 4,
     docsGateMode: "blocking",
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
-    ...(args.onChanged ? { onChanged: args.onChanged } : {}),
+    ...(args.onChanged ? { onChanged: (m?: string) => args.onChanged!(m, dirs.storeDir) } : {}),
+    readiness: async (reading) => [
+      await checkReadiness({
+        repoRoot: project.gitRoot,
+        home: { storeRoot, repoId: project.card.id },
+        log: (l) => args.onChanged?.(l, dirs.storeDir),
+        ...(reading ? { reading } : {}),
+      }),
+    ],
+    readinessKept: () => {
+      const kept = readinessNow({ storeRoot, repoId: project.card.id }, project.gitRoot);
+      return kept ? [kept] : [];
+    },
     ...(args.driveHere
       ? {}
       : {
@@ -140,7 +155,7 @@ export async function attach(args: AttachArgs): Promise<Attached> {
         }),
   });
   session.load();
-  if (foreign) args.onChanged?.(foreign);
+  if (foreign) args.onChanged?.(foreign, dirs.storeDir);
   return { ok: true, session, project, storeDir: dirs.storeDir };
 }
 

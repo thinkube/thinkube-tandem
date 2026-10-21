@@ -29,13 +29,15 @@ import { execFile } from "node:child_process";
 import type { TandemSession } from "./session";
 import * as path from "node:path";
 import { downstreamOf } from "../run/survey";
-import { validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
+import { settleTemplateAfterAccept, validateComponentsAfterAccept, watchGitopsAfterAccept } from "../run/harvest";
 import { asFindings, exercised, lookAfterDeploy } from "../run/lookRound";
 import { draftWithFindings } from "../run/feedback";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { makeLive } from "../run/makeLive";
 import type { Delivery } from "../core/schema";
-import { factsOf } from "../run/facts";
+import { runSetup } from "../run/facts";
+import { defaultExec } from "../run/oracle";
+import { controlEnvOf } from "../run/validationDeploy";
 
 /** A gesture's verdict: it succeeded, or it refused and says why. The two
  *  cases are separate so a caller reading `reason` after `ok` is false gets
@@ -57,16 +59,22 @@ export type GestureResult = { ok: true } | { ok: false; reason: string };
  * The verdict is watched from the accept that started it, so a window
  * closed, reloaded or opened elsewhere never heard the answer, and a
  * delivery whose merged tree broke stayed green for ever. Asked again
- * here, once per accepted delivery that has no answer yet.
+ * here, once per accepted delivery that has no answer yet. A delivery the
+ * platform could not be asked about is said in the space, in the failure's
+ * own words, and the others are still asked. `watch` is injectable so a
+ * test drives a failure without a platform.
  */
-export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
+export async function catchUpOnMergedWork(
+  s: TandemSession,
+  watch: typeof watchGitopsAfterAccept = watchGitopsAfterAccept,
+): Promise<void> {
   const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
   if (downstreamOf(gitRoot) !== "gitops-app") return;
   // Merged is enough. The hand-over puts the work in the project before
   // anyone decides, so a delivery waiting for a decision is exactly the
   // one whose build the person wants read again.
   for (const d of s.space.deliveries.filter((x) => (x.acceptedAt || x.mergedAt) && !x.afterMerge && !x.rejectedAt)) {
-    await watchGitopsAfterAccept({
+    await watch({
       gitRoot,
       app: path.basename(gitRoot),
       delivery: d,
@@ -81,7 +89,9 @@ export async function catchUpOnMergedWork(s: TandemSession): Promise<void> {
         s.changed(note);
       },
       log: (l) => s.changed(l),
-    }).catch(() => undefined);
+    }).catch((e: unknown) =>
+      s.changed(`${d.id}: the platform could not be asked what it did with the merged work — ${e instanceof Error ? e.message : String(e)}`),
+    );
   }
 }
 
@@ -121,6 +131,50 @@ function worldRefused(space: TandemSession["space"], d: Delivery): TandemSession
   );
   if (!made.length) return space;
   return { ...space, contradictions: [...(space.contradictions ?? []), ...made] };
+}
+
+/**
+ * A template's accepted work whose promises settled after the merge have
+ * no answer yet, settled now: its declared deploy is run and its health
+ * asked, as at Accept. Asked for by a person — a deploy is never started
+ * because a window opened.
+ */
+export async function settleMergedTemplates(s: TandemSession): Promise<void> {
+  const gitRoot = s.deps.scope?.gitRoot ?? s.deps.round.repoRoot;
+  if (downstreamOf(gitRoot) !== "template") return;
+  const d = templateDeliveryToSettle(s.space.deliveries);
+  if (d) await settleTemplate(s, gitRoot, d);
+}
+
+/**
+ * The template delivery a validation deployment answers for: the latest
+ * accepted one, when it has no answer yet. A deploy puts the project's head
+ * live, which holds every accepted delivery's work, so the latest stands for
+ * them all. It is deployed whether or not a proof waits on it: a deploy that
+ * failed is a fact about the merged work, and asking again must reach it.
+ */
+export function templateDeliveryToSettle(deliveries: readonly Delivery[]): Delivery | undefined {
+  const accepted = deliveries.filter((d) => d.acceptedAt && !d.rejectedAt);
+  const latest = accepted[accepted.length - 1];
+  return latest && !latest.afterMerge ? latest : undefined;
+}
+
+/** One template delivery settled, persisted, and — when it went live —
+ *  looked at. */
+async function settleTemplate(s: TandemSession, gitRoot: string, delivery: Delivery): Promise<void> {
+  const went = await settleTemplateAfterAccept({
+    repoRoot: gitRoot,
+    delivery,
+    exec: defaultExec,
+    update: (d, note) => {
+      s.space = { ...s.space, deliveries: s.space.deliveries.map((x) => (x.id === d.id ? d : x)) };
+      s.persist();
+      s.changed(note);
+    },
+    log: (l) => s.changed(l),
+  });
+  if (went.live && went.at)
+    await lookAndFile(s, went.at, s.space.deliveries.find((x) => x.id === delivery.id));
 }
 
 export function unrunCutOf(space: TandemSession["space"]): { id: string; tepId?: string } | undefined {
@@ -222,14 +276,19 @@ async function lookAndFile(s: TandemSession, url: string, delivery?: Delivery): 
  * Never awaited by the accept, which returns immediately; everything it
  * learns arrives through the space.
  */
-async function afterMerge(s: TandemSession, gitRoot: string): Promise<void> {
+async function afterMerge(s: TandemSession, gitRoot: string, delivery: Delivery): Promise<void> {
+  // A template is proved by deploying it, so its deploy is also the
+  // settlement of every promise answered after the merge.
+  if (downstreamOf(gitRoot) === "template") return settleTemplate(s, gitRoot, delivery);
   const read = thinkubeDeclaration(gitRoot);
   const deploy = read && "declared" in read ? read.declared.deploy : undefined;
   if (!deploy) return;
 
+  const env = controlEnvOf();
   const went = await makeLive({
     repoRoot: gitRoot,
     deploy,
+    ...(env ? { env } : {}),
     log: (l) => s.changed(l),
   });
   if (!went.live) {
@@ -394,21 +453,19 @@ export async function executeRun(
     s.changed(`Building ${cut.tepId ?? cutId}…`);
     try {
       // The repository reading rides into every worker's brief. Cached
-      // under the repo stamp, so after a derivation this costs nothing;
-      // a run must never refuse over brief enrichment, hence fail-soft.
-      const known = await s.knowledge().catch(() => undefined);
-      const digest = known?.digest;
+      // under the repo stamp, so after a derivation this costs nothing. A
+      // reading that fails stops the run with its own error.
+      const known = await s.knowledge();
+      const digest = known.digest;
       // A promise-level need that exists only because a test home imports
       // another promise's code belongs to the maintain slice, not the plan:
       // dropped before planning, so it forces no ring into one slice.
-      if (known) {
-        const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id)).map((n) => ({ ...n, needs: [...n.needs] }));
-        const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p)).catch(() => []);
-        if (dropped.length) {
-          const byId = new Map(members.map((n) => [n.id, n]));
-          s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
-          s.runState?.log(`plan: ${dropped.length} need(s) explained only by a test-home import moved to the maintain slice`);
-        }
+      const members = s.space.nodes.filter((n) => cut.changeIds.includes(n.id)).map((n) => ({ ...n, needs: [...n.needs] }));
+      const dropped = await dropTestHomeOnlyNeeds(members, (p) => known.affected(p));
+      if (dropped.length) {
+        const byId = new Map(members.map((n) => [n.id, n]));
+        s.space = { ...s.space, nodes: s.space.nodes.map((n) => byId.get(n.id) ?? n) };
+        s.runState?.log(`plan: ${dropped.length} need(s) explained only by a test-home import moved to the maintain slice`);
       }
       const plan = planScopes(s.space, cut);
       if (!plan.ok) {
@@ -424,19 +481,20 @@ export async function executeRun(
       }
       // The check-setup facts: the machine's own reading of the repo,
       // unless the human explicitly overrode the build step in settings.
-      const prepare = s.deps.prepareCommand || known?.prepare || undefined;
-      const provision = known?.provision || undefined;
-      const runOne = known?.runOne || undefined;
+      const setup = runSetup(s.deps.round.repoRoot, known, s.deps.prepareCommand);
+      const prepare = setup.prepare || undefined;
+      const provision = setup.provision || undefined;
+      const runOne = setup.runOne || undefined;
       // The product build — proved at the door, red at the gate — from the
       // repository's own facts first, the reading second.
-      const build = factsOf(s.deps.round.repoRoot)?.build || known?.build || undefined;
-      const suiteReds = known?.suiteReds;
-      const rememberSuiteReds = known?.rememberSuiteReds;
-      const resetup = known?.resetup;
-      const proveSetup = known?.proveSetup;
+      const build = setup.build || undefined;
+      const suiteReds = known.suiteReds;
+      const rememberSuiteReds = known.rememberSuiteReds;
+      const resetup = known.resetup;
+      const proveSetup = known.proveSetup;
       // The graph's importer listing: the run reads it to order each slice's
       // test-home work after the production code those tests import.
-      const affected = known ? (p: string) => known.affected(p) : undefined;
+      const affected = (p: string) => known.affected(p);
       let last;
       last = await dispatchScopePlan({
         plan,
@@ -452,10 +510,10 @@ export async function executeRun(
         ...(provision ? { provision } : {}),
         ...(runOne ? { runOne } : {}),
         ...(suiteReds ? { suiteReds } : {}),
-        ...(rememberSuiteReds ? { rememberSuiteReds } : {}),
-        ...(resetup ? { resetup } : {}),
-        ...(proveSetup ? { proveSetup } : {}),
-        ...(affected ? { affected } : {}),
+        rememberSuiteReds,
+        resetup,
+        proveSetup,
+        affected,
         onDelivery: (delivery, note) => {
           // One delivery per cut, replaced by the newest run. A cut run four
           // times used to leave four rows on the page, three of them stale
@@ -700,7 +758,7 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
     // a playbook run from the core repo, a call into control, a script
     // beside the code. A repository that declares nothing is deployed by the
     // merge, or by hand as it always was.
-    void afterMerge(s, gitRoot);
+    void afterMerge(s, gitRoot, r.delivery);
     // A playbook component proves itself on the live cluster, and Tandem
     // can run that itself — the one downstream it executes rather than
     // watches. Started, never awaited, like the pipeline watch.
@@ -742,6 +800,6 @@ export async function acceptDeliveryGesture(s: TandemSession, deliveryId: string
         // address is the repository's own answer and beats a URL assembled
         // from a directory name.
         ...(declaresWhereItLives(gitRoot) ? {} : { then: (url: string) => lookAndFile(s, url, r.delivery) }),
-      });
+      }).catch((e) => s.changed(`${r.delivery.id}: watching the deployed work failed — ${e instanceof Error ? e.message : String(e)}`));
     return { ok: true };
   }

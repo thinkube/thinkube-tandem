@@ -31,8 +31,8 @@ of them there — nothing has users.
 - **Author slug** = git user.name lowercased/hyphenated; "user" fallback.
 
 - **knip governs v2-authored code only.** The imported engine's public
-  surface is canonical v1 API — pinned by the split-fidelity manifest, not
-  by usage analysis. Un-exporting it would alter imported code (I1). The
+  surface is canonical v1 API, judged by reading rather than by usage
+  analysis. Un-exporting it would alter imported code (I1). The
   engine's own uncalled surface is judged instead in ENGINE-WIRING.md, a
   ledger derived from the source tree (`src/derive/engineWiring.ts`), not
   by knip.
@@ -162,6 +162,69 @@ of them there — nothing has users.
   delivered tree and nothing else; work kept from an earlier run is reused
   only for the same base commit; a unit's card says what it is doing and
   waiting on, and since when.
+
+## A worker inherits nothing of the person's (2026-10-16)
+- Every model call Tandem makes — a worker, the authoring round, a
+  grounding or volume round — passes `settingSources: []` and
+  `strictMcpConfig: true`. Without them the SDK loads the person's
+  `~/.claude/settings.json` (hooks, `env` with `TANDEM_AUTONOMOUS=1`,
+  instruction files) and the user-scope MCP servers of `~/.claude.json`,
+  so a coder under `bypassPermissions` could call thinkube-control, the
+  person's browser, and Tandem's own person-only tools. The driver of the
+  running product already did this; now all of them do.
+- The repository's project settings (`.claude/settings.json`, `CLAUDE.md`)
+  do not load for workers either. A repository's instruction file is
+  written for a person's session and can contradict the brief (commit
+  policy, deploy steps). The repository's idiom reaches a worker through
+  the brief and the digest today, and through role definitions and
+  `.claude/rules` when roles become agent definitions. Revisit then.
+
+## A round is bounded by its turns, never by a sum of money (2026-10-17)
+- The ceiling on what a round may spend (`unitBudgetUsd`, the harness's
+  `maxBudgetUsd`) is gone. It ended a round wherever the worker stood, and
+  the run then repaired the gap in a resumed session that spent again: a
+  ceiling set low cost more than it saved, and `maxTurns` already ends a
+  worker that loops without cutting one that is simply working on
+  something big.
+- What a round cost is still read from the harness and recorded on the
+  unit, its log line and the delivery: the record is what lets a change to
+  how workers run be judged. The fallback model stays.
+
+## The Claude Code surface ships as a plugin (2026-10-16)
+- `claude-plugins/` is a Claude Code marketplace beside the code, with one
+  plugin, `tandem`: the MCP server (through the version-independent
+  `extension-current` path), the flows as prompts, and the skill that tells
+  an agent what the two gates are. The platform installs it from the
+  installed extension's path, so a redeploy of the extension is a redeploy
+  of the plugin.
+- The extension no longer writes `~/.claude.json`. The entry earlier
+  versions wrote is removed on activation when it is the extension's own;
+  one under the same name pointing elsewhere is left alone.
+- The roles (`agents/tandem-*.md`) are not part of the plugin: they are the
+  run's workers, not subagents for a person's session.
+
+## The person's gates are asked, not switched (2026-10-16)
+- A person-only tool called through a client that can ask the person (MCP
+  elicitation) waits for their yes, shown with whose act it is and what the
+  agent asked. A decline, a cancel or a failure to ask is a no, in words.
+- A client that cannot ask gets the refusal as before. `TANDEM_AUTONOMOUS=1`
+  stays the switch for an unattended run, and nothing else opens a gate.
+- The flows are MCP prompts (`capture-asks`, `build`, `review-delivery`),
+  each naming the tools to call and where the agent stops for the person;
+  a test holds every prompt to tools the server offers.
+
+## The roles are files, and their tools are not (2026-10-16)
+- Coder, tester and closer are agent definitions in the shape Claude Code
+  reads, at `agents/tandem-<role>.md`, passed to the harness so a worker's
+  session runs AS its role with the role's words as its system prompt. A
+  repository may say a role's words its own way at
+  `.claude/agents/tandem-<role>.md`; the run says so in its log.
+- A role file's `tools` and `disallowedTools` are not read. What a worker
+  may reach for is the run's rule (`footprintRules.ts`, `toolsAllowed.ts`):
+  a repository that could hand its tester a shell would be writing its own
+  blinding wall.
+- The Configuration view and the run read a role file with one parser
+  (`engine/host/models/Agent.ts`), whose fields are Claude Code's own.
 
 ## Test homes are a maintain slice (2026-08-17)
 - Bringing existing test homes under a promise is its own slice, appended

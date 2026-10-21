@@ -23,6 +23,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { putCard } from "../core/cards";
+import { emptySpace } from "../core/schema";
+import { persistSpace } from "../surfaces/sessionStore";
 
 /** A speaking client: writes framed JSON-RPC, reads replies by id. */
 function client(proc: ReturnType<typeof spawn>) {
@@ -95,7 +97,7 @@ function world(): { repo: string; store: string; space: string } {
  * suite — and the suite is what a closing gate runs, so a leak here stops
  * a delivery for as long as anyone is patient.
  */
-async function serverFor(w: ReturnType<typeof world>) {
+async function serverFor(w: ReturnType<typeof world>, env: NodeJS.ProcessEnv = {}) {
   const proc = spawn(
     process.execPath,
     [path.join(__dirname, "server.js"), "--repo", w.repo],
@@ -104,8 +106,10 @@ async function serverFor(w: ReturnType<typeof world>) {
       env: {
         ...process.env,
         TANDEM_STORE: w.store,
+        TANDEM_AUTONOMOUS: "",
         GIT_AUTHOR_EMAIL: "tester@example.com",
         EMAIL: "tester@example.com",
+        ...env,
       },
     },
   );
@@ -139,7 +143,7 @@ after(() => {
 // Generous, because this spawns a process and speaks a protocol to it
 // while the rest of the suite runs: a five-second budget was a stopwatch
 // on the machine, and it went red under load and green alone.
-test("the server lists its tools and none of them is a gate", { timeout: 30_000 }, async () => {
+test("the server lists its tools, the person's among them", { timeout: 30_000 }, async () => {
   const { c } = await running();
   {
     const res = (await c.call("tools/list", {})) as {
@@ -148,9 +152,10 @@ test("the server lists its tools and none of them is a gate", { timeout: 30_000 
     const names = (res.result?.tools ?? []).map((t) => t.name);
     assert.ok(names.includes("read_space"), `expected read_space, got ${names.join(", ")}`);
     assert.ok(names.includes("save_draft"));
+    assert.ok(names.includes("read_draft"), "a drafted line must be readable through the server");
     assert.ok(names.includes("list_spaces"), "a server must be able to say what spaces exist");
-    for (const gate of ["build", "sign", "accept_delivery", "keep_draft"])
-      assert.equal(names.includes(gate), false, `${gate} must not be offered`);
+    for (const gate of ["build", "accept_delivery", "keep_draft", "choose_set", "answer_question", "does_not_hold"])
+      assert.ok(names.includes(gate), `${gate} must be offered; the boundary refuses it unless TANDEM_AUTONOMOUS=1`);
   }
 });
 
@@ -161,7 +166,7 @@ test("a tool the boundary does not know is refused through the protocol", { time
       result?: { isError?: boolean; content?: { text: string }[] };
     };
     assert.equal(res.result?.isError, true);
-    assert.match(res.result?.content?.[0].text ?? "", /no such tool|yours|not declared/);
+    assert.match(res.result?.content?.[0].text ?? "", /yours, not mine/);
   }
 });
 
@@ -190,4 +195,82 @@ test("drafting through the server writes a record the store can be read back fro
     const records = path.join(spaceDir, withRecords[0], "records");
     assert.ok(fs.readdirSync(records).length > 0, "at least one record on disk");
   }
+});
+
+test("a thinking space made through the server is one the other tools can name", { timeout: 30_000 }, async () => {
+  const { w, c } = await running();
+  const made = (await c.call("tools/call", {
+    name: "new_space",
+    arguments: { repo: w.repo, name: "Phase 0 database" },
+  })) as { result?: { isError?: boolean; content?: { text: string }[] } };
+  assert.notEqual(made.result?.isError, true, made.result?.content?.[0].text);
+  assert.ok(fs.existsSync(path.join(w.store, "spaces", "thing-1", "phase-0-database")), "the space is on disk");
+  const read = (await c.call("tools/call", { name: "read_space", arguments: { space: "phase-0-database" } })) as {
+    result?: { content?: { text: string }[] };
+  };
+  assert.match(read.result?.content?.[0].text ?? "", /space: Thing/);
+  const again = (await c.call("tools/call", {
+    name: "new_space",
+    arguments: { repo: w.repo, name: "Phase 0 database" },
+  })) as { result?: { content?: { text: string }[] } };
+  assert.match(again.result?.content?.[0].text ?? "", /already exists/);
+});
+
+test("a repository is enabled under a product the store knows, and only under one", { timeout: 30_000 }, async () => {
+  const { c } = await running();
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-other-"));
+  execFileSync("git", ["-C", repo, "init", "-q"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repo, "remote", "add", "origin", "git@github.com:t/other.git"], { stdio: "ignore" });
+  const text = async (name: string, args: Record<string, unknown>) =>
+    (((await c.call("tools/call", { name, arguments: args })) as { result?: { content?: { text: string }[] } })
+      .result?.content?.[0].text ?? "");
+  assert.match(await text("enable_repo", { repo, product: "Nothing", label: "Other" }), /no product "Nothing"/);
+  await text("new_product", { name: "Widgets" });
+  assert.match(await text("enable_repo", { repo, product: "Widgets", label: "Other" }), /Other enabled under Widgets/);
+  assert.match(await text("list_products", {}), /Widgets\n\s+· Other/);
+  assert.match(await text("new_space", { repo, name: "first" }), /space "first" made under Other/);
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-plain-"));
+  assert.match(await text("enable_repo", { repo: plain, product: "Widgets", label: "Plain" }), /not a git repository/);
+});
+
+/**
+ * Work a server starts in a space is readable outside its stderr: every
+ * line it says about the space lands in the space's working-out log,
+ * beside the run logs.
+ */
+test("choosing a set through the server writes its working out into the space", { timeout: 30_000 }, async () => {
+  const w = world();
+  const storeDir = path.join(w.store, "spaces", "thing-1", w.space, "tester");
+  persistSpace({
+    storeDir,
+    author: "tester",
+    now: () => new Date().toISOString(),
+    space: {
+      ...emptySpace(),
+      asks: [{ id: "a1", text: "the tab row should stay put" }],
+      subjects: [{ id: "s1", name: "the tab row", from: ["a1"] }],
+      nodes: [{ id: "n1", serves: ["a1"], sentence: "the row holds still", needs: [], acceptance: [] }],
+      specs: [{ id: "spec-1", name: "the layout is stable", subjectIds: ["s1"] }],
+    } as never,
+    cut: [],
+    lastWritten: "",
+    onRefused: (m) => assert.fail(m),
+  });
+  const { c } = await serverFor(w, { TANDEM_AUTONOMOUS: "1", GITHUB_USERNAME: "tester" });
+  const res = (await c.call("tools/call", { name: "choose_set", arguments: { space: w.space, set: "spec-1" } })) as {
+    result?: { isError?: boolean; content?: { text: string }[] };
+  };
+  assert.notEqual(res.result?.isError, true, res.result?.content?.[0].text);
+
+  const log = path.join(storeDir, "runs", "working-out.log");
+  assert.ok(fs.existsSync(log), "the space holds a working-out log");
+  const lines = fs.readFileSync(log, "utf8").split("\n").filter(Boolean);
+  assert.ok(
+    lines.some((l) => /^\d{4}-\d\d-\d\dT[\d:.]+Z \[working-out\] attached to Thing \/ a-space as tester$/.test(l)),
+    `the attach is there, stamped:\n${lines.join("\n")}`,
+  );
+  assert.ok(
+    lines.some((l) => l.includes("[working-out] · \"the layout is stable\"")),
+    `the set's working out is there:\n${lines.join("\n")}`,
+  );
 });

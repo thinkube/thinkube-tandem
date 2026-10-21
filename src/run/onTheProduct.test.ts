@@ -14,6 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pageRoots } from "./live";
 import { toDriveOf } from "./observations";
+import { LIVE_SETTLING, TEMPLATE_SETTLING } from "../derive/ground";
 import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
 import { RunState } from "./state";
 import type { Change, Cut, Space } from "../core/schema";
@@ -91,6 +92,43 @@ test("a promise that lands where the page is built is judged on the page — rea
     "and it judges only what a person can do and see on the page",
   );
   assert.equal(driven[0].ask, "I can see my tasks in order", "and the reviewer is told what was asked");
+});
+
+/**
+ * A template's criterion that waits on its deploy is judged on the running
+ * service, wherever its code lands: a deploy that answers its health path
+ * shows the service runs, not what the criterion claims of it.
+ */
+test("a template's criterion settled by its validation deployment is driven on the running service", () => {
+  const s = space([
+    promise("n1", "app/services/storage.py", [
+      { id: "c1", text: "the storage service returns the document's XLIFF for a key the format service wrote", settledBy: TEMPLATE_SETTLING },
+      { id: "c2", text: "the image builds in the pipeline", settledBy: "the build" },
+      { id: "c3", text: "the docs read well", kind: "assessment", settledBy: TEMPLATE_SETTLING },
+    ]),
+  ]);
+  assert.deepEqual(
+    toDriveOf(s, cut(["n1"]), []).flatMap((d) => d.criteria.map((c) => c.id)),
+    ["c1"],
+  );
+});
+
+/**
+ * A repository that declares live checks proves what its running service
+ * answers with them; the browser keeps only what a person does on a page.
+ */
+test("a criterion a live suite covers is not taken by the browser drive", () => {
+  const s = space([
+    promise("n1", "frontend/src/pages/Tasks.tsx", [
+      { id: "c1", text: "the storage service returns the document's XLIFF for a key", settledBy: LIVE_SETTLING },
+      { id: "c2", text: "the deployed parser answers for real markup", settledBy: TEMPLATE_SETTLING },
+      { id: "c3", text: "the list shows the soonest due date first" },
+    ]),
+  ]);
+  const ids = (live: boolean) =>
+    toDriveOf(s, cut(["n1"]), ["frontend"], live).flatMap((d) => d.criteria.map((c) => c.id));
+  assert.deepEqual(ids(true), ["c3"], "the live suite takes what the running service answers");
+  assert.deepEqual(ids(false), ["c1", "c2", "c3"], "with no live suite the drive is what can settle them");
 });
 
 test("a criterion worded for a person watching is driven wherever it lands", () => {

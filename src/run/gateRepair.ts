@@ -22,9 +22,11 @@ import { runUnitWorker, porcelainPaths } from "./worker";
 import { suiteFootprint, suiteStanza, suiteVerdictOf } from "./suite";
 import type { SuiteFailure, SuiteVerdict } from "./suite";
 import type { Exec } from "./oracle";
+import { stageWork } from "./stageWork";
 import { formatBuild } from "./execs";
 import type { Proved } from "./proved";
 import * as path from "node:path";
+import { SUITE_RED_RULE } from "./suiteReport";
 
 /** One finishing round; what it cannot bring under goes to the closer. */
 const GATE_REPAIR_BUDGET = 1;
@@ -79,6 +81,7 @@ function gateRepairBrief(args: { tep: string; failures: readonly SuiteFailure[];
     ...args.footprint.map((f) => `- ${f}`),
   ];
   if (args.digest) lines.push("", "THE REPOSITORY, READ FOR YOU:", args.digest.slice(0, 12000));
+  lines.push("", SUITE_RED_RULE);
   lines.push("", "End your final words with a line `UNDELIVERED: none` or `UNDELIVERED: <what could not be brought under and why>`.");
   return lines.join("\n");
 }
@@ -88,7 +91,9 @@ function gateRepairBrief(args: { tep: string; failures: readonly SuiteFailure[];
  * last verdict and how many rounds were spent; on green the tree is
  * committed as the finisher left it.
  */
-export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: SuiteVerdict; rounds: number }> {
+export async function repairSuiteAtGate(
+  a: GateRepairArgs,
+): Promise<{ verdict: SuiteVerdict; rounds: number; reports: string[] }> {
   const worker = a.deps.worker ?? runUnitWorker;
   const cmd = a.suite;
   const suite = async () => {
@@ -101,6 +106,7 @@ export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: S
     .map((p) => p.trim())
     .filter(Boolean);
   let rounds = 0;
+  const reports: string[] = [];
   for (let attempt = 1; attempt <= GATE_REPAIR_BUDGET && !verdict.green && !a.state.halted; attempt++) {
     rounds = attempt;
     const id = `gate#suite-${attempt}`;
@@ -148,13 +154,14 @@ export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: S
       brief,
     );
     a.state.aborts.delete(id);
+    reports.push(outcome.finalText);
     // The suite decides, never the finisher's word.
     a.state.doing(id, "the suite decides");
     verdict = await suite();
     if (verdict.green) {
       a.log(`✓ ${a.tep}: the delivered tree is under the repository's suite`, id);
       a.state.set(id, "done");
-      await a.exec("git", ["add", "-A", "."], a.worktree);
+      await stageWork({ worktree: a.worktree, exec: a.exec, log: (l) => a.log(`${a.tep}: ${l}`, id) });
       await a.exec("git", ["commit", "-q", "-m", `tandem: ${a.tep} — brought under the repository's suite`], a.worktree);
       break;
     }
@@ -168,5 +175,5 @@ export async function repairSuiteAtGate(a: GateRepairArgs): Promise<{ verdict: S
       detail: `${outcome.finalText.slice(0, 400)}\n${verdict.failures.map((f) => f.name).join("\n")}`.slice(0, 1200),
     });
   }
-  return { verdict, rounds };
+  return { verdict, rounds, reports };
 }

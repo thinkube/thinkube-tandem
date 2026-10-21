@@ -11,12 +11,19 @@
  * files. The closer answers it, seeing only that: what the platform said,
  * and the files it named. It may edit those and nothing else, and it is
  * measured by the repository's own build, here, in the tree the run
- * committed from.
+ * committed from. When the refused step is the pipeline's test step, the
+ * build cannot reproduce it: the repair is measured by the repository's
+ * whole suite (the setup facts' `suite`), and it may also edit the shared
+ * test setup beside the test files the log names.
  *
  * The bound matters here more than at the gate: whatever this writes
  * arrives in a project that is already live.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { isTestPath } from "../core/testShape";
 import { close } from "./closer";
+import { stageWork } from "./stageWork";
 import { RunState } from "./state";
 
 export async function repairAfterTheMerge(a: {
@@ -29,6 +36,8 @@ export async function repairAfterTheMerge(a: {
     repoRoot: string;
     model: string;
     build?: string;
+    /** The repository's whole suite, from the setup facts. */
+    suite?: string;
     prepare?: string;
     digest?: string;
     workerModel?: Parameters<typeof close>[0]["workerModel"];
@@ -37,13 +46,28 @@ export async function repairAfterTheMerge(a: {
   st: RunState;
   exec: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
   boundedExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+  /** How the whole suite is run: bounded by the suite's own time limit. */
+  suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
+  /** The refused step is the pipeline's test step. */
+  testStep?: boolean;
   log: (line: string) => void;
   /** The repair is of what the reviewers found on the running product,
    *  not of a build the platform refused: their lines are the criteria,
    *  and an unchanged tree is not a repair, whatever the build says. */
-  onTheProduct?: { criteria: string[] };
+  onTheProduct?: {
+    criteria: string[];
+    /** Run the live checks of these promises again, against what is
+     *  deployed now. A live check judges the deployed service, not the
+     *  tree, so its last result is never reused. */
+    recheck?: () => Promise<{ green: boolean; evidence: string }>;
+  };
 }): Promise<{ green: boolean; report: string }> {
   const step = `live#repair-${a.attempt}`;
+  const suite = a.testStep && !a.onTheProduct ? a.deps.suite : undefined;
+  if (a.testStep && !a.onTheProduct && !suite)
+    throw new Error(
+      "the platform's test step refused the work, and the setup facts (.tandem/setup.json) name no `suite` to reproduce it here — record the repository's whole-suite command there",
+    );
   const build = async (): Promise<{ ok: boolean; output: string }> => {
     if (!a.deps.build) return { ok: true, output: "this repository declares no build" };
     const b = await a.boundedExec(a.deps.build, a.worktree);
@@ -60,13 +84,25 @@ export async function repairAfterTheMerge(a: {
   };
   const measure = async (): Promise<{ green: boolean; score: number; evidence: string; alsoOwn: string[] }> =>
     a.onTheProduct
-      ? measureOnTheProduct({ build: await build(), buildCommand: a.deps.build, changed: await changed(), evidence: a.evidence })
-      : measureTheBuild({ build: await build(), buildCommand: a.deps.build });
+      ? await (async () => {
+          const moved = await changed();
+          const recheck = a.onTheProduct!.recheck;
+          return measureOnTheProduct({
+            build: await build(),
+            buildCommand: a.deps.build,
+            changed: moved,
+            evidence: a.evidence,
+            ...(!moved && recheck ? { rechecked: await recheck() } : {}),
+          });
+        })()
+      : suite
+        ? measureTheSuite({ build: await build(), buildCommand: a.deps.build, suite: await a.suiteExec(suite, a.worktree), suiteCommand: suite })
+        : measureTheBuild({ build: await build(), buildCommand: a.deps.build });
   const closed = await close({
     subject: a.onTheProduct ? `${a.tep} (what does not hold on the running product)` : `${a.tep} (what the platform refused)`,
     worktree: a.worktree,
     // Only what the platform's log named, or the files the promises land in. Nothing else is failing.
-    footprint: a.files,
+    footprint: suite ? withSharedTestSetup(a.files, a.worktree) : a.files,
     probeSources: [],
     history: [
       a.onTheProduct
@@ -80,6 +116,9 @@ export async function repairAfterTheMerge(a: {
             id: "live-1",
             text: "the platform builds and deploys this repository from what is now in the project",
           },
+          ...(suite
+            ? [{ id: "live-suite", text: `the repository's whole suite (${suite}) passes here, as the platform's test step runs it` }]
+            : []),
         ],
     ...(a.deps.digest ? { digest: a.deps.digest } : {}),
     ...(a.deps.prepare ? { prepare: a.deps.prepare } : {}),
@@ -97,7 +136,7 @@ export async function repairAfterTheMerge(a: {
     ...(a.deps.worker ? { worker: a.deps.worker } : {}),
   });
   if (closed.green) {
-    await a.exec("git", ["-C", a.worktree, "add", "-A", "."], a.worktree);
+    await stageWork({ worktree: a.worktree, exec: a.exec, log: a.log });
     await a.exec(
       "git",
       ["-C", a.worktree, "commit", "-m", `tandem: ${a.tep} — what the platform refused (attempt ${a.attempt})`],
@@ -122,6 +161,46 @@ export function measureTheBuild(a: {
   };
 }
 
+/** The whole suite is the measure of a repair of the pipeline's test step:
+ *  it is what that step runs. Green only when the build and the suite pass. */
+export function measureTheSuite(a: {
+  build: { ok: boolean; output: string };
+  buildCommand?: string;
+  suite: { code: number | null; output: string };
+  suiteCommand: string;
+}): { green: boolean; score: number; evidence: string; alsoOwn: string[] } {
+  if (!a.build.ok) return measureTheBuild(a);
+  const green = a.suite.code === 0;
+  return {
+    green,
+    score: green ? 0 : 1,
+    evidence: green
+      ? `the build and the whole suite (${a.suiteCommand}) pass here`
+      : `THE WHOLE SUITE FAILS HERE (${a.suiteCommand}, exit ${a.suite.code ?? "null"}) — the platform's test step runs it:\n${a.suite.output.slice(-6000)}`,
+    alsoOwn: [],
+  };
+}
+
+/** Shared test setup a test directory's tests load before they run. */
+const SHARED_TEST_SETUP = ["conftest.py"];
+
+/**
+ * The files a repair of the test step may edit: the ones the log named,
+ * and the shared test setup in the directory of each named test file,
+ * where it exists.
+ */
+export function withSharedTestSetup(files: string[], worktree: string): string[] {
+  const out = new Set(files);
+  for (const f of files) {
+    if (!isTestPath(f)) continue;
+    for (const name of SHARED_TEST_SETUP) {
+      const rel = path.posix.join(path.posix.dirname(f), name);
+      if (fs.existsSync(path.join(worktree, rel))) out.add(rel);
+    }
+  }
+  return [...out];
+}
+
 /**
  * The measure of a repair the reviewers asked for. The build already
  * passed when they looked, so the build alone would call an untouched
@@ -134,7 +213,23 @@ export function measureOnTheProduct(a: {
   buildCommand?: string;
   changed: boolean;
   evidence: string;
+  /** The live checks, run again just now against the deployed service. */
+  rechecked?: { green: boolean; evidence: string };
 }): { green: boolean; score: number; evidence: string; alsoOwn: string[] } {
+  if (!a.changed && a.rechecked)
+    return a.rechecked.green
+      ? {
+          green: true,
+          score: 0,
+          evidence: "the live checks were run again just now against the deployed service, and they hold — nothing in the tree needed to change",
+          alsoOwn: [],
+        }
+      : {
+          green: false,
+          score: 1,
+          evidence: `THE LIVE CHECKS WERE RUN AGAIN JUST NOW against the deployed service and still do not hold, and nothing in the tree has changed:\n${a.rechecked.evidence.slice(0, 6000)}`,
+          alsoOwn: [],
+        };
   if (!a.changed)
     return {
       green: false,

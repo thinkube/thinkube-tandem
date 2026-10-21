@@ -16,6 +16,8 @@ import { WorkerModelConfig } from "../engine/workerModel";
 import { solveModel } from "../derive/model";
 import { proposeCheck as proposeCheckRound } from "../derive/checks";
 import { proposeSpecs } from "../derive/specs";
+import type { Readiness } from "../run/readiness";
+import type { RepositoryFacts } from "../run/facts";
 
 export interface SessionDeps {
   round: RoundDeps;
@@ -46,6 +48,8 @@ export interface SessionDeps {
   /** Retire a merged TEP's worktrees (best-effort; injectable). */
   retire?: (tepId: string) => Promise<void>;
   workerModel?: WorkerModelConfig;
+  /** The model a worker falls back to when its own is overloaded. */
+  spend?: { fallbackModel?: string };
   /** Frontier width for the run (v1 default 4). */
   maxConcurrent?: number;
   docsGateMode?: "blocking" | "advisory";
@@ -79,4 +83,13 @@ export interface SessionDeps {
    *  then follows the record that process writes. Absent, the session
    *  drives the run itself — which is what the driver process does. */
   runElsewhere?: (a: { fresh: boolean }) => Promise<{ ok: boolean; reason?: string; pid?: number }>;
+  /** Whether every repository this session builds into is ready for work
+   *  to be signed against it (src/run/readiness.ts). Build asks it before
+   *  signing and refuses on any item that is not ready; a session without
+   *  it signs nothing. */
+  readiness?: (reading?: RepositoryFacts) => Promise<Readiness[]>;
+  /** The readiness answers the store keeps for each repository at the HEAD
+   *  it stands at now, whichever process gave them; a repository never
+   *  answered at that HEAD is absent. Throws when a HEAD cannot be read. */
+  readinessKept?: () => Readiness[];
 }

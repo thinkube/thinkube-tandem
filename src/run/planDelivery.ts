@@ -18,6 +18,7 @@ import { accessSync, readFileSync } from "node:fs";
 import type { Proof } from "../core/schema";
 import type { AcVerification } from "../engine/orchestratorCore";
 import type { Exec } from "./oracle";
+import { isTestPath } from "../core/testShape";
 import * as fsp from "node:fs/promises";
 
 /**
@@ -78,7 +79,7 @@ export async function confessedDeferrals(args: {
   extraPaths: string[];
   onHit: (file: string, line: number, text: string) => void;
 }): Promise<string[]> {
-  const { isStubScannableFile, scanStubMarkers } = await import("../engine/core/stubScan");
+  const { isStubScannableFile, markerOnlyInStrings, scanStubMarkers } = await import("../engine/core/stubScan");
   const out: string[] = [];
   const delivered = (
     await args.exec(
@@ -117,7 +118,9 @@ export async function confessedDeferrals(args: {
       ? [...mine].map(([line, text]) => ({ ...scanStubMarkers(rel, text)[0], file: rel, line }))
           .filter((h): h is { file: string; line: number; text: string; weak: boolean } => !!h.text)
       : scanStubMarkers(rel, content);
-    for (const h of hits.filter((x) => !x.weak && !isDeferralVocabulary(x.text))) {
+    // A marker inside a test's string data is the data, not unfinished work.
+    const data = isTestPath(rel);
+    for (const h of hits.filter((x) => !x.weak && !isDeferralVocabulary(x.text) && !(data && markerOnlyInStrings(x.text)))) {
       out.push(`${h.file}:${h.line} confesses a deferral: ${h.text}`);
       args.onHit(h.file, h.line, h.text);
     }

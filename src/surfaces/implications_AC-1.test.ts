@@ -35,6 +35,7 @@ function pushWith(impacts: SpacePush["impacts"]): SpacePush {
     cutCount: 0,
     deliveries: [],
     documentation: { state: "missing", landings: [] },
+    workingOutLog: false,
   } as SpacePush;
 }
 

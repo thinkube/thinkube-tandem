@@ -21,7 +21,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Anchor, Ask, Change, validateAnchor } from "../core/schema";
 import { quoteAnchor } from "./spans";
-import { RoundDeps, runReadRound } from "./round";
+import { jsonSchemaOf, readAnswer, RoundDeps, runReadRound } from "./round";
+import { z } from "zod";
 
 type Round = (deps: RoundDeps, prompt: string) => Promise<string | null>;
 
@@ -141,19 +142,17 @@ export function buildCompletenessPrompt(args: {
   );
 }
 
-/** The first JSON object in a round's answer, or nothing. */
-function firstJson(raw: string): unknown {
-  const start = raw.indexOf("{");
-  if (start < 0) return undefined;
-  for (let end = raw.lastIndexOf("}"); end > start; end = raw.lastIndexOf("}", end - 1)) {
-    try {
-      return JSON.parse(raw.slice(start, end + 1));
-    } catch {
-      /* a brace inside prose — try the previous one */
-    }
-  }
-  return undefined;
-}
+/** The shape the completeness round answers in. */
+export const LandingsAnswer = z.object({
+  landings: z.array(
+    z.object({
+      change: z.number(),
+      path: z.string(),
+      symbol: z.string().optional(),
+      why: z.string().optional(),
+    }),
+  ),
+});
 
 /**
  * ONE completeness pass over everything a cut has derived.
@@ -196,7 +195,7 @@ export async function completeCut(
       )
       .join("\n");
   const raw = await round(
-    deps,
+    { ...deps, schema: jsonSchemaOf(LandingsAnswer) },
     buildCompletenessPrompt({
       ask: { id: "cut", text, at: "" },
       changes: withAnchorQuotes(deps.repoRoot, args.changes),
@@ -224,15 +223,13 @@ export function applyLandings(
   raw: string,
   log: (line: string) => void = () => {},
 ): Change[] {
-  const parsed = firstJson(raw) as { landings?: unknown } | undefined;
-  const landings = Array.isArray(parsed?.landings) ? (parsed!.landings as Record<string, unknown>[]) : [];
+  const landings = readAnswer(LandingsAnswer, raw)?.landings ?? [];
   const grown = new Map<string, Change>();
   let added = 0;
   let dropped = 0;
   for (const l of landings) {
-    const n = typeof l.change === "number" ? l.change : Number(l.change);
-    const change = Number.isInteger(n) ? changes[n] : undefined;
-    const at = typeof l.path === "string" ? l.path.trim() : "";
+    const change = Number.isInteger(l.change) ? changes[l.change] : undefined;
+    const at = l.path.trim();
     if (!change || !at) {
       dropped++;
       continue;

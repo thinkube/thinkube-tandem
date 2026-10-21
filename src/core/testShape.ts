@@ -32,6 +32,13 @@ export function isTestPath(rel: string): boolean {
   );
 }
 
+/** Shared test setup a runner loads for the tests beside it — pytest's
+ *  `conftest.py` — which is test-shaped but is not itself a test: run as
+ *  one, it collects nothing. */
+export function isSharedTestSetup(rel: string): boolean {
+  return /(^|\/)conftest\.py$/.test(rel.replace(/\\/g, "/"));
+}
+
 /**
  * A check this run authored — held-out evidence, never a test home the
  * repository maintains.
@@ -60,4 +67,19 @@ export function isProbePath(rel: string): boolean {
  */
 export function testKind(rel: string): "unit" | "held-out" {
   return isProbePath(rel) ? "held-out" : "unit";
+}
+
+/**
+ * The criterion ordinal a check file carries in its name: `_AC-<k>` followed
+ * by whatever suffix the repository's tests wear — `.test.ts`, or `_test.py`
+ * for a check born in a Python test directory. Undefined for any other file.
+ */
+export function checkOrdinalOf(rel: string): number | undefined {
+  const m = /_AC-(\d+)(?!\d)/.exec(rel);
+  return m ? Number(m[1]) : undefined;
+}
+
+/** Whether a check file proves criterion `ac` of its slice. */
+export function isCheckOf(rel: string, ac: number): boolean {
+  return checkOrdinalOf(rel) === ac;
 }

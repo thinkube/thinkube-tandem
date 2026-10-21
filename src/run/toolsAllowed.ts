@@ -36,7 +36,6 @@ export const FENCED_TOOLS = [
   "WebSearch",
   ...DELEGATION_TOOLS,
   "Monitor",
-  "AskUserQuestion",
   "ExitPlanMode",
   "EnterPlanMode",
   "EnterWorktree",
@@ -60,7 +59,10 @@ export const FENCED_TOOLS = [
  * behind it can judge.
  */
 export function toolsRefusedTo(w: { unfenced?: boolean; role?: string; blind?: boolean }): string[] {
-  if (w.unfenced) return [...DELEGATION_TOOLS];
+  // A fenced worker asks its question through the question tool, and the
+  // run's door answers it. The closer runs without a door, so for it the
+  // tool would be a question nobody hears.
+  if (w.unfenced) return [...DELEGATION_TOOLS, "AskUserQuestion"];
   return [...(w.role === "test" || w.blind ? ["Bash"] : []), ...FENCED_TOOLS];
 }
 export function clearanceLesson(bad: readonly string[], footprint: readonly string[]): string {

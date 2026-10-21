@@ -150,3 +150,24 @@ test("a repair that moves nothing stops the loop rather than waiting for a build
   assert.equal(l.box.repairs, 1, "and it does not spend the second attempt on the same tree");
   assert.ok(l.said.some((s) => /changed nothing/.test(s)), l.said.join(" · "));
 });
+
+test("a live check is run again inside the repair, never replayed: once the deployed service holds, nothing needs to change", async () => {
+  const asked: string[][] = [];
+  let rechecked: { green: boolean; evidence: string } | undefined;
+  const l = loop({
+    repair: async (_found, _attempt, recheck) => {
+      rechecked = await recheck!();
+      return { green: rechecked.green, report: "" };
+    },
+    land: async () => ({ ok: true, moved: false }),
+    recheck: async (promises) => {
+      asked.push(promises);
+      return outcomeWith([{ id: "c1", verdict: "green", label: "the cursor is in the title" }]);
+    },
+  });
+  const out = await repairWhatDidNotHold(l.args);
+  assert.deepEqual(asked, [["the new-task box takes the cursor"]], "the live checks of the red promise ran again");
+  assert.equal(rechecked?.green, true);
+  assert.deepEqual((out.delivery?.proofs ?? []).map((p) => p.verdict), ["green"], "the fresh verdict is the delivery's");
+  assert.ok(l.said.some((s) => /hold on the service as deployed now/.test(s)), l.said.join(" · "));
+});

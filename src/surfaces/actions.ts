@@ -187,12 +187,19 @@ export const ACTIONS: Readonly<Record<string, Action>> = {
   "read-allowed": { label: "Read what is allowed now" },
   "full-rerun": { label: "Run again from nothing" },
   "list-spaces": { label: "List the spaces" },
+  // Asking whether a repository is ready runs its setup and, for a
+  // template, its declared deploy — on a development platform, a re-run,
+  // and nothing it finds is decided here: Build reads the answer.
+  "check-readiness": { label: "Check readiness" },
   "stop-run-tool": { label: "Stop the run" },
 
   // ── the tree's own commands, reachable from the machine at last ────
   "new-product": { label: "New product", command: "thinkube-tandem.newProduct" },
   "new-project": { label: "New project", command: "thinkube-tandem.newProject" },
   "open-space": { label: "Open space", command: "thinkube-tandem.openSpace" },
+  // An empty space shapes nothing: what is built is still decided by the
+  // asks a person keeps and the cut a person signs inside it.
+  "new-space": { label: "New thinking space", command: "thinkube-tandem.newThinkingSpace" },
   "activate-project": { label: "Activate", command: "thinkube-tandem.activateProject" },
   "set-product": { label: "Move to product", command: "thinkube-tandem.setProduct" },
   "set-context-scope": { label: "Set what it may read", command: "thinkube-tandem.setContextScope" },
@@ -219,9 +226,18 @@ export function liveIn(phase: Phase): string[] {
   return ACTION_NAMES.filter((a) => ACTIONS[a].when?.includes(phase));
 }
 
-/** Whether a machine may do this at all, and why not when it may not. */
-export function machineMay(action: string): { ok: true } | { ok: false; reason: string } {
+/** The environment variable with which the person lets a machine take
+ *  their actions too: `1` allows every declared action. */
+export const AUTONOMOUS_ENV = "TANDEM_AUTONOMOUS";
+
+/** Whether a machine may do this at all, and why not when it may not. An
+ *  undeclared action is refused whatever the environment says. */
+export function machineMay(
+  action: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { ok: true } | { ok: false; reason: string } {
   const a = ACTIONS[action];
   if (!a) return { ok: false, reason: `${action} is not declared — refused until it is` };
+  if (env[AUTONOMOUS_ENV] === "1") return { ok: true };
   return a.mine ? { ok: false, reason: a.mine } : { ok: true };
 }

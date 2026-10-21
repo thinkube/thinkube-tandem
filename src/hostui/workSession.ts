@@ -22,6 +22,8 @@ import {
   writeContextScope,
 } from "../core/workProjects";
 import { vs } from "../core/vscodeHost";
+import { checkReadiness, readinessNow, type Readiness } from "../run/readiness";
+import { spendSettings } from "../run/spendSettings";
 
 /** The multi-select over the PRODUCT's repositories (the human's boundary
  *  correction: never "whatever is open in the workspace"). Returns the
@@ -116,6 +118,7 @@ export async function ensureWorkSession(args: {
     await editContextScope(args.storeRoot, wp, slug, args.openRepos());
   const config = vs().workspace.getConfiguration("thinkubeTandem");
   const { TandemSession } = await import("../surfaces/session");
+  const scopes = scopesReader(args.storeRoot, wp, slug, args.openRepos);
   const s = new TandemSession({
     // Rounds get a neutral working directory; the checked repositories
     // arrive as member scopes and every touchpoint names its repository.
@@ -130,7 +133,7 @@ export async function ensureWorkSession(args: {
     now: () => new Date().toISOString(),
     author,
     scope: { gitRoot: args.storeRoot, prefix: "", projectId: wp.id, label: `${wp.product} / ${wp.name}` },
-    scopes: scopesReader(args.storeRoot, wp, slug, args.openRepos),
+    scopes,
     resolveScope: async (scopeId) => {
       const p = args.openRepos().find((x) => x.card.id === scopeId);
       if (!p) return undefined;
@@ -144,11 +147,36 @@ export async function ensureWorkSession(args: {
       workerModel: config.get<string>("workerModel", "sonnet"),
       workerModelByRole: config.get<Record<string, string>>("workerModelByRole", {}),
     },
+    spend: spendSettings(config),
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(args.storeRoot, wp.id, author, "project"),
     anchorless: true,
     onChanged: (message) => args.onChanged(key, message),
+    // Every repository checked for this space, one after another: each may
+    // install, build and deploy, and two at once compete for one machine.
+    readiness: async () => {
+      const all: Readiness[] = [];
+      for (const sc of scopes()) {
+        const p = args.openRepos().find((x) => x.card.id === sc.id);
+        if (!p) throw new Error(`${sc.label ?? sc.id} is checked for this space but is not open here`);
+        all.push(
+          await checkReadiness({
+            repoRoot: p.gitRoot,
+            home: { storeRoot: args.storeRoot, repoId: p.card.id },
+            log: (l) => args.onChanged(key, l),
+          }),
+        );
+      }
+      return all;
+    },
+    readinessKept: () =>
+      scopes().flatMap((sc) => {
+        const p = args.openRepos().find((x) => x.card.id === sc.id);
+        if (!p) throw new Error(`${sc.label ?? sc.id} is checked for this space but is not open here`);
+        const kept = readinessNow({ storeRoot: args.storeRoot, repoId: p.card.id }, p.gitRoot);
+        return kept ? [kept] : [];
+      }),
   });
   args.sessions.set(key, s);
   return s;

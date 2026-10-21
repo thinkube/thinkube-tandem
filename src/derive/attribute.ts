@@ -14,12 +14,18 @@
  * A promise the round cannot place stays unattached and is named. Nothing
  * is attached because it is the only candidate.
  */
-import { RoundDeps, runReadRound, volumeDeps } from "./round";
+import { jsonSchemaOf, readAnswer, RoundDeps, runReadRound, volumeDeps } from "./round";
+import { z } from "zod";
 
 export interface Attributable {
   id: string;
   sentence: string;
 }
+
+/** The shape the attribution round answers in. */
+const AttachAnswer = z.object({
+  attach: z.array(z.object({ promise: z.number(), claim: z.number() })),
+});
 
 function buildAttributePrompt(
   subject: string,
@@ -53,23 +59,11 @@ function parseAttribution(
   promises: number,
   claims: number,
 ): { promise: number; claim: number }[] {
-  if (raw === null) return [];
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return [];
-  let parsed: { attach?: unknown };
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1)) as typeof parsed;
-  } catch {
-    return [];
-  }
+  const parsed = readAnswer(AttachAnswer, raw);
+  if (!parsed) return [];
   const out: { promise: number; claim: number }[] = [];
   const seen = new Set<number>();
-  for (const a of Array.isArray(parsed.attach) ? parsed.attach : []) {
-    if (typeof a !== "object" || a === null) continue;
-    const rec = a as Record<string, unknown>;
-    const promise = typeof rec.promise === "number" ? rec.promise : 0;
-    const claim = typeof rec.claim === "number" ? rec.claim : 0;
+  for (const { promise, claim } of parsed.attach) {
     // Out of range, or a promise named twice: refused, not repaired.
     if (promise < 1 || promise > promises || claim < 1 || claim > claims) continue;
     if (seen.has(promise)) continue;
@@ -90,7 +84,7 @@ export async function attributePromises(
   const out = new Map<string, string>();
   if (!claims.length || !promises.length) return out;
   const raw = await round(
-    volumeDeps(deps),
+    { ...volumeDeps(deps), schema: jsonSchemaOf(AttachAnswer) },
     buildAttributePrompt(subject, claims, promises),
   );
   for (const { promise, claim } of parseAttribution(raw, promises.length, claims.length))

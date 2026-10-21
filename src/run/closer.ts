@@ -24,6 +24,7 @@ import { resolveWorkerModel } from "../engine/workerModel";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import { formatBuild } from "./execs";
 import type { WorkerOutcome } from "./worker";
+import { SUITE_RED_RULE } from "./suiteReport";
 
 /** How much room the last actor gets: wide, because nothing follows it. */
 const CLOSER_TURNS = 200;
@@ -150,6 +151,8 @@ export function closerBrief(a: {
     "tests. When you cannot move it further, stop and say exactly what remains and why, in a line",
     "beginning `UNDELIVERED:` — your report is how the machine learns what its cheaper actors",
     "could not do.",
+    "",
+    SUITE_RED_RULE,
     "",
     "──── WHERE IT STANDS NOW ────",
     a.state.evidence.slice(0, 6000),

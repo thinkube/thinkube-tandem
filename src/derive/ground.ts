@@ -14,11 +14,13 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { AcceptanceCriterion, Anchor, Ask, Change, Question, validateAnchor } from "../core/schema";
 import { readStamp, SourceStamp } from "../core/stamp";
-import { RoundDeps, runReadRound } from "./round";
+import { jsonSchemaOf, readAnswer, RoundDeps, runReadRound } from "./round";
+import { z } from "zod";
 import { observationShaped } from "../run/observations";
 import { factsOf } from "../run/facts";
 import { downstreamOf } from "../run/survey";
 import { downgradeUnreachable } from "./reachable";
+import { liveSuiteDeclared } from "../run/liveSuite";
 
 /** A question the round could not settle from the code, with the machine's
  *  recommended answer — the human accepts or rewords; never left hanging. */
@@ -41,7 +43,19 @@ export interface DerivedNode {
   unverified?: { text: string; why: string }[];
 }
 
-/** Build the derivation prompt. Pure; exported for tests. */
+/** What a template's criteria that a worktree cannot settle are settled by. */
+export const TEMPLATE_SETTLING = "a validation deployment of the template through thinkube-control";
+
+/** What settles a criterion only the running service can answer, in a
+ *  repository that declares live checks (`spec.deploy.live`). */
+export const LIVE_SETTLING = "the running service at its deployed address, exercised by the repository's live checks";
+
+/** Whether a criterion is answered by the running product: a template's
+ *  validation deployment, or the live checks a repository declares. */
+export function settledOnTheLiveProduct(settledBy: string | undefined): boolean {
+  return settledBy === TEMPLATE_SETTLING || settledBy === LIVE_SETTLING;
+}
+
 /** Where this target settles what a worktree cannot — one sentence per
  *  downstream, given to the grounding so it classifies instead of forcing
  *  every criterion into a here-shaped check. */
@@ -50,7 +64,7 @@ function settlingSourceOf(downstream: string): string | undefined {
     case "gitops-app":
       return "the app's build pipeline — its declared tests run in their named image after the merge, and a failure prevents deployment";
     case "template":
-      return "a validation deployment of the template through thinkube-control";
+      return TEMPLATE_SETTLING;
     case "ansible":
     case "ansible-component":
       return "the component's own 18_test.yaml, run against the live cluster after deployment";
@@ -61,10 +75,36 @@ function settlingSourceOf(downstream: string): string | undefined {
   }
 }
 
+/**
+ * Every source that settles this target's criteria after the merge: the
+ * downstream's own, and the running service when the repository declares
+ * live checks. A template's own source already is the running service.
+ */
+export function settlingSourcesOf(downstream: string, declaresLive: boolean): string[] {
+  const own = settlingSourceOf(downstream);
+  return [...(own ? [own] : []), ...(declaresLive && own !== TEMPLATE_SETTLING ? [LIVE_SETTLING] : [])];
+}
+
+/**
+ * A criterion's `settledBy` as one of the target's sources. The prompt asks
+ * for a source's sentence copied exactly; a target with one source has no
+ * other to mean, so any `settledBy` is that source. With several, only an
+ * exact copy (ignoring case and the space around it) names one, and any
+ * other wording is kept as the model wrote it.
+ */
+export function settledByOf(written: string, sources: readonly string[]): string {
+  if (sources.length === 1) return sources[0];
+  return sources.find((s) => s.toLowerCase() === written.trim().toLowerCase()) ?? written;
+}
+
+/** Build the derivation prompt. */
 function buildGroundingPrompt(args: {
   ask: Ask;
   repoRoot: string;
-  settling?: string;
+  settling?: string[];
+  /** The repository declares live checks, which prove what the running
+   *  service answers. */
+  live?: boolean;
   /** The structural map, extracted from the code: what is here and what
    *  hangs off what, with the file and line of every node. Fact — a round
    *  given this must not go looking for structure. */
@@ -173,13 +213,19 @@ function buildGroundingPrompt(args: {
     `is pressed","why":"acts on the cluster this runs in"}.\n` +
     `    A check may require WHAT THIS WORK CHANGES, or what the running product does. It may NEVER require that something the work does not touch agrees with something it does — a generated file matching its source, a built copy matching what it was built from, one repository agreeing with another. Nobody in the run is cleared to change the other side, so no order of work makes such a check true, and it is judged red at the end for a reason no worker could have acted on. Check what the SOURCE says.\n` +
     `- "unverified": optional — the effects of this node the machine cannot verify, each {"text":"…","why":"…"}.\n` +
-    (args.settling
-      ? `    THIS TARGET IS SETTLED ELSEWHERE for behaviour a worktree cannot run: ${args.settling}. ` +
-        `A criterion about behaviour THAT SOURCE will actually exercise gets "settledBy": "<that source, in a few words>" ` +
+    (args.settling?.length
+      ? `    THIS TARGET IS SETTLED ELSEWHERE for behaviour a worktree cannot run, by: ${args.settling.map((x) => `"${x}"`).join("; and by ")}. ` +
+        `A criterion about behaviour ONE OF THESE SOURCES will actually exercise gets "settledBy" set to that source's sentence, copied exactly as quoted here, ` +
         `instead of a probe or an unverified entry — it rides the delivery as pending and is answered from there ` +
         `after the merge. Logic a plain test process CAN reach here stays a probe; an effect NOTHING mechanical ` +
         `settles stays "unverified". Never force a deployed-behaviour criterion into a here-shaped check: it fails ` +
-        `for the machine's limits and blames the work.\n`
+        `for the machine's limits and blames the work.` +
+        (args.live
+          ? ` A criterion settled on the running service is proved by a LIVE CHECK written against the deployed service ` +
+            `through its public API: word it as something a client of that API can do and see answered, creating the ` +
+            `data it needs itself.`
+          : "") +
+        `\n`
       : "") +
     (args.decisions?.length
       ? `DECISIONS IN FORCE (the human already settled these — derive consistently with them, never re-open them):\n${args.decisions.map((d) => `- ${d}`).join("\n")}\n\n`
@@ -192,10 +238,43 @@ function buildGroundingPrompt(args: {
   );
 }
 
+/** The shape the grounding round answers in; the prompt above describes it
+ *  in words, and the harness holds the model to it. */
+const GroundedAnswer = z.object({
+  nodes: z.array(
+    z.object({
+      sentence: z.string(),
+      claim: z.number().optional(),
+      touchpoints: z
+        .array(
+          z.object({
+            path: z.string(),
+            symbol: z.string().optional(),
+            evidence: z.string().optional(),
+            scope: z.string().optional(),
+          }),
+        )
+        .optional(),
+      needs: z.array(z.number()).optional(),
+      acceptance: z
+        .array(
+          z.object({
+            text: z.string(),
+            kind: z.enum(["probe", "assessment"]).optional(),
+            settledBy: z.string().optional(),
+          }),
+        )
+        .optional(),
+      unverified: z.array(z.object({ text: z.string(), why: z.string() })).optional(),
+    }),
+  ),
+  questions: z.array(z.object({ text: z.string(), recommendation: z.string() })).optional(),
+});
+
 /**
- * Parse and validate a round's output. Anchors are validated (positions
- * refused), needs indices bounded, empty sentences dropped. `fileExists`
- * marks planned anchors; injectable for tests.
+ * Validate a round's answer. Anchors are validated (positions refused),
+ * needs indices bounded, empty sentences dropped. `fileExists` marks
+ * planned anchors; injectable for tests.
  */
 export function parseGroundedNodes(
   raw: string,
@@ -203,17 +282,9 @@ export function parseGroundedNodes(
   fileExists: (abs: string) => boolean = fs.existsSync,
   scopeDir?: (scope: string) => string | undefined,
 ): DerivedNode[] {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return [];
-  let parsed: { nodes?: unknown; questions?: unknown };
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1)) as typeof parsed;
-  } catch {
-    return [];
-  }
-  const rawNodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
-  void 0;
+  const parsed = readAnswer(GroundedAnswer, raw);
+  if (!parsed) return [];
+  const rawNodes = parsed.nodes;
   const out: DerivedNode[] = [];
   for (const n of rawNodes) {
     if (typeof n !== "object" || n === null) continue;
@@ -292,19 +363,17 @@ export function parseGroundedNodes(
   return out;
 }
 
-/** Parse the round's unresolved questions (fail-soft to none). */
+/** The questions of any round that raises them, whatever else it answers. */
+const QuestionsAnswer = z.object({
+  questions: z.array(z.object({ text: z.string(), recommendation: z.string() })).optional(),
+});
+
+/** The round's unresolved questions (fail-soft to none). */
 export function parseGroundedQuestions(raw: string): DerivedQuestion[] {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return [];
-  let parsed: { questions?: unknown };
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1)) as typeof parsed;
-  } catch {
-    return [];
-  }
+  const parsed = readAnswer(QuestionsAnswer, raw);
+  if (!parsed) return [];
   const out: DerivedQuestion[] = [];
-  for (const q of Array.isArray(parsed.questions) ? parsed.questions : []) {
+  for (const q of parsed.questions ?? []) {
     if (typeof q !== "object" || q === null) continue;
     const rec = q as Record<string, unknown>;
     const text = typeof rec.text === "string" ? rec.text.trim() : "";
@@ -411,20 +480,19 @@ export async function runGrounding(
   },
   round: (deps: RoundDeps, prompt: string) => Promise<string | null> = runReadRound,
 ): Promise<GroundingResult> {
+  // The target's kind, remembered or freshly surveyed, and whether it
+  // declares live checks — the settling sources follow from both, and the
+  // classification the prompt asks for depends on knowing them.
+  const down = factsOf(deps.repoRoot)?.downstream ?? downstreamOf(deps.repoRoot);
+  const live = !!liveSuiteDeclared(deps.repoRoot);
+  const settling = settlingSourcesOf(down, live);
   const text = await round(
-    deps,
+    { ...deps, schema: jsonSchemaOf(GroundedAnswer) },
     buildGroundingPrompt({
       ...(opts.claims ? { claims: opts.claims } : {}),
       ask,
       repoRoot: deps.repoRoot,
-      ...((): { settling?: string } => {
-        // The target's kind, remembered or freshly surveyed — the settling
-        // source follows from it, and the classification above depends on
-        // knowing it.
-        const down = factsOf(deps.repoRoot)?.downstream ?? downstreamOf(deps.repoRoot);
-        const settling = settlingSourceOf(down);
-        return settling ? { settling } : {};
-      })(),
+      ...(settling.length ? { settling, live } : {}),
       digest: opts.digest,
       ...(opts.map ? { map: opts.map } : {}),
       ...(opts.graphed ? { graphed: opts.graphed } : {}),
@@ -439,6 +507,8 @@ export async function runGrounding(
     undefined,
     (sc) => opts.scopes?.find((x) => x.id === sc)?.dir,
   );
+  for (const n of derived)
+    for (const c of n.acceptance) if (c.settledBy) c.settledBy = settledByOf(c.settledBy, settling);
   // The mechanical look behind the model's testability judgement: a probe
   // naming a symbol its touchpoints hold unexported becomes an assessment.
   downgradeUnreachable(derived, deps.repoRoot, deps.log);

@@ -27,12 +27,13 @@
  */
 import { Ask, Change, Question } from "../core/schema";
 import { readStamp } from "../core/stamp";
-import { RoundDeps, runReadRound, volumeDeps } from "./round";
+import { jsonSchemaOf, readAnswer, RoundDeps, runReadRound, volumeDeps } from "./round";
+import { z } from "zod";
 import { attributePromises } from "./attribute";
 import { judgeRaised } from "../gates/assumptions";
 import type { Knowledge } from "./knowledge";
 import { runContextualize } from "./contextualize";
-import { applyLandings, buildCompletenessPrompt, withAnchorQuotes } from "./complete";
+import { applyLandings, buildCompletenessPrompt, LandingsAnswer, withAnchorQuotes } from "./complete";
 
 export { completeCut } from "./complete";
 import { GroundingResult, parseGroundedQuestions, runGrounding } from "./ground";
@@ -161,49 +162,40 @@ function buildTailPrompt(args: {
   );
 }
 
-function parseJson(raw: string): Record<string, unknown> | undefined {
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start === -1 || end <= start) return undefined;
-  try {
-    return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-}
+/** The shape the tail round answers in: the three checks in one object. */
+const TailAnswer = z.object({
+  uncovered: z
+    .array(z.object({ clause: z.string(), question: z.object({ text: z.string(), recommendation: z.string() }) }))
+    .optional(),
+  rewrites: z
+    .array(z.object({ node: z.number(), criterion: z.number(), verdict: z.string(), text: z.string() }))
+    .optional(),
+  questions: z.array(z.object({ text: z.string(), recommendation: z.string() })).optional(),
+});
 
-/** Parse intent-coverage output into questions (fail-soft to none). */
+/** The intent-coverage answer as questions (fail-soft to none). */
 function parseUncovered(
   raw: string,
 ): { clause: string; text: string; recommendation: string }[] {
-  const parsed = parseJson(raw);
   const out: { clause: string; text: string; recommendation: string }[] = [];
-  for (const u of Array.isArray(parsed?.uncovered) ? parsed!.uncovered : []) {
-    if (typeof u !== "object" || u === null) continue;
-    const rec = u as Record<string, unknown>;
-    const clause = typeof rec.clause === "string" ? rec.clause.trim() : "";
-    const q = (rec.question ?? {}) as Record<string, unknown>;
-    const text = typeof q.text === "string" ? q.text.trim() : "";
-    const recommendation =
-      typeof q.recommendation === "string" ? q.recommendation.trim() : "";
+  for (const rec of readAnswer(TailAnswer, raw)?.uncovered ?? []) {
+    const clause = rec.clause.trim();
+    const text = rec.question.text.trim();
+    const recommendation = rec.question.recommendation.trim();
     if (clause && text && recommendation) out.push({ clause, text, recommendation });
   }
   return out;
 }
 
-/** Parse criteria rewrites (fail-soft to none; out-of-range refused). */
+/** The criteria rewrites (fail-soft to none; out-of-range refused). */
 function parseCriteriaRewrites(
   raw: string,
   changes: Change[],
 ): { node: number; criterion: number; text: string }[] {
-  const parsed = parseJson(raw);
   const out: { node: number; criterion: number; text: string }[] = [];
-  for (const r of Array.isArray(parsed?.rewrites) ? parsed!.rewrites : []) {
-    if (typeof r !== "object" || r === null) continue;
-    const rec = r as Record<string, unknown>;
-    const node = typeof rec.node === "number" ? rec.node : -1;
-    const criterion = typeof rec.criterion === "number" ? rec.criterion : -1;
-    const text = typeof rec.text === "string" ? rec.text.trim() : "";
+  for (const rec of readAnswer(TailAnswer, raw)?.rewrites ?? []) {
+    const { node, criterion } = rec;
+    const text = rec.text.trim();
     if (
       text &&
       node >= 0 &&
@@ -325,7 +317,7 @@ export async function runDerivationPipeline(
   if (opts.skipCompleteness) stage("leaving what must move with it to the whole-cut pass");
   else {
     const raw = await round(
-      deps,
+      { ...deps, schema: jsonSchemaOf(LandingsAnswer) },
       buildCompletenessPrompt({
         ask,
         changes: withAnchorQuotes(deps.repoRoot, changes),
@@ -344,7 +336,7 @@ export async function runDerivationPipeline(
   //    volume-model call; its entire input is the prompt.
   stage("weighing coverage, criteria and decisions");
   const tail = await round(
-    volumeDeps(deps),
+    { ...volumeDeps(deps), schema: jsonSchemaOf(TailAnswer) },
     buildTailPrompt({ ask, changes, decisions: opts.decisions }),
   );
   if (tail !== null) {

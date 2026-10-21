@@ -17,12 +17,18 @@ import type { runUnitWorker, WorkerOutcome } from "./worker";
 import type { runReadRound } from "../derive/round";
 import type { OracleFactoryArgs } from "./oracle";
 import type { Proved } from "./proved";
+import type { Invoke } from "./makeLive";
+import type { ReachControl } from "./validationDeploy";
+import type { SetupProof } from "./setupProof";
 
 export interface DispatchDeps {
   repoRoot: string;
   model: string;
   /** Per-role model resolution (judgment raised above the base). */
   workerModel?: WorkerModelConfig;
+  /** What a worker falls back to when its model is overloaded: the harness
+   *  swaps the model instead of ending the round. Absent means none. */
+  spend?: { fallbackModel?: string };
   /**
    * What SOMEBODY TOLD the run about this repository — a setting, a
    * remembered file, a reading. Candidates, never trusted: the door runs
@@ -103,6 +109,14 @@ export interface DispatchDeps {
   /** Injectable for tests: replaces the check re-author (challenge and repair). */
   author?: OracleFactoryArgs["author"];
   exec?: (cmd: string, args: string[], cwd: string) => Promise<{ code: number; out: string }>;
+  /** Injectable for tests: how a live check's command is run. */
+  invokeLive?: Invoke;
+  /** Injectable for tests: how thinkube-control's address and token are
+   *  found for the live checks. */
+  reachControl?: ReachControl;
+  /** Readiness's proof of the setup kept for a checkout at its HEAD now
+   *  (src/run/setupProof.ts), which the door takes when it still applies. */
+  setupProven?: (repoRoot: string) => SetupProof | undefined;
   /** Injectable for tests: the run's own clock (epoch ms). One reading of
    *  it mints both the run id and the produced-at stamp on its delivery, so
    *  the two can never name different moments. Defaults to `Date.now`. */

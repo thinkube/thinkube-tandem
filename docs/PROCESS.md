@@ -59,7 +59,11 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 ### G2 — Door (before any worker)
 - **Evidence:** the untouched tree: install, build, one test run, where a
   source file lands.
-- **Passes when:** all four are observed, on the tree as it stands.
+- **Passes when:** all four are observed, on the tree as it stands. When
+  readiness proved the setup on an untouched copy of the same commit, with
+  the same setup facts (`.tandem/setup.json`) and commands, the door takes
+  that proof: it installs and builds the tree for the workers, and does not
+  prove the product build, the single test or the suite again.
 - **Fails →** one bounded mend of a half-committed branch; then the run
   refuses with the compiler's own words. No worker is dispatched.
 - **Attends:** no.
@@ -97,6 +101,10 @@ Each gate states its evidence, its pass rule, and what happens on failure.
 ### G6 — Repository gate (once, on the whole tree; the only judge of criteria)
 - **Evidence:** the whole repository suite, every criterion's check, the
   assessments, the stub scan, the docs obligation, the execution traces.
+  A suite the platform's pipeline runs as part of going live (an app's
+  gitops pipeline, a template's declared deploy) is not run here: its
+  proof is settled by the live phase — green when the work went live, red
+  in the pipeline's words when its tests refused it.
 - **Passes when:** every promise's check is green and its drive executed
   the code, and the product builds.
 - **Two vetoes, and only two.** A rule may withhold only when its failure

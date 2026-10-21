@@ -18,6 +18,8 @@ import { waitReasons } from "./fence";
 import type { RunState } from "./state";
 import * as fsp from "node:fs/promises";
 import type { Proved } from "./proved";
+import { checkOrdinalOf } from "../core/testShape";
+import { isLiveCheckUnit } from "./liveChecks";
 
 export { confessedDeferrals, writeDeliveryRecord, keptChecks, docsObligations } from "./planDelivery";
 export type { KeptCheck } from "./planDelivery";
@@ -163,11 +165,17 @@ export function sliceBookkeeping(
     }
     const probes = tests.flatMap((u) => u.footprint).filter(isProbePath);
     sliceProbes.set(s.handle, probes);
+    // A live check rides the slice's commit like any check, and is never
+    // run here: it needs the deployed service, which only the live phase has.
+    const live = new Set(tests.filter(isLiveCheckUnit).flatMap((u) => u.footprint));
     sliceVerifs.set(
       s.handle,
       // The ordinal comes from the probe's own name, so a list a later rule
       // filters still names the right check.
-      probes.map((p, i) => ({ ac: acOf(p) || i + 1, run: runOne(p).replace(/<file>/g, p), env: "local" })),
+      probes
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => !live.has(p))
+        .map(({ p, i }) => ({ ac: acOf(p) || i + 1, run: runOne(p).replace(/<file>/g, p), env: "local" })),
     );
     sliceFiles.set(s.handle, s.files ?? []);
   }
@@ -204,8 +212,7 @@ export function sliceBookkeeping(
 
 /** The check ordinal a probe file carries in its name. */
 function acOf(probe: string): number {
-  const m = /_AC-(\d+)\./.exec(probe);
-  return m ? Number(m[1]) : 0;
+  return checkOrdinalOf(probe) ?? 0;
 }
 
 /**
@@ -231,7 +238,9 @@ export function closingVerifications(
   const probeOfAc = new Map<number, string>();
   let ord = 0;
   for (const s of slices)
-    for (const u of s.workUnits.filter((x) => x.role === "test"))
+    // A live check is run in the live phase, against the deployed service;
+    // the gate must not reach the network.
+    for (const u of s.workUnits.filter((x) => x.role === "test" && !isLiveCheckUnit(x)))
       for (const probe of u.footprint.filter(isProbePath)) {
         verifs.push({
           ac: ++ord,

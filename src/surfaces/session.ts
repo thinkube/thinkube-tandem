@@ -20,12 +20,13 @@ import { DigestStore } from "../derive/pipeline";
 import { Knowledge, knowledgeOf } from "../derive/knowledge";
 import { renderCutScreen } from "../gates/render";
 import { DispatchOutcome } from "../run/dispatch";
-import { RunState } from "../run/state";
+import { LOG_TAIL, RunState } from "../run/state";
+import { hasWorkingOutLog, WORKING_OUT, workingOutTail } from "../run/runLog";
 import { loadOrCreateApprovalSecret, mintApproval } from "../engine/approvalToken";
 import { ApprovalStore, createApprovalStore } from "../engine/approvalStore";
 import { tepApprovalOf } from "../gates/approval";
 import { proposeCheckGesture } from "./checkGesture";
-import { acceptDeliveryGesture, catchUpOnMergedWork, executeRun, exemptDocsGesture, GestureResult, rejectDeliveryGesture, signCutGesture, unrunCutOf } from "./runGate";
+import { acceptDeliveryGesture, catchUpOnMergedWork, executeRun, exemptDocsGesture, GestureResult, rejectDeliveryGesture, settleMergedTemplates, signCutGesture, unrunCutOf } from "./runGate";
 import { thinkAgainFlow } from "./thinkAgain";
 import { applyModel, readEverything, readModel } from "./modelFlow";
 import { keepDraftFlow, readDraftFlow } from "./draftFlow";
@@ -79,6 +80,9 @@ export class TandemSession {
    *  A watcher reads the record on every load; the driver never does,
    *  because its own state is ahead of the file. */
   driving = false;
+  /** Between asking for a run in its own process and that run's record
+   *  saying it runs: the record on disk is still the previous run's. */
+  starting = false;
   /** The cut being looked back at, when it is not the newest: its report,
    *  its run and its pictures are read from what that cut left on file. */
   lookingAtCut?: string;
@@ -391,9 +395,21 @@ export class TandemSession {
     this.deps.onChanged?.();
   }
 
+  /** The open log: a run step's, or the working-out log the store keeps
+   *  for work done in this space outside any run, by any process. */
   logView() {
-    if (!this.openLog || !this.runState) return undefined;
+    if (!this.openLog) return undefined;
+    if (this.openLog.step === WORKING_OUT) {
+      const tail = workingOutTail(this.deps.storeDir, LOG_TAIL);
+      return { step: WORKING_OUT, ...(tail ?? { lines: [], total: 0, shown: 0 }) };
+    }
+    if (!this.runState) return undefined;
     return { step: this.openLog.step, ...this.runState.logTail(this.openLog.step) };
+  }
+
+  /** Whether the store holds a working-out log for this space. */
+  hasWorkingOut(): boolean {
+    return hasWorkingOutLog(this.deps.storeDir);
   }
 
   groundingView(): { askId: string; label: string; current: number; total: number }[] {
@@ -678,8 +694,29 @@ export class TandemSession {
     // record must not read as signed work that never ran, with a button
     // that would start it a second time.
     this.running = true;
+    this.starting = true;
+    try {
+      return await this.startElsewhere(cutId, fresh);
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  /**
+   * The space and its run as the store holds them now — for a holder of this
+   * session that is told of nothing, such as the MCP server. A run in its
+   * own process ends there and files its delivery there; without this, the
+   * held session showed that run as still in flight and its delivery as
+   * missing, and anything it saved would have been written over them.
+   */
+  reloadFromStore(): void {
+    if (this.driving || this.starting) return;
+    this.load();
+  }
+
+  private async startElsewhere(cutId: string, fresh: boolean): Promise<{ ok: boolean; reason?: string }> {
     this.changed("Starting the run in its own process…");
-    const started = await this.deps.runElsewhere({ fresh });
+    const started = await this.deps.runElsewhere!({ fresh });
     if (!started.ok) {
       this.running = false;
       this.runNote = `The build could not start: ${started.reason ?? "no reason given"}`;
@@ -830,8 +867,11 @@ export class TandemSession {
    *  "Could not judge" is not an answer about the work. Neither is a
    *  refusal that has since been fixed — here or by anyone — and a card
    *  frozen at the moment a build failed goes on offering to undo work
-   *  whose only fault is already gone. Both are re-read on request. */
-  askPlatformAgain(): Promise<void> {
+   *  whose only fault is already gone. Both are re-read on request.
+   *
+   *  A template has no pipeline to read: its answer is a validation
+   *  deployment, run here for every accepted delivery still waiting on one. */
+  async askPlatformAgain(): Promise<void> {
     this.space = {
       ...this.space,
       deliveries: this.space.deliveries.map((d) =>
@@ -839,7 +879,8 @@ export class TandemSession {
       ),
     };
     this.persist();
-    return catchUpOnMergedWork(this);
+    await catchUpOnMergedWork(this);
+    await settleMergedTemplates(this);
   }
 
   /** A delivered promise, or one criterion of it, does not hold — kept in

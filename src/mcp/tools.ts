@@ -14,14 +14,19 @@
 import type { TandemSession } from "../surfaces/session";
 import { theLook } from "../run/theLook";
 import type { EnabledProject } from "../core/identity";
-import { phaseOf, allowedNow } from "../surfaces/phase";
+import { phaseOf, allowedNow, refusedNow } from "../surfaces/phase";
 import { docsDuty } from "../core/docsDuty";
+import * as fs from "node:fs";
 import * as path from "node:path";
-import { knownSpaces, storeRootOf } from "./attach";
-import { createProduct, listProducts } from "../core/identity";
+import { knownSpaces, projectAt, storeRootOf } from "./attach";
+import { createProduct, listProducts, mintCard } from "../core/identity";
+import { createThinkingSpace } from "../core/spaces";
+import { execFileSync } from "node:child_process";
 import { allCards } from "../core/cards";
 import { catalogOf, controlReachedBy, createAppFromTemplate } from "../hostui/templateCore";
-import { requestStop } from "../run/record";
+import { readRun, requestStop } from "../run/record";
+import type { Readiness } from "../run/readiness";
+import { runSetup } from "../run/facts";
 
 export interface ToolCall {
   session: TandemSession;
@@ -54,6 +59,38 @@ function str(c: ToolCall, key: string): string {
   return typeof v === "string" ? v : "";
 }
 
+/** The refusal for an action the space's phase does not offer, as the
+ *  surface would not offer its button; undefined when it is live. */
+function notLive(c: ToolCall, action: string): string | undefined {
+  const why = refusedNow(action, phaseOf(c.session));
+  return why && `refused: ${why}`;
+}
+
+/** A gesture's outcome, then the space as it now stands. */
+function gestureReport(c: ToolCall, r: { ok: boolean; reason?: string }): string {
+  return r.ok ? spaceReport(c) : `refused: ${r.reason ?? "no reason given"}`;
+}
+
+/** Each item of a readiness answer, on a line of its own. */
+function readinessLines(r: Readiness): string[] {
+  return [
+    `readiness of ${r.repoRoot} at ${r.head.slice(0, 8)} (${r.at}): ${r.items.every((i) => i.ready) ? "ready" : "NOT ready"}`,
+    ...r.items.map((i) => `  ${i.ready ? "ready    " : "NOT ready"} ${i.name} — ${i.say}`),
+  ];
+}
+
+/** The readiness answers the store keeps for the space's repositories at
+ *  their HEAD now; a HEAD that cannot be read is said in git's words. */
+function keptReadinessLines(c: ToolCall): string[] {
+  const kept = c.session.deps.readinessKept;
+  if (!kept) return [];
+  try {
+    return kept().flatMap(readinessLines);
+  } catch (e) {
+    return [`readiness: the kept answer could not be read — ${e instanceof Error ? e.message : String(e)}`];
+  }
+}
+
 /** The space as a person would want it summarised: what was asked, what
  *  the machine made of it, and where it stands. */
 function spaceReport(c: ToolCall): string {
@@ -66,7 +103,18 @@ function spaceReport(c: ToolCall): string {
     `you can act on: ${allowedNow(phase).join(", ") || "nothing"}`,
   ];
   const open = s.space.questions.filter((q) => !q.decided);
-  if (open.length) lines.push(`open questions (${open.length}): ${open.map((q) => q.text).join(" · ")}`);
+  if (open.length) {
+    lines.push(`open questions (${open.length}):`);
+    for (const q of open)
+      lines.push(`  ${q.id}: ${q.text}${q.recommendation ? ` — recommended: ${q.recommendation}` : ""}`);
+  }
+  const sets = s.space.specs ?? [];
+  if (sets.length) {
+    lines.push(`sets (${sets.length}):`);
+    for (const x of sets) lines.push(`  ${x.id}: ${x.name}`);
+  }
+  const last = s.space.deliveries[s.space.deliveries.length - 1];
+  if (last) lines.push(`last delivery: ${last.id}${last.acceptedAt ? ` — accepted ${last.acceptedAt}` : ""}`);
   if (cut) {
     const c2 = s.space.cuts.find((x) => x.id === cut.id);
     const duty = c2 ? docsDuty(s.space, c2) : undefined;
@@ -79,6 +127,7 @@ function spaceReport(c: ToolCall): string {
       lines.push(`approval: ${a.approved ? "valid" : `refused — ${a.reason}`}`);
     }
   }
+  lines.push(...keptReadinessLines(c));
   lines.push("");
   lines.push("asks:");
   for (const a of s.space.asks) lines.push(`  · ${a.text}`);
@@ -103,11 +152,17 @@ function deliveryReport(c: ToolCall): string {
   const d = c.session.space.deliveries[c.session.space.deliveries.length - 1];
   if (!d) return "no delivery yet";
   const proofs = (d.proofs ?? []).map(
-    (p) => `  ${p.verdict.padEnd(6)} ${p.label}${p.ref ? ` — ${p.ref}` : ""}`,
+    // A ref can carry a check's output over several lines (a live check's
+    // ref names its file, then what it printed): they stay under the proof.
+    (p) =>
+      `  ${p.verdict.padEnd(6)} ${p.criterionId ? `[${p.criterionId}] ` : ""}${p.label}${p.ref ? ` — ${p.ref.replace(/\n/g, "\n         ")}` : ""}`,
   );
   return [
     `delivery for ${d.cutId}${d.withheld ? ` — WITHHELD: ${d.withheld}` : ""}`,
     d.acceptedAt ? `accepted ${d.acceptedAt}` : "awaiting your accept",
+    ...(d.afterMerge
+      ? [`after the merge: ${d.afterMerge.outcome}, said by ${d.afterMerge.said}${d.afterMerge.detail ? ` — ${d.afterMerge.detail}` : ""}`]
+      : []),
     `proofs (${proofs.length}):`,
     ...proofs,
     ...(d.findings?.length
@@ -241,12 +296,101 @@ export function toolTable(): ToolDef[] {
           .join("\n") || "the store knows no enabled project",
     },
     {
+      name: "new_space",
+      action: "new-space",
+      spaceless: true,
+      description:
+        "Make a thinking space in an enabled repository: an empty, independent stream of thinking. The other tools then name it by the slug this returns.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "the repository's directory, as list_spaces reports it after 'at'" },
+          name: { type: "string", description: "what the space is about, in a few words" },
+        },
+        required: ["repo", "name"],
+      },
+      run: (c) => {
+        const root = storeRootOf();
+        const repo = str(c, "repo");
+        const project = repo ? projectAt(path.resolve(repo), root) : undefined;
+        if (!project) return `${repo || "(no repo)"} is not an enabled repository — enable_repo enables one`;
+        const made = createThinkingSpace(root, project.card.id, str(c, "name"));
+        return made.ok
+          ? `space "${made.slug}" made under ${project.card.label} — name it "${made.slug}" in the other tools`
+          : made.reason;
+      },
+    },
+    {
+      name: "enable_repo",
+      action: "new-project",
+      spaceless: true,
+      description:
+        "Enable a repository that already exists on disk, filed under a product, so thinking spaces can be made in it. Nothing is created outside the store.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          repo: { type: "string", description: "the repository's directory" },
+          product: { type: "string", description: "the product it is filed under, as list_products reports it" },
+          label: { type: "string", description: "the name it is shown by" },
+        },
+        required: ["repo", "product", "label"],
+      },
+      run: (c) => {
+        const root = storeRootOf();
+        const dir = path.resolve(str(c, "repo"));
+        if (!fs.existsSync(path.join(dir, ".git"))) return `${dir} is not a git repository`;
+        const product = str(c, "product");
+        const known = listProducts(root, allCards(root).map((card) => ({ card })) as never);
+        if (!known.includes(product))
+          return `no product "${product}" — the store has: ${known.join(", ") || "none"}; new_product makes one`;
+        let remote: string | undefined;
+        try {
+          remote = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+        } catch {
+          // A repository without an origin is enabled without one, as the editor does.
+        }
+        const minted = mintCard(dir, { label: str(c, "label"), product, ...(remote ? { remote } : {}) }, root);
+        return minted.ok
+          ? `${minted.card.label} enabled under ${product} — new_space makes a thinking space in it`
+          : minted.reason;
+      },
+    },
+    {
       name: "read_space",
       action: "read-space",
       description:
         "The thinking space: its asks, how many promises were derived, what phase it is in, open questions, and whether a signed cut is waiting.",
       inputSchema: IN_SPACE,
       run: spaceReport,
+    },
+    {
+      name: "check_readiness",
+      action: "check-readiness",
+      description:
+        "Whether the space's repository is ready for work to be signed against it: its setup holds on a clean copy, " +
+        "checks land where its suite runs tests, and for a template its deploy is declared, its release tag matches, " +
+        "its secrets exist in Thinkube Control and its deploy goes live. Runs the setup and, for a template, the " +
+        "declared deploy — minutes, not seconds; the same tree asked twice is answered from the first answer. Build " +
+        "refuses while any item is not ready.",
+      inputSchema: IN_SPACE,
+      run: async (c) => {
+        if (!c.session.deps.readiness) return "this session has no readiness check";
+        const reading = runSetup(c.session.deps.round.repoRoot, await c.session.knowledge(), c.session.deps.prepareCommand);
+        return (await c.session.deps.readiness(reading)).flatMap(readinessLines).join("\n");
+      },
+    },
+    {
+      name: "ask_platform_again",
+      action: "ask-platform-again",
+      description:
+        "Ask again what became of accepted work after its merge: an app's pipeline is read again, and a template's " +
+        "promises settled after the merge are settled by a validation deployment — its declared deploy is run and " +
+        "its health path asked. An answer that did not hold is asked again too. Reports the latest delivery.",
+      inputSchema: IN_SPACE,
+      run: async (c) => {
+        await c.session.askPlatformAgain();
+        return deliveryReport(c);
+      },
     },
     {
       name: "read_run",
@@ -308,6 +452,14 @@ export function toolTable(): ToolDef[] {
         c.session.saveDraft(str(c, "text"));
         return `drafted ${str(c, "text").split("\n").filter((l) => l.trim()).length} line(s) — the person keeps them, or does not`;
       },
+    },
+    {
+      name: "read_draft",
+      action: "read-draft",
+      description:
+        "Read the drafted lines (the editor's Read): works out what they ask, ready to keep. Reading decides nothing.",
+      inputSchema: IN_SPACE,
+      run: async (c) => notLive(c, "read-draft") ?? gestureReport(c, await c.session.readDraft()),
     },
     {
       name: "read_asks",
@@ -381,15 +533,17 @@ export function toolTable(): ToolDef[] {
         "Ask the run to stop, whoever is driving it. The process that owns the run reads the request and ends itself.",
       inputSchema: IN_SPACE,
       run: (c) => {
-        const cut = c.session.unrunCut();
-        if (!cut) return "there is no run to stop";
+        // The run on record, whichever process drives it: a run this server
+        // did not start is as stoppable as one it did.
+        const last = readRun(c.storeDir, () => {});
+        if (!last?.running) return "there is no run to stop";
         // Written, not called: the run may be driven by another process,
         // and one process must never reach into another's to end it.
-        const asked = requestStop(c.storeDir, cut.id, new Date().toISOString());
+        const asked = requestStop(c.storeDir, last.cutId, new Date().toISOString());
         if (c.session.running) c.session.runState?.halt();
         return asked
-          ? "stop asked for — the run ends at its next heartbeat"
-          : "could not write the stop request; no run record to ask";
+          ? `stop asked for ${last.cutId} — the run ends at its next heartbeat`
+          : `could not write the stop request: ${last.cutId} has no run record`;
       },
     },
     {
@@ -405,6 +559,107 @@ export function toolTable(): ToolDef[] {
         c.session.answerWorker(str(c, "unit"), str(c, "text"))
           ? `answered ${str(c, "unit")}`
           : `no worker is parked as ${str(c, "unit")}`,
+    },
+
+    // ── the person's actions: refused by the boundary unless the person
+    //    set TANDEM_AUTONOMOUS=1 in this server's environment ───────────
+    {
+      name: "keep_draft",
+      action: "keep-draft",
+      description:
+        "Turn the read draft into asks (the editor's Keep). Run read_draft first. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: IN_SPACE,
+      run: (c) => notLive(c, "keep-draft") ?? gestureReport(c, c.session.keepDraft()),
+    },
+    {
+      name: "answer_question",
+      action: "accept-question",
+      description:
+        "Decide an open question by id: the given text, or its recommendation when no text is given. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, question: { type: "string" }, text: { type: "string" } },
+        required: ["space", "question"],
+      },
+      run: async (c) =>
+        notLive(c, "accept-question") ??
+        gestureReport(c, await c.session.acceptQuestion(str(c, "question"), str(c, "text") || undefined)),
+    },
+    {
+      name: "choose_set",
+      action: "choose-set",
+      description:
+        "Choose the set to build next, by id (read_space lists them); its promises are worked out. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, set: { type: "string" } },
+        required: ["space", "set"],
+      },
+      run: async (c) => notLive(c, "choose-set") ?? gestureReport(c, await c.session.chooseSpec(str(c, "set"))),
+    },
+    {
+      name: "build",
+      action: "build",
+      description:
+        "Sign the chosen set's cut (the editor's Build) and start its run; returns at once, watch it with read_run. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, set: { type: "string" } },
+        required: ["space", "set"],
+      },
+      run: async (c) => notLive(c, "build") ?? gestureReport(c, await c.session.build(str(c, "set"))),
+    },
+    {
+      name: "does_not_hold",
+      action: "contradict",
+      description:
+        "Say that a delivered promise does not hold (the editor's \"It does not hold\"), by the criterion id read_delivery shows in brackets, or by promise id, with what was seen. The promise goes back to be repaired. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          ...WHERE,
+          criterion: { type: "string", description: "the criterion id, as read_delivery shows it in brackets" },
+          promise: { type: "string", description: "the promise id, to say all its criteria do not hold" },
+          said: { type: "string", description: "what was seen, in plain words: a repair is told this" },
+        },
+        required: ["space", "said"],
+      },
+      run: (c) => {
+        const criterion = str(c, "criterion");
+        const promise = str(c, "promise");
+        if (!criterion && !promise) return "refused: name the criterion (or the promise) that does not hold";
+        return (
+          notLive(c, "contradict") ??
+          gestureReport(
+            c,
+            c.session.contradict(criterion ? { criterionId: criterion } : { promiseId: promise }, str(c, "said")),
+          )
+        );
+      },
+    },
+    {
+      name: "accept_delivery",
+      action: "accept-delivery",
+      description: "Accept a delivery by id (read_space names the last one). Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, delivery: { type: "string" } },
+        required: ["space", "delivery"],
+      },
+      run: async (c) =>
+        notLive(c, "accept-delivery") ?? gestureReport(c, await c.session.acceptDelivery(str(c, "delivery"))),
+    },
+    {
+      name: "reject_delivery",
+      action: "reject-delivery",
+      description: "Reject a delivery by id. Needs TANDEM_AUTONOMOUS=1.",
+      inputSchema: {
+        type: "object",
+        properties: { ...WHERE, delivery: { type: "string" } },
+        required: ["space", "delivery"],
+      },
+      run: async (c) =>
+        notLive(c, "reject-delivery") ?? gestureReport(c, await c.session.rejectDelivery(str(c, "delivery"))),
     },
   ];
 }

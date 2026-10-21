@@ -15,7 +15,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { VerifyOracle, VerifyResult } from "../engine/verifyOracle";
-import { isProbePath, isTestPath } from "./testHomes";
+import { isProbePath, isSharedTestSetup, isTestPath } from "./testHomes";
 import { isMaintainUnit } from "./plan";
 import { importersIn } from "../dispatch/needs";
 
@@ -295,7 +295,8 @@ async function scopedTests(args: {
     }
   }
   for (const r of args.always ?? []) tests.add(r);
-  return [...tests].filter((t) => fs.existsSync(path.join(args.root, t))).slice(0, max);
+  // Shared test setup is loaded by the tests beside it; it is not one.
+  return [...tests].filter((t) => !isSharedTestSetup(t) && fs.existsSync(path.join(args.root, t))).slice(0, max);
 }
 
 /**
@@ -320,15 +321,24 @@ export async function runScopedSuite(args: {
   args.log?.(`[suite] running ${files.length} standing test file(s) that import this slice's files: ${files.slice(0, 5).join(", ")}${files.length > 5 ? "…" : ""}`);
   const failures: SuiteFailure[] = [];
   let pass = 0;
+  let unjudged = 0;
   for (const f of files) {
     const runOne = typeof args.runOne === "function" ? args.runOne(f) : args.runOne;
     // A file no command runs is not a red against the work: nothing was
     // judged. It used to be pinned on whoever owned the file.
     if (!runOne.trim()) {
       args.log?.(`[suite] no command runs ${f} — nothing was judged there`);
+      unjudged++;
       continue;
     }
     const r = await args.exec(runOne.replace(/<file>/g, f));
+    // pytest's exit 5: the file holds no test. Nothing was judged there,
+    // so it is neither green nor a failing test.
+    if (r.code === 5 && /\bno tests ran\b/.test(r.output)) {
+      args.log?.(`[suite] ${f} holds no test (exit 5, no tests ran) — nothing was judged there`);
+      unjudged++;
+      continue;
+    }
     const v = suiteVerdictOf(r.code, r.output, args.root);
     if (v.green) {
       pass++;
@@ -337,7 +347,11 @@ export async function runScopedSuite(args: {
     // A test file that fails names itself even when its runner's words do not.
     for (const x of v.failures) failures.push({ ...x, file: x.file ?? f, name: x.name.startsWith("the suite exited") ? `${f}: ${x.name.replace("the suite", "the test")}` : x.name });
   }
-  return { green: failures.length === 0, failures, summary: `${files.length} standing test file(s): ${pass} green, ${files.length - pass} red` };
+  return {
+    green: failures.length === 0,
+    failures,
+    summary: `${files.length} standing test file(s): ${pass} green, ${files.length - pass - unjudged} red${unjudged ? `, ${unjudged} judged nothing` : ""}`,
+  };
 }
 
 /** The oracle's suite arguments for a run: the proven single-test command,

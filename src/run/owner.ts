@@ -22,6 +22,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { VerifyResult } from "../engine/verifyOracle";
+import { isCheckOf } from "../core/testShape";
 
 export type FailureOwner = "code" | "check" | "environment";
 
@@ -100,7 +101,7 @@ export function probeSourceReader(
   testerWt: string,
 ): (slice: string) => (ac: number) => string {
   return (slice) => (ac) => {
-    const rel = (sliceProbes.get(slice) ?? []).find((p) => p.includes(`_AC-${ac}.`));
+    const rel = (sliceProbes.get(slice) ?? []).find((p) => isCheckOf(p, ac));
     try {
       return rel ? fs.readFileSync(path.join(testerWt, rel), "utf8") : "";
     } catch {

@@ -26,19 +26,41 @@ for you, and the machine's data one gesture away.
 - **The Tandem view.** The *Tandem* icon in the activity bar opens two views.
   *Projects* shows products, the repositories filed under each, and their
   thinking spaces. *Configuration* shows the Claude Code configuration:
-  hooks, commands, skills, agents, MCP servers and permissions, with
+  hooks, skills, agents, rules, workflows, MCP servers and permissions, with
   commands to add, open and delete them.
 - **The store.** Spaces, products and the defect ledger are kept in the
   tandem store, by default `~/thinkube-tandem-store`
   (`thinkubeTandem.storeRoot`).
-- **The MCP server.** `out/mcp/server.js` serves Tandem's tools to Claude
-  Code over stdio. The extension registers it in `~/.claude.json` as
-  `thinkube-tandem`, through a path that each install points at the
-  installed version. The server works on the same store as the editor, so
-  the editor shows its changes. `src/surfaces/actions.ts` declares which
-  actions are the person's alone, among them signing a cut and accepting a
-  delivery. The server refuses those, and refuses any action not declared
-  there.
+- **The MCP server, as a plugin.** `out/mcp/server.js` serves Tandem's
+  tools to Claude Code over stdio. The Claude Code plugin in
+  `claude-plugins/tandem` declares it as `thinkube-tandem`, through a path
+  that each install points at the installed version, and carries the
+  Workshop's flows as prompts and a skill that tells an agent what the two
+  gates are. The platform installs the plugin from the marketplace in
+  `claude-plugins/` at the installed extension's path, so a redeploy of the
+  extension is a redeploy of the plugin. The server works on the same store
+  as the editor, so the editor shows its changes. `src/surfaces/actions.ts`
+  declares which actions are the person's alone, among them signing a cut
+  and accepting a delivery: to a machine the server refuses those, a client
+  that can ask the person asks them, and an action not declared there is
+  always refused.
+- **Live checks.** A repository that declares where it answers
+  (`spec.deploy.at` in `thinkube.yaml`) declares its live checks beside it
+  (`spec.deploy.live`: `home`, the directory they are kept in, outside the
+  unit suite; `one`, the command that runs one, with `<file>`). A promise
+  only the running service can answer gets a live check: the tester writes
+  it under `home`, against the deployed service's public API. The gate never
+  runs it. Once the work is live, each live check runs with `one` in the
+  delivered tree, with `TANDEM_LIVE_URL`, `THINKUBE_CONTROL_URL` and
+  `THINKUBE_API_TOKEN` in its environment; its exit settles the promise
+  green or red, and a red goes back to be repaired with the check's output.
+  Without the declaration those promises stay pending.
+- **Roles as files.** The coder, the tester and the closer are agent
+  definitions in the shape Claude Code reads, at `agents/tandem-<role>.md`;
+  a worker's session runs as its role, with the role's words as its system
+  prompt. A repository says a role's words its own way at
+  `.claude/agents/tandem-<role>.md`. The tools a role has are the run's
+  rule, never the file's.
 - **Explorer menu.** *Claude Code → Open Here* on a folder in the Explorer.
 
 ## How it reaches a user
@@ -64,13 +86,18 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `new_product` | Makes a product. It only names it; nothing is created anywhere else. |
 | `list_templates` | The starting points the platform offers for a new application, from thinkube-control's catalog. |
 | `new_app` | Makes an application from a template: the platform creates the repository with its CI, it is cloned into `~/apps`, and it is filed under a product. `replace` deploys over an app the platform already knows. |
+| `enable_repo` | Enables a repository that exists on disk, filed under a product the store knows. |
 | `list_spaces` | Every enabled project and the thinking spaces under each. |
-| `read_space` | A space's asks, how many promises were derived, its phase, open questions, and whether a signed cut is waiting. |
+| `new_space` | Makes a thinking space in an enabled repository, and returns the name the other tools use for it. Spaces of a work project (work across several repositories) are not reachable through the server. |
+| `read_space` | A space's asks, how many promises were derived, its phase, open questions, whether a signed cut is waiting, and the last readiness answer. |
 | `read_run` | The current or last run: every unit and its state, and the run's note. |
 | `look_at` | Opens a deployed address and reports what a person would notice: a blank page, nothing to press, a page with no height, errors the page threw. Findings only. |
-| `read_delivery` | The latest delivery: its proofs, its findings, and whether it was withheld. |
+| `read_delivery` | The latest delivery: its proofs, its findings, and whether it was withheld. A proof a live check settled names the check's path in its ref, with the end of its output. |
+| `check_readiness` | Whether the repository is ready for work to be signed against it: its setup holds on a clean copy of HEAD, checks land where its suite runs tests, its live checks are declared outside the unit suite when it declares `spec.deploy.at` (the item says it does not apply otherwise), and, for a template, its deploy is declared, its newest release tag matches `metadata.version`, its manifest's secrets exist in Thinkube Control, and its deploy goes live. Build refuses while any item is not ready. |
+| `ask_platform_again` | Asks again what became of accepted work after its merge. For a template, its declared deploy is run and its health path asked, which settles the promises answered after the merge. |
 | `read_log` | The tail of a step's log, or of the run's own log when no step is given. |
 | `save_draft` | Puts text in the capture box, one ask per line. It only drafts; turning drafts into asks is the person's act. |
+| `read_draft` | Reads the drafted lines (Read), so they can be kept. Reading decides nothing. |
 | `read_asks` | Reads the recorded asks again, applies the reading, and groups the subjects into sets. |
 | `group_into_sets` | Groups the subjects into sets to build one at a time. A person picks the set. |
 | `reground` | Reads the code again and re-places every promise that has drifted. |
@@ -78,6 +105,32 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `full_rerun` | Starts the signed work again from nothing: the earlier run's branch is discarded and kept under a `discarded/…` tag. Same refusals as `rerun`. |
 | `stop_run` | Asks the run to stop. The process that owns the run ends it at its next heartbeat. |
 | `answer_worker` | Answers a parked worker's question, by unit id. |
+
+The person's own actions are tools too. To a machine the server refuses
+them. A client that can ask the person (MCP elicitation; Claude Code is
+one) is asked instead: the call waits while the person reads what is about
+to happen and says yes or no in their own session, and a no does nothing.
+For an unattended run, `TANDEM_AUTONOMOUS=1` lets every action through;
+Claude Code passes its environment to the server, so the variable goes in
+the `env` block of `~/.claude/settings.json`.
+
+The server also offers the Workshop's flows as prompts — `capture-asks`,
+`build` and `review-delivery`, each taking the space to work in — which
+Claude Code lists as slash commands named after the server. Installed as
+the plugin, the server is `plugin:tandem:thinkube-tandem`, so its tools are
+`mcp__plugin_tandem_thinkube-tandem__<tool>` and its prompts
+`/mcp__plugin_tandem_thinkube-tandem__<prompt>`. A prompt names the tools
+to call and where the agent must stop for the person.
+
+| Tool | What it does |
+|---|---|
+| `keep_draft` | Turns the read draft into asks (Keep). |
+| `answer_question` | Decides an open question by id, with the given text or its recommendation. |
+| `choose_set` | Chooses the set to build next, by id, and works out its promises. |
+| `build` | Signs the chosen set's cut (Build) and starts its run. |
+| `does_not_hold` | Says a delivered promise does not hold (It does not hold), by criterion or promise id, with what was seen; the promise goes back to be repaired. |
+| `accept_delivery` | Accepts a delivery, by id. |
+| `reject_delivery` | Rejects a delivery, by id. |
 
 ## Settings
 
@@ -89,6 +142,7 @@ directory, when the server has no default from `--repo` or `TANDEM_REPO`).
 | `thinkubeTandem.workerModel` | `sonnet` | Base model for every run worker. |
 | `thinkubeTandem.workerModelByRole` | `{}` | Per-role models that raise a role above the base, for example `{"judge": "opus"}`. |
 | `thinkubeTandem.maxConcurrent` | `4` | Workers that run at the same time. |
+| `thinkubeTandem.fallbackModel` | empty | The model a worker switches to when its own is overloaded, instead of ending the round. Empty means none. What every unit spent, as the harness reports it, is on its card and on the delivery; a round is bounded by its turns, never by a sum of money. |
 | `thinkubeTandem.suiteCommand` | `npm test` | The project's test suite. Its verdict is a delivery proof. |
 | `thinkubeTandem.prepareCommand` | empty | Build or typecheck command run before checks execute. |
 | `thinkubeTandem.docsGateMode` | `blocking` | Whether an unmet documentation obligation blocks accepting a delivery (`blocking`) or not (`advisory`). Documentation is required for every cut at signing either way. |

@@ -44,6 +44,8 @@ import { proved, type Proved } from "./proved";
 import { linkProvisioned } from "./linkProvisioned";
 import { tail } from "./toolWords";
 import { repairStandingTree } from "./refresh";
+import { treeFromProof, type SetupProof } from "./setupProof";
+import { imagesBuiltByPlatform } from "../core/thinkubeYaml";
 
 export type BoundedExec = (
   cmd: string,
@@ -127,6 +129,14 @@ export interface SetupArgs {
    *  path). Proved on one existing test before it is trusted; an answer
    *  that does not hold is dropped, never a reason to refuse the run. */
   runOne?: string;
+  /** `runOne` is what the repository declares (`thinkube.yaml` test.one):
+   *  a corrected setup answer changes how the tree is installed, never it. */
+  runOneDeclared?: boolean;
+  /** The repository's own single-check command, proved before the declared
+   *  `runOne` because the declared one installs again on every check
+   *  (src/run/plainRunOne.ts). When it does not hold, the declared one is
+   *  proved, and the log says so. */
+  plainRunOne?: string;
   /** Re-read the setup facts with a failure as evidence; the door tries the
    *  corrected answer once before refusing. */
   resetup?: (
@@ -162,6 +172,10 @@ export interface SetupArgs {
   suiteProvenBefore?: boolean;
   /** Told the answer that held on the untouched tree — the only one worth remembering. */
   proven?: (s: { provision: string; prepare: string; runOne: string }) => void;
+  /** Readiness's proof of this commit's setup (src/run/setupProof.ts): the
+   *  tree is still provisioned and built here, and the product build, the
+   *  single-test commands and the suite are taken from it, not run again. */
+  taken?: SetupProof;
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -204,15 +218,22 @@ export async function setupRunTree(args: SetupArgs): Promise<TreeSetup> {
 /** The setup answer re-read once with the failure as evidence, and the corrected answer tried. */
 async function correctAndRetry(args: SetupArgs, first: TreeSetup): Promise<TreeSetup> {
   args.log(`asking how this tree is provisioned, from the failure — this takes a few minutes`);
-  const again = await args.resetup!(first.refusal!).catch(() => undefined);
-  if (!again || (again.provision === (args.provision ?? "") && again.prepare === (args.prepare ?? "")))
+  let again;
+  try {
+    again = await args.resetup!(first.refusal!);
+  } catch (e) {
+    args.log(`the setup answer could not be re-read from the failure — ${e instanceof Error ? e.message : String(e)}`);
     return first;
+  }
+  if (again.provision === (args.provision ?? "") && again.prepare === (args.prepare ?? "")) return first;
   args.log(
     `the setup answer was corrected from the failure — provision: ${again.provision || "NONE"}; prepare: ${again.prepare || "NONE"}`,
   );
   // The store already borrowed did not build; the corrected answer is
   // tried on a tree of its own, never over that store again.
-  const second = await proveTree({ ...args, provision: again.provision, prepare: again.prepare, runOne: again.runOne ?? args.runOne }, false);
+  const runOne = args.runOneDeclared ? args.runOne : (again.runOne ?? args.runOne);
+  const { taken: _proofOfOtherCommands, ...untaken } = args;
+  const second = await proveTree({ ...untaken, provision: again.provision, prepare: again.prepare, ...(runOne ? { runOne } : {}) }, false);
   if (!second.refusal)
     args.proven?.({ provision: again.provision, prepare: again.prepare, runOne: second.runOne ?? "" });
   return second.refusal ? second : { ...second, corrected: { provision: again.provision, prepare: again.prepare } };
@@ -360,9 +381,19 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
     for (const e of after) if (!before.has(e) && !provisioned.includes(e)) built.push(e);
     if (built.length) args.log(`  the build emits into: ${built.join(", ")}`);
   }
-  // Nothing the door lent or watched appear may ever be staged: the gate,
-  // the closer and every slice commit run `git add -A` in this tree.
+  // Nothing the door lent or watched appear may ever be staged: the gate
+  // stages every file the ignore rules leave visible in this tree.
   await excludeFromGit(args.worktree, [...provisioned, ...built], args.exec);
+  if (args.taken) {
+    const tree = treeFromProof(args.taken, {
+      provisioned,
+      built,
+      ...(args.provision ? { provision: args.provision } : {}),
+      ...(args.prepare ? { prepare: args.prepare } : {}),
+    });
+    await excludeFromGit(args.worktree, tree.built, args.exec);
+    return tree;
+  }
   if (args.build) {
     // Watched exactly like the test build. It was not, so what the PRODUCT
     // build makes was never on the list of things a run must not lend —
@@ -387,7 +418,7 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   // Each command that RAN here is minted; one that did not is absent, not
   // an empty string. An empty string was accepted by every consumer and
   // executed by one of them.
-  const one = await proveRunOne(args);
+  const one = await proveSingleCheck(args);
   // Tried on a real test and failed is not "nothing to prove it on": a run
   // that starts here has no way to judge a single check, and every unit
   // would end "not judged". Refused at the door, naming what failed.
@@ -402,7 +433,8 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
   const ranOne = one.held;
   // Each part's own command, proved in its own tree on one of its own
   // tests. A part with nothing to prove it on yet keeps what it was told —
-  // the first check written there proves it in use.
+  // the first check written there proves it in use. "." is the whole
+  // repository: its command is the repository-wide one, proved above.
   const parts: Record<string, { provision?: string; prepare?: string; runOne?: string }> = {};
   for (const [root, told] of Object.entries(args.partCommands ?? {})) {
     if (root === "." || !told.runOne) continue;
@@ -444,6 +476,21 @@ async function proveTree(args: SetupArgs, borrow = true): Promise<TreeSetup> {
 const TEST_RUNNERS: { tool: string; install: string; when: RegExp }[] = [
   { tool: "pytest", install: "python3 -m pip install --break-system-packages pytest", when: /\.py$/ },
 ];
+
+/**
+ * The repository-wide single-test command: the repository's own plain
+ * runner first when the door was given one, else the declared command.
+ */
+async function proveSingleCheck(args: SetupArgs): Promise<{ held: string; tried: boolean; sample?: string; why?: string }> {
+  if (!args.plainRunOne) return proveRunOne(args);
+  const plain = await proveRunOne({ ...args, runOne: args.plainRunOne });
+  if (plain.held || !plain.tried) return plain;
+  args.log(
+    `  the repository's own single-test command did not hold on ${plain.sample} — single checks run with the declared one, ` +
+      `which installs again on every check: ${args.runOne ?? ""}`,
+  );
+  return proveRunOne(args);
+}
 
 /**
  * The single-test command, tried on one of the repository's own tests.
@@ -593,12 +640,13 @@ function setupArgsFor(a: {
     dependencies?: string[];
     parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
   };
-  told: { provision?: string; prepare?: string; build?: string; runOne?: string; suite?: string };
+  told: { provision?: string; prepare?: string; build?: string; runOne?: string; runOneDeclared?: boolean; plainRunOne?: string; suite?: string };
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
   resetup?: SetupArgs["resetup"];
   proven?: SetupArgs["proven"];
+  taken?: SetupProof;
 }): SetupArgs {
   const suite = a.known?.suite ?? a.told.suite ?? "";
   return {
@@ -616,8 +664,11 @@ function setupArgsFor(a: {
     ...(a.told.prepare ? { prepare: a.told.prepare } : {}),
     ...(a.told.build ? { build: a.told.build } : {}),
     ...(a.told.runOne ? { runOne: a.told.runOne } : {}),
+    ...(a.told.runOne && a.told.runOneDeclared ? { runOneDeclared: true } : {}),
+    ...(a.told.plainRunOne ? { plainRunOne: a.told.plainRunOne } : {}),
     ...(a.resetup ? { resetup: a.resetup } : {}),
     ...(a.proven ? { proven: a.proven } : {}),
+    ...(a.taken ? { taken: a.taken } : {}),
   };
 }
 
@@ -645,12 +696,18 @@ export async function openTheDoor(a: {
     prepare?: string;
     build?: string;
     runOne?: string;
+    /** `runOne` is the repository's declaration, which a corrected answer keeps. */
+    runOneDeclared?: boolean;
+    /** The repository's own single-check command, proved before the declared one. */
+    plainRunOne?: string;
     suite?: string;
     /** Each part's own commands, as the repository declares them. */
     parts?: Record<string, { provision?: string; prepare?: string; runOne?: string }>;
     resetup?: SetupArgs["resetup"];
     proveSetup?: SetupArgs["proven"];
   };
+  /** Readiness's proof of this commit's setup, which the door takes. */
+  taken?: SetupProof;
   exec: Exec;
   boundedExec: BoundedExec;
   log: (line: string) => void;
@@ -659,11 +716,13 @@ export async function openTheDoor(a: {
   halted: () => boolean;
 }): Promise<TreeSetup> {
   // Asked BEFORE the tree is proved, so a repository that cannot say how it
-  // runs its suite costs a minute rather than a whole run.
-  const suite =
-    a.known?.suite ||
-    a.told.suite ||
-    (await askForTheSuite({ ...(a.told.resetup ? { resetup: a.told.resetup } : {}), log: a.log }));
+  // runs its suite costs a minute rather than a whole run. A taken proof
+  // carries the suite readiness's door settled on.
+  const suite = a.taken
+    ? a.taken.held.suite
+    : a.known?.suite ||
+      a.told.suite ||
+      (await askForTheSuite({ ...(a.told.resetup ? { resetup: a.told.resetup } : {}), log: a.log }));
   const open = (): Promise<TreeSetup> =>
     setupRunTree(
       setupArgsFor({
@@ -680,6 +739,7 @@ export async function openTheDoor(a: {
         log: a.log,
         ...(a.told.resetup ? { resetup: a.told.resetup } : {}),
         ...(a.told.proveSetup ? { proven: a.told.proveSetup } : {}),
+        ...(a.taken ? { taken: a.taken } : {}),
       }),
     );
   const ready = await open();
@@ -694,7 +754,11 @@ export async function openTheDoor(a: {
   // nothing built has no such veto, which is legitimate — and silent
   // until it is said.
   if (!ready.refusal && !a.told.build)
-    a.log("this repository ships nothing built — the product-build veto does not apply to this run");
+    a.log(
+      imagesBuiltByPlatform(a.repoRoot)
+        ? "the platform's pipeline builds this repository's images and judges that build — none is run here"
+        : "this repository ships nothing built — the product-build veto does not apply to this run",
+    );
   if (!ready.refusal || !a.resumed) return ready;
   const rebuild = async (): Promise<{ ok: boolean; words: string }> =>
     a.told.prepare

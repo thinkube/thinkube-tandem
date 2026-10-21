@@ -25,9 +25,20 @@
  */
 import * as path from "node:path";
 import { isProbePath, isTestPath } from "./testHomes";
+import { checkOrdinalOf } from "../core/testShape";
+import type { ThinkubePart } from "../core/thinkubeYaml";
+import { isLiveCheckUnit } from "./liveChecks";
+
+/** A declared part, as placement reads it: where it is, and how its tests run. */
+type PartAt = Pick<ThinkubePart, "root" | "test">;
 
 /** Files a check can sit beside and import — source, in any language here. */
 const CODE = /\.(m|c)?[jt]sx?$|\.(vue|svelte)$|\.(py|rb|go|rs|java|kt|php|cs|swift|scala|ex|exs|lua)$/i;
+
+/** Whether a check could be minted beside this file: source, not a test. */
+export function isCodePath(f: string): boolean {
+  return CODE.test(f) && !isTestPath(f) && !isProbePath(f);
+}
 
 interface TestIdiom {
   /** The suffix this repository's tests wear: `.test.ts`, `_test.go`. */
@@ -95,6 +106,114 @@ function idiomOfLanguage(subject: string): TestIdiom | undefined {
 }
 
 /**
+ * The repository's one test directory, when it serves the subject's tree.
+ *
+ * A Python service keeps its code under `app/` and every test under a
+ * top-level `tests/`: the code's tree holds no test, and a check minted
+ * beside the module by the language's habit lands where this repository's
+ * runner never looks. A directory that holds EVERY test of the repository,
+ * in the subject's own language, is where its tests go. A test directory
+ * of another language is still never borrowed.
+ */
+function sharedTestDirFor(files: readonly string[], subject: string): TestIdiom | undefined {
+  const repo = inferTestIdiom(files);
+  if (!repo?.dir) return undefined;
+  const ext = (f: string): string => /\.([^./]+)$/.exec(f)?.[1]?.toLowerCase() ?? "";
+  return ext(repo.suffix) === ext(subject) ? repo : undefined;
+}
+
+/** The language a file is written in, by the family its runners share: a
+ *  `.vue` view and a `.test.ts` file are both JavaScript's. */
+function languageOf(f: string): string {
+  const ext = /\.([^./]+)$/.exec(f)?.[1]?.toLowerCase() ?? "";
+  return /^(m|c)?[jt]sx?$|^(vue|svelte)$/.test(ext) ? "js" : ext;
+}
+
+/** The deepest declared part whose root holds this file; "." holds every file. */
+function ownerOf(f: string, roots: readonly string[]): string | undefined {
+  return roots
+    .filter((r) => r === "." || f === r || f.startsWith(`${r}/`))
+    .sort((a, b) => (b === "." ? -1 : b.length) - (a === "." ? -1 : a.length))[0];
+}
+
+/**
+ * Where a subject's check goes when its own part tests in another language.
+ *
+ * A front end whose module screens live inside the backend's tree keeps
+ * their tests in its own test directory, run by its own runner. A check
+ * for such a screen minted in the backend's idiom is a Python test for a
+ * Vue view, run by pytest. So it goes to the declared part whose tests are
+ * in the subject's language, into the one directory that part keeps them
+ * in — the place that part's runner collects. A part whose tests in that
+ * language have no one directory gives no place outside the subject's own
+ * tree, so it is not chosen.
+ */
+function testHomeInPartOfLanguage(files: readonly string[], roots: readonly string[], subject: string): TestIdiom | undefined {
+  const lang = languageOf(subject);
+  const owner = ownerOf(subject, roots);
+  let best: { idiom: TestIdiom; n: number } | undefined;
+  for (const root of roots) {
+    if (root === owner) continue;
+    const tests = files.filter(
+      (f) => f && isTestPath(f) && !isProbePath(f) && languageOf(f) === lang && ownerOf(f, roots) === root,
+    );
+    const counted = new Map<string, number>();
+    for (const t of tests) {
+      const sfx = suffixOf(t);
+      if (sfx) counted.set(sfx, (counted.get(sfx) ?? 0) + 1);
+    }
+    const suffix = [...counted.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const dir = commonTestDirOf(tests);
+    if (suffix && dir && (!best || tests.length > best.n)) best = { idiom: { suffix, dir }, n: tests.length };
+  }
+  return best?.idiom;
+}
+
+/** The test directory every one of these tests sits under — the first
+ *  `tests`, `test`, `spec` or `__tests__` on their common path — or "". */
+function commonTestDirOf(tests: readonly string[]): string {
+  if (!tests.length) return "";
+  let common = tests[0].split("/").slice(0, -1);
+  for (const t of tests.slice(1)) {
+    const segs = t.split("/").slice(0, -1);
+    let i = 0;
+    while (i < common.length && i < segs.length && common[i] === segs[i]) i++;
+    common = common.slice(0, i);
+  }
+  const at = common.findIndex((seg) => /^(tests?|spec|__tests__)$/.test(seg));
+  return at < 0 ? "" : `${common.slice(0, at + 1).join("/")}/`;
+}
+
+/**
+ * The one directory the repository keeps its tests in, with the suffix
+ * they wear — the place its runner collects a check that has no module to
+ * sit beside. Nothing when its tests are not kept under one directory.
+ */
+function sharedTestHome(files: readonly string[]): TestIdiom | undefined {
+  const repo = inferTestIdiom(files);
+  if (!repo) return undefined;
+  if (repo.dir) return repo;
+  const dir = commonTestDirOf(files.filter((f) => f && isTestPath(f) && !isProbePath(f) && suffixOf(f) === repo.suffix));
+  return dir ? { suffix: repo.suffix, dir } : undefined;
+}
+
+/** A file stem for a slice's checks, from its handle. */
+function sliceStem(handle: string | undefined): string {
+  return (handle ?? "checks").replace(/[^A-Za-z0-9_-]+/g, "_");
+}
+
+/**
+ * The roots where a check can be run: wherever the repository keeps a test
+ * of its own, every declared part other than ".", and "." itself when the
+ * part built from it says how its tests run — then the whole repository is
+ * a place where tests run.
+ */
+function runnableRootsOf(repoFiles: readonly string[], parts: readonly PartAt[]): string[] {
+  const declared = parts.filter((p) => p.root !== "." || p.test?.one || p.test?.command).map((p) => p.root);
+  return [...new Set([...testRootsOf(repoFiles), ...declared])].sort();
+}
+
+/**
  * The path a check is born at: beside the module it drives, named for the
  * criterion it proves, in the repository's own idiom.
  *
@@ -147,7 +266,9 @@ interface SliceLike {
  * own test homes, beside the production file its slice lands in.
  *
  * Returns what moved, for the log. A slice with no production file of its
- * own keeps the old coordinate: there is nothing to sit beside.
+ * own has its checks put in the repository's one test directory; where the
+ * repository keeps no such directory they keep the old coordinate, and
+ * {@link checksInAnotherLanguage} refuses those its runner cannot run.
  */
 export function rehouseChecks(
   slices: readonly SliceLike[],
@@ -158,13 +279,23 @@ export function rehouseChecks(
    *  criteria red for exactly that — every check present, every one at the
    *  address the plan no longer used. */
   alreadyWritten: ReadonlySet<string> = new Set(),
-  /** The repository's declared parts, by root. A file under a part is
-   *  placed by that part's idiom, and a declared part is a tree that runs
-   *  tests whether or not it holds one yet. */
-  partRoots: readonly string[] = [],
+  /** The repository's declared parts. A file under a part is placed by
+   *  that part's idiom, and a declared part is a tree that runs tests
+   *  whether or not it holds one yet. */
+  parts: readonly PartAt[] = [],
+  /** A file that is a live check — it drives the deployed service and is
+   *  kept apart from the unit suite — says nothing about where this
+   *  repository keeps its unit tests. One live check named like a unit
+   *  test, in a directory of its own, once made a Python service's `tests/`
+   *  look like one directory among two, and every check of the next cut
+   *  was minted beside its module in `app/`, inside the image. */
+  isLive: (rel: string) => boolean = () => false,
 ): { from: string; to: string }[] {
-  if (!inferTestIdiom(repoFiles) && !partRoots.length) return [];
-  const runnable = [...new Set([...testRootsOf(repoFiles), ...partRoots.filter((r) => r !== ".")])];
+  const partRoots = parts.map((p) => p.root);
+  // The unit tests, which say where tests go; the live checks say nothing.
+  const unitFiles = repoFiles.filter((f) => !isLive(f));
+  if (!inferTestIdiom(unitFiles) && !partRoots.length) return [];
+  const runnable = runnableRootsOf(unitFiles, parts);
   const treeOf = (f: string): string =>
     [...partRoots].filter((r) => r !== "." && (f === r || f.startsWith(`${r}/`))).sort((a, b) => b.length - a.length)[0] ??
     f.split("/")[0];
@@ -192,22 +323,38 @@ export function rehouseChecks(
       .filter((u) => (u.role ?? "code") === "code")
       .flatMap((u) => u.footprint)
       .filter((f) => !isTestPath(f));
-    const inRunnable = files.filter((f) => runnable.includes(treeOf(f)));
+    const inRunnable = files.filter((f) => runnable.includes(".") || runnable.includes(treeOf(f)));
     // Code in a runnable tree first; failing that, anything in a runnable
     // tree — a view's locale file still sits where the tree's tests run;
     // failing that, code anywhere.
-    const subject = inRunnable.find((f) => CODE.test(f)) ?? inRunnable[0] ?? files.find((f) => CODE.test(f));
+    const found = inRunnable.find((f) => CODE.test(f)) ?? inRunnable[0] ?? files.find((f) => CODE.test(f));
+    // A slice with no file of its own to sit beside — its work is a test
+    // or a document another slice writes — still has its checks run by the
+    // repository's runner: they go to the one directory the repository
+    // keeps its tests in, named for the slice, in that directory's idiom.
+    const shared = found ? undefined : sharedTestHome(unitFiles);
+    const subject = found ?? (shared ? `${shared.dir}${sliceStem(s.handle)}${path.extname(shared.suffix)}` : undefined);
     if (!subject) continue;
     // The idiom of the subject's own tree, so a Python module gets a Python
     // test and a Vue view a vitest one, whatever the rest of the repository
-    // does.
-    // The tree's own idiom; failing that, the idiom the subject's language
-    // wears everywhere — never another tree's, which minted Python checks
-    // beside a Vue view.
-    const idiom = inferTestIdiom(repoFiles, treeOf(subject)) ?? idiomOfLanguage(subject) ?? inferTestIdiom(repoFiles);
+    // does. When parts are declared and that tree tests in another
+    // language, the declared part that tests in the subject's language
+    // takes the check. Failing both, the idiom the subject's language
+    // wears everywhere — never another language's, which minted Python
+    // checks beside a Vue view.
+    const own = inferTestIdiom(unitFiles, treeOf(subject));
+    const ownSpeaks = !!own && (!partRoots.length || languageOf(own.suffix) === languageOf(subject));
+    const idiom =
+      shared ??
+      (ownSpeaks ? own : undefined) ??
+      (own && partRoots.length ? testHomeInPartOfLanguage(unitFiles, partRoots, subject) : undefined) ??
+      sharedTestDirFor(unitFiles, subject) ??
+      idiomOfLanguage(subject) ??
+      inferTestIdiom(unitFiles);
     if (!idiom) continue;
     for (const u of units) {
-      if ((u.role ?? "code") !== "test") continue;
+      // A live check has its own home, given by houseLiveChecks.
+      if ((u.role ?? "code") !== "test" || isLiveCheckUnit(u)) continue;
       u.footprint = u.footprint.map((f) => {
         const k = /_AC-(\d+)/.exec(f)?.[1];
         if (!isProbePath(f) || !k || alreadyWritten.has(f)) return f;
@@ -223,6 +370,64 @@ export function rehouseChecks(
     }
     if (s.files)
       s.files = s.files.map((f) => moved.find((m) => m.from === f)?.to ?? f);
+  }
+  return moved;
+}
+
+/**
+ * Move every live check this plan would file under `probes/` into the
+ * repository's live home, named for the module its slice lands in.
+ *
+ * A live check drives the deployed service, not a module, so it sits in
+ * the one directory the repository declares for them, apart from the unit
+ * suite; the subject only names it. It wears the suffix the live home's
+ * own checks wear, else the suffix the subject's tests wear, else the one
+ * it was planned with. A check an earlier run already wrote keeps its
+ * address. Returns what moved, for the log.
+ */
+export function houseLiveChecks(
+  slices: readonly SliceLike[],
+  home: string,
+  repoFiles: readonly string[],
+  alreadyWritten: ReadonlySet<string> = new Set(),
+): { from: string; to: string }[] {
+  const moved: { from: string; to: string }[] = [];
+  const taken = new Set<string>(repoFiles.filter((f) => f && !alreadyWritten.has(f)));
+  // The suffix most of the live home's own checks wear, if it holds any.
+  const counted = new Map<string, number>();
+  for (const f of repoFiles)
+    if (f.startsWith(`${home}/`) && isTestPath(f)) {
+      const sfx = suffixOf(f);
+      if (sfx) counted.set(sfx, (counted.get(sfx) ?? 0) + 1);
+    }
+  const homeSuffix = [...counted.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  for (const s of slices) {
+    const units = s.workUnits ?? s.units ?? [];
+    const subject = units
+      .filter((u) => (u.role ?? "code") === "code")
+      .flatMap((u) => u.footprint)
+      .find((f) => !isTestPath(f) && CODE.test(f));
+    for (const u of units) {
+      if ((u.role ?? "code") !== "test" || !isLiveCheckUnit(u)) continue;
+      u.footprint = u.footprint.map((f) => {
+        const k = checkOrdinalOf(f);
+        if (!k || alreadyWritten.has(f) || f.startsWith(`${home}/`)) return f;
+        const suffix =
+          homeSuffix ??
+          (subject ? (inferTestIdiom(repoFiles, subject.split("/")[0]) ?? idiomOfLanguage(subject))?.suffix : undefined) ??
+          suffixOf(f);
+        const named = subject ?? path.basename(f).replace(/_AC-\d+.*$/, "");
+        const to = nextFreeIn(taken, { suffix, dir: `${home}/` }, named, k);
+        moved.push({ from: f, to });
+        return to;
+      });
+      if (u.cleared)
+        u.cleared = u.cleared.map((c) => {
+          const hit = moved.find((m) => m.from === c.path);
+          return hit ? { ...c, path: hit.to } : c;
+        });
+    }
+    if (s.files) s.files = s.files.map((f) => moved.find((m) => m.from === f)?.to ?? f);
   }
   return moved;
 }
@@ -249,9 +454,9 @@ export function pinRecordedChecks(
   for (const s of slices) {
     const ids = (s as { criterionIds?: string[] }).criterionIds ?? [];
     for (const u of s.workUnits ?? s.units ?? []) {
-      if ((u.role ?? "code") !== "test") continue;
+      if ((u.role ?? "code") !== "test" || isLiveCheckUnit(u)) continue;
       u.footprint = u.footprint.map((f) => {
-        const k = /_AC-(\d+)\./.exec(f)?.[1];
+        const k = checkOrdinalOf(f);
         const cid = k ? ids[Number(k) - 1] : undefined;
         const home = cid ? recorded.get(cid) : undefined;
         if (!home || home === f || !onBranch.has(home)) return f;
@@ -289,6 +494,34 @@ function testRootsOf(repoFiles: readonly string[]): string[] {
 }
 
 /**
+ * Checks left at the run's own coordinate (`probes/`) in a language none of
+ * the repository's tests are written in — refused before dispatch, naming
+ * them. The repository's runner runs its own language: a JavaScript check
+ * handed to pytest runs nothing. A repository with no tests of its own
+ * refuses nothing here, as with {@link unreachableCheckHomes}.
+ */
+export function checksInAnotherLanguage(
+  slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
+  repoFiles: readonly string[],
+  /** A live check is not a unit test of the repository (see `rehouseChecks`). */
+  isLive: (rel: string) => boolean = () => false,
+): { where: string[]; languages: string[] } {
+  const languages = [
+    ...new Set(
+      repoFiles.filter((f) => f && !isLive(f) && isTestPath(f) && !isProbePath(f) && suffixOf(f)).map(languageOf),
+    ),
+  ].sort();
+  if (!languages.length) return { where: [], languages };
+  const where: string[] = [];
+  for (const s of slices)
+    for (const u of s.workUnits ?? [])
+      if ((u.role ?? "code") === "test" && !isLiveCheckUnit(u))
+        for (const f of u.footprint)
+          if (isProbePath(f) && !languages.includes(languageOf(f))) where.push(`${s.handle}: ${f}`);
+  return { where: [...new Set(where)], languages };
+}
+
+/**
  * Checks born where the repository runs no test of its own — refused
  * before dispatch, naming the roots that do run.
  *
@@ -305,15 +538,18 @@ function testRootsOf(repoFiles: readonly string[]): string[] {
 export function unreachableCheckHomes(
   slices: readonly { handle: string; workUnits?: { role?: string; footprint: string[] }[] }[],
   repoFiles: readonly string[],
-  partRoots: readonly string[] = [],
+  parts: readonly PartAt[] = [],
+  /** A live check is not a unit test of the repository (see `rehouseChecks`). */
+  isLive: (rel: string) => boolean = () => false,
 ): { where: string[]; roots: string[] } {
-  const roots = [...new Set([...testRootsOf(repoFiles), ...partRoots.filter((r) => r !== ".")])].sort();
+  const roots = runnableRootsOf(repoFiles.filter((f) => !isLive(f)), parts);
   if (!roots.length) return { where: [], roots };
-  const under = (f: string): boolean => roots.some((r) => f === r || f.startsWith(`${r}/`));
+  const under = (f: string): boolean => roots.some((r) => r === "." || f === r || f.startsWith(`${r}/`));
   const where: string[] = [];
   for (const s of slices)
     for (const u of s.workUnits ?? [])
-      for (const f of u.footprint)
-        if (isTestPath(f) && !under(f)) where.push(`${s.handle}: ${f}`);
+      if (!isLiveCheckUnit(u))
+        for (const f of u.footprint)
+          if (isTestPath(f) && !under(f)) where.push(`${s.handle}: ${f}`);
   return { where: [...new Set(where)], roots };
 }

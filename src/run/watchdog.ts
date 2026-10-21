@@ -12,8 +12,10 @@
  * timestamps in the worktrees from outside. Silence is not a state a
  * machine may leave a person to interpret.
  *
- * So the run watches its own pulse. Every line any actor writes is a beat.
- * When the beats stop for long enough, the watchdog writes what every
+ * So the run watches its own pulse. Every line any actor writes is a beat,
+ * and so is every event a running model round streams: a round that thinks
+ * for minutes without calling a tool writes no line and is still moving,
+ * and every two minutes the log says so. When the beats stop for long enough, the watchdog writes what every
  * unfinished unit is waiting for — its state, its activity, what it needs —
  * and says the run is stalled. If nothing moves for as long again, it halts
  * the run, which drains it into a delivery record and a report instead of
@@ -33,6 +35,7 @@
  * default.
  */
 import type { DefectType } from "../engine/defectLog";
+import type { RoundPulse } from "../derive/round";
 import type { RunState } from "./state";
 
 /** How long, in words a person reads without converting units. */
@@ -46,6 +49,10 @@ const howLong = (ms: number): string =>
 /** How long a run may be silent before the watchdog says so. */
 const QUIET_BEFORE_NOTICE_MS = 8 * 60 * 1000;
 
+/** How often a model round that is streaming but has written no line says
+ *  it is still at work. */
+const THINKING_NOTE_EVERY_MS = 2 * 60 * 1000;
+
 /** No run has a deadline of its own: only a caller that asks for one gets
  *  one, and nothing in this codebase asks. */
 const NO_DEADLINE = Number.POSITIVE_INFINITY;
@@ -53,6 +60,10 @@ const NO_DEADLINE = Number.POSITIVE_INFINITY;
 export interface StallWatch {
   /** A beat: something moved. */
   beat: () => void;
+  /** Listen to one model round running for `who`: every event its stream
+   *  yields is a beat, and while it streams without writing a line the run
+   *  log says it is still thinking. */
+  round: (who: string) => RoundPulse;
   stop: () => void;
 }
 
@@ -85,17 +96,53 @@ export function watchForStall(a: {
   const started = now();
   let last = now();
   let noticed = false;
-  // The pulse is the run's own log: every line any actor writes is a beat.
+  let noticedAt = 0;
+  // The pulse is the run's own log, where every line any actor writes is a
+  // beat, and the stream of every round opened through round().
   // The watchdog listens where the lines already go, so no caller has to
   // remember to tell it anything.
   const beat = (): void => {
     last = now();
     noticed = false;
   };
+  // The watchdog's own lines reach the same sink, and are not movement: a
+  // notice of silence must not count as the run having moved.
+  let speaking = false;
+  const say = (line: string): void => {
+    speaking = true;
+    try {
+      a.log(line);
+    } finally {
+      speaking = false;
+    }
+  };
   const before = a.st.sink;
   a.st.sink = (line, step) => {
     before?.(line, step);
-    beat();
+    if (!speaking) beat();
+  };
+  // Rounds streaming now: when each began, when it was last heard, and when
+  // the log last said it was thinking.
+  const rounds = new Set<{ who: string; began: number; heard: number; said: number }>();
+  const round = (who: string): RoundPulse => {
+    const at = now();
+    const r = { who, began: at, heard: at, said: at };
+    rounds.add(r);
+    return {
+      heard: () => {
+        r.heard = now();
+        beat();
+      },
+      ended: () => void rounds.delete(r),
+    };
+  };
+  const stillThinking = (): void => {
+    const at = now();
+    for (const r of rounds) {
+      if (at - r.said < THINKING_NOTE_EVERY_MS || r.heard <= r.said) continue;
+      r.said = at;
+      say(`still thinking — ${r.who}, ${Math.round((at - r.began) / 1000)}s`);
+    }
   };
   const stillGoing = () => a.units().filter((u) => u.state !== "done" && u.state !== "failed" && u.state !== "blocked");
   const accountOf = (): string =>
@@ -104,10 +151,11 @@ export function watchForStall(a: {
       .join("\n");
   const tick = (): void => {
     if (a.st.halted) return;
+    stillThinking();
     const spent = now() - started;
     if (spent >= bound) {
       const account = accountOf();
-      a.log(
+      say(
         `⛔ the run has been going for ${howLong(spent)}, which is its bound, and is stopping itself. ` +
           `What never finished:\n${account}`,
       );
@@ -120,20 +168,24 @@ export function watchForStall(a: {
     const account = accountOf();
     if (!noticed) {
       noticed = true;
-      a.log(
+      noticedAt = now();
+      say(
         `⏱ nothing has moved for ${howLong(silent)}. What is still open:\n${account}\n` +
           `If nothing moves for ${howLong(quiet)} more, the run stops itself and reports rather than sitting here.`,
       );
       a.defect({ activity: "run", trigger: "watchdog", type: "machine", impact: "run silent", detail: account.slice(0, 1500) });
       return;
     }
-    a.log(`⛔ the run has been silent for ${howLong(silent)} and is stopping itself. What never finished:\n${account}`);
+    // The notice promised as long again before the run stops.
+    if (now() - noticedAt < quiet) return;
+    say(`⛔ the run has been silent for ${howLong(silent)} and is stopping itself. What never finished:\n${account}`);
     a.defect({ activity: "run", trigger: "watchdog", type: "machine", impact: "run halted — stalled", detail: account.slice(0, 1500) });
     a.st.halt();
   };
   const timer = every(tick, Math.max(15_000, Math.min(60_000, Math.floor(quiet / 4))));
   return {
     beat,
+    round,
     stop: () => {
       timer.stop();
       a.st.sink = before;

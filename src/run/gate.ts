@@ -8,7 +8,9 @@
  * branch, the delivered tree is built, every check runs, assessments are
  * graded by a fresh reviewer, the honesty scan reads the diff, the
  * repository's own suite decides, the checks are recorded on the delivery
- * and discarded from the tree, and the delivery is opened.
+ * and discarded from the tree, and the delivery is opened. A suite the
+ * platform's pipeline runs as part of going live is not run here; the live
+ * phase settles its proof (src/run/suiteInLivePhase.ts).
  *
  * A red suite is not delivered. The work may satisfy its own checks and
  * still leave the repository's standing checks red; that delivery is
@@ -29,6 +31,7 @@ import {
   writeDeliveryRecord,
 } from "./plan";
 import { porcelainPaths } from "./worker";
+import { stageWork } from "./stageWork";
 import { criterionMapOf } from "./criteria";
 import { traceWiring } from "./wiringTrace";
 import { handOver } from "./handOver";
@@ -46,12 +49,17 @@ import type { GateContext } from "./state";
 import { filesNamedIn, suiteFootprint, suiteVerdictOf, type SuiteFailure } from "./suite";
 import { repairSuiteAtGate } from "./gateRepair";
 import { close, convergenceScore, readProbes } from "./closer";
+import { suiteRedIn } from "./suiteReport";
+import { contradictedAmong, contradictionWords } from "../core/contradiction";
 import { repairUnkept } from "./unkept";
 import { unsettledReviews, withheldDelivery } from "./withheld";
 import { treeShape } from "../gates/moduleSizes";
 import { runnerFor } from "./proved";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
 import { askTheTool } from "./settles";
+import { declaredBuildPassed, IMAGE_JUDGED_BY_DEPLOY } from "./buildWords";
+import { downstreamOf } from "./survey";
+import { suiteLeftToLivePhase, suiteRunInLivePhase } from "./suiteInLivePhase";
 
 export type { GateContext } from "./state";
 
@@ -113,13 +121,19 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   say(`${tep}: closing gate`);
   const { verifs, probeOfAc } = closingVerifications(slices, runnerFor(g.runOne, g.parts));
   // The checks need `prepare`; the PRODUCT needs `build`. Both run, and
-  // the product's is the one that decides whether this tree can ship.
+  // the product's is the one that decides whether this tree can ship. A
+  // template's image is not that build: the platform's deploy builds it.
+  const template = downstreamOf(deps.repoRoot) === "template";
   if (deps.prepare) say(`${tep}: preparing the delivered tree (${deps.prepare})`);
   await prepareAtGate(deps.prepare, worktree, boundedExec, log);
   // Prepares the tree so the checks can run. NOT a judgement: what the
   // build says at the END is the only reading that decides anything.
   if (deps.build && deps.build !== deps.prepare) {
-    say(`${tep}: building the delivered tree (${deps.build})`);
+    say(
+      template
+        ? `${tep}: building the delivered tree with the declared build only (${deps.build}) — ${IMAGE_JUDGED_BY_DEPLOY}`
+        : `${tep}: building the delivered tree (${deps.build})`,
+    );
     await prepareAtGate(deps.build, worktree, boundedExec, log);
   }
   say(`${tep}: running ${verifs.length} check(s) against the delivered tree`);
@@ -290,34 +304,44 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // The suites the pipeline runs, run here on the delivered tree, so a
   // standing test the work broke is a red before the merge, not after. A
   // suite whose runner does not answer — it needs the cluster this machine
-  // is not — is left to the pipeline, never counted as a red.
+  // is not — is left to the pipeline, never counted as a red. A part built
+  // from "." is the whole repository, so its suite runs at the root.
   const app = path.basename(deps.repoRoot).replace(/-/g, "_");
   const partSuites = (() => {
     const read = thinkubeDeclaration(worktree);
     if (!read || !("declared" in read)) return [] as { root: string; cmd: string }[];
     return partsDeclared(read.declared)
-      .filter((p) => p.root !== "." && p.test?.enabled && p.test.command)
+      .filter((p) => p.test?.enabled && p.test.command)
       .map((p) => ({ root: p.root, cmd: p.test!.command! }));
   })();
+  // A suite the platform's pipeline runs as part of going live is judged
+  // there, before the build, and the live phase settles its proof
+  // (src/run/suiteInLivePhase.ts). Running it here as well runs the same
+  // tests twice. The build still runs here: it is the product-build veto.
+  const pipelineRuns = suiteRunInLivePhase(deps.repoRoot);
+  const leftToPipeline = !!pipelineRuns && (!!g.suite || partSuites.length > 0);
+  const suite = leftToPipeline ? undefined : g.suite;
+  const suitesHere = leftToPipeline ? [] : partSuites;
+  const suiteName = (root: string): string => (root === "." ? "the repository's" : `the ${root}`);
   const runSuitesLocally = async (cwd: string): Promise<{ code: number | null; output: string }> => {
     const parts: string[] = [];
     if (deps.build) {
       const b = await boundedExec(deps.build, cwd);
       parts.push(
         b.code === 0
-          ? `ok 1 - the product build (${deps.build}) builds as shipped`
+          ? `ok 1 - ${declaredBuildPassed(deps.build, template)}`
           : `not ok 0 - the product build (${deps.build}) does not build as shipped\n${b.output.slice(-3000)}`,
       );
     }
-    for (const p of partSuites) {
+    for (const p of suitesHere) {
       const at = path.join(cwd, p.root);
       const r = await boundedExec(`TEST_DATABASE_NAME=test_${app} ${p.cmd}`, at);
       if (r.code === 0) {
-        parts.push(`ok 1 - ${p.root} suite passes`);
+        parts.push(`ok 1 - ${suiteName(p.root)} suite passes`);
       } else if (aRunnerAnswered(r.code, r.output)) {
-        parts.push(`not ok 0 - the ${p.root} suite fails on the delivered tree\n${r.output.slice(-3000)}`);
+        parts.push(`not ok 0 - ${suiteName(p.root)} suite fails on the delivered tree\n${r.output.slice(-3000)}`);
       } else {
-        say(`${tep}: the ${p.root} suite does not run here — the platform settles it`);
+        say(`${tep}: ${suiteName(p.root)} suite does not run here — the platform settles it`);
       }
     }
     if (!parts.length) return { code: 0, output: "no build and no runnable suite here" };
@@ -325,11 +349,17 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     return { code: red ? 1 : 0, output: parts.join("\n") };
   };
   const judgeWith = async (cmd: string, cwd: string): Promise<{ code: number | null; output: string }> =>
-    g.suite ? judgeTree(cmd, cwd) : runSuitesLocally(cwd);
+    suite ? judgeTree(cmd, cwd) : runSuitesLocally(cwd);
   // What the gate judges the tree by: the whole suite where one runs here,
   // else the build — beside which the declared part suites also run.
-  const treeCmd = g.suite ?? deps.build;
-  log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
+  const treeCmd = suite ?? deps.build;
+  if (leftToPipeline)
+    say(
+      `${tep}: the repository's suite is not run here — ${pipelineRuns} runs it in the platform pipeline's test step ` +
+        `before it builds, and the live phase settles the repo suite proof` +
+        (deps.build ? `; the tree is judged here by its ${template ? "declared" : "product"} build (${deps.build})` : ""),
+    );
+  else log(`${tep}: running the repository's own suite on the delivered tree (minutes)`);
   // judgeTree runs the product build EVERY time it judges, and folds a
   // failure into the output as a named "not ok", so the verdict below is
   // always about the tree as it stands now. An earlier reading of the
@@ -348,7 +378,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // no test asks, whether running the work again still changes anything.
   const told = thinkubeDeclaration(worktree);
   const verify = told && "declared" in told ? told.declared.verify : undefined;
-  if (!g.suite && verify) {
+  if (!leftToPipeline && !suite && verify) {
     const settled = await askTheTool({
       repoRoot: worktree,
       verify,
@@ -361,12 +391,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     log(`${tep}: the tool answered — ${settled.verdict}`);
     if (settled.verdict === "red")
       return { refusals: [`the repository's own tool says the work does not hold:\n${settled.detail}`], undelivered: [] };
-  } else if (!g.suite) {
+  } else if (!leftToPipeline && !suite) {
     log(
       deps.build
-        ? `${tep}: no whole-suite command runs here — the tree is judged by its own product build${
-            partSuites.length ? ` and the ${partSuites.map((p) => p.root).join(", ")} suite(s)` : ""
-          } (${deps.build})`
+        ? `${tep}: no whole-suite command runs here — the tree is judged by its own ${template ? "declared" : "product"} build${
+            suitesHere.length ? ` and the ${suitesHere.map((p) => p.root).join(", ")} suite(s)` : ""
+          } (${deps.build})${template ? `; ${IMAGE_JUDGED_BY_DEPLOY}` : ""}`
         : `${tep}: no whole-suite command runs here — the standing-suite veto does not apply`,
     );
   }
@@ -376,9 +406,9 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // reporting it as a red suite tells a person their work broke when what
   // broke is this run's idea of how to test their repository. That is the
   // sentence a whole delivery was withheld on.
-  if (ran && g.suite && !aRunnerAnswered(ran.code, ran.output)) {
+  if (ran && suite && !aRunnerAnswered(ran.code, ran.output)) {
     const why =
-      `the command this repository proved for its whole suite (${g.suite}) did not run at the gate — ` +
+      `the command this repository proved for its whole suite (${suite}) did not run at the gate — ` +
       `no test runner answered, so nothing here is a verdict about the work. ` +
       `The branch keeps everything. What the shell said:\n${ran.output.trim().split("\n").slice(-8).join("\n").slice(0, 800)}`;
     say(`⛔ ${tep}: ${why}`);
@@ -389,6 +419,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   let verdict = ran
     ? suiteVerdictOf(ran.code, ran.output, worktree)
     : { green: true, failures: [] as SuiteFailure[], summary: "no standing suite runs here" };
+  // What the finisher and the closers report, read for a red suite they saw.
+  const reports: string[] = [];
   if (ran && !verdict.green) {
     // The tests that bit at this gate are run early, at every slice, next time.
     deps.rememberSuiteReds?.(verdict.failures.map((f) => f.file).filter((f): f is string => !!f));
@@ -408,6 +440,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       defect,
     });
     verdict = repaired.verdict;
+    reports.push(...repaired.reports);
     // The finisher is spent and the tree still does not stand: the closer
     // takes the whole delivery, with full sight and authority (§4).
     if (!verdict.green && !g.state.halted) {
@@ -467,6 +500,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         defect: (e) => defect({ unit: `${GATE_STEP}#closer`, ...e }),
         ...(deps.worker ? { worker: deps.worker } : {}),
       });
+      reports.push(closed.report);
       // What the closer saw and left alone, in its own words.
       for (const f of findingsIn(closed.report)) {
         findings.push({ ...f, saw: `the closer: ${f.saw}` });
@@ -509,7 +543,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
         const again = await judgeWith(treeCmd!, worktree);
         verdict = suiteVerdictOf(again.code, again.output, worktree);
         if (verdict.green) {
-          await exec("git", ["add", "-A", "."], worktree);
+          await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
           await exec("git", ["commit", "-m", `tandem: ${tep} — closed`], worktree);
         }
       }
@@ -518,10 +552,11 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   if (treeCmd)
     proofs.push({
       kind: "suite",
-      label: g.suite ? "repo suite" : "the product build",
+      label: suite ? "repo suite" : template ? "the declared build" : "the product build",
       verdict: verdict.green ? "green" : "red",
       ...(verdict.green ? {} : { ref: verdict.failures.map((f) => f.name).join("; ").slice(0, 400) }),
     });
+  if (leftToPipeline) proofs.push(suiteLeftToLivePhase(pipelineRuns!));
 
   // What the machine could not settle rides the delivery for the person to
   // weigh at Accept. A rule may only veto when its failure names an actor
@@ -556,8 +591,10 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     findings.push(...verdict.failures.map((f) => ({ saw: `${f.name}${f.file ? ` (${f.file})` : ""} — ${f.detail.split("\n")[0].slice(0, 200)}` })));
     verdict = { ...verdict, green: true };
   }
-  if (!verdict.green) {
-    const names = verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
+  /** Withhold the delivery for a suite that stays red: recorded, committed
+   *  on the branch, never handed over. */
+  const withholdRedSuite = async (failures: SuiteFailure[]): Promise<DispatchOutcome> => {
+    const names = failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}`);
     say(`⛔ ${tep}: the repository's suite is red after the work and the finisher could not bring it under — the delivery is withheld: ${names.join("; ").slice(0, 600)}`);
     defect({
       activity: "closing gate",
@@ -565,12 +602,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       type: "code",
       impact: "delivery withheld",
       // The names, and each test's own words — never the tail of a log.
-      detail: verdict.failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
+      detail: failures.map((f) => `${f.name}${f.file ? ` (${f.file})` : ""}\n${f.detail}`).join("\n\n").slice(0, 4000),
     });
     if (deps.storeDir)
       await writeDeliveryRecord(deps.storeDir, { tep, branch, baseSha: g.baseSha, proofs, undelivered, verifs, acResults, runId, producedAt });
-    undelivered.push(...docsObligations(slices, worktree));
-    await exec("git", ["add", "-A", "."], worktree);
+    for (const o of docsObligations(slices, worktree)) if (!undelivered.includes(o)) undelivered.push(o);
+    await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
     await exec("git", ["commit", "-m", `tandem: ${tep} (suite red — withheld)`], worktree);
     // Withheld is still on the record: what was checked and why it stopped
     // is readable; nothing was opened and it cannot be accepted. It carries
@@ -582,7 +619,8 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
       reason: `${RED_SUITE_REFUSAL} — still red: ${names.join("; ").slice(0, 500)}`,
     });
     return { refusals: [RED_SUITE_REFUSAL], undelivered, delivery: withheld };
-  }
+  };
+  if (!verdict.green) return withholdRedSuite(verdict.failures);
 
   undelivered.push(...docsObligations(slices, worktree));
 
@@ -594,6 +632,13 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   // A criterion nothing could judge is neither repaired nor withheld: only
   // a change to what was asked settles it, so it reaches the person.
   proposeRewording(tep, proofs, log, defect);
+  // A criterion someone said does not hold reaches the repair with their
+  // words, even when its checks pass: those words are the evidence.
+  const saidNotToHold = new Map(
+    [...contradictedAmong(space, cut.changeIds)].map(([id, c]) => [id, contradictionWords(c)] as const),
+  );
+  if (saidNotToHold.size)
+    log(`${tep}: ${saidNotToHold.size} criterion(a) were said not to hold since they were last proved — they are repaired from those words`);
   let unkept = proofs.filter(unkeptProof);
   unkept = await repairUnkept({
     tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe,
@@ -603,7 +648,48 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
     ...(g.restored?.length ? { restored: g.restored } : {}),
     ...(g.clearFor ? { clearFor: g.clearFor } : {}),
     exec, boundedExec, suiteExec: g.suiteExec, log, defect,
+    onReport: (r) => reports.push(r),
+    saidNotToHold,
   });
+  // A suite left to the pipeline is not run here, but an actor at the gate
+  // that ran it and saw it red has found a red suite: nothing is merged
+  // past it. Where the repository's suite runs here, it is run once more
+  // to reproduce the report, repaired like any red suite, and withheld
+  // while red; where it cannot run here, the report stands and withholds.
+  // A suite this gate ran has already decided, whatever an actor says.
+  const reportedRed = suite ? undefined : reports.map(suiteRedIn).find((r) => !!r);
+  if (reportedRed && !g.state.halted) {
+    const reported: SuiteFailure[] = reportedRed.files.length
+      ? reportedRed.files.map((f) => ({ name: f, file: f, detail: "an actor at the gate ran the whole suite and reported this file red" }))
+      : [{ name: "the repository's suite", detail: "an actor at the gate ran the whole suite and reported it red, naming no file" }];
+    say(
+      `${tep}: an actor at the gate reported the repository's whole suite red (${reported.map((f) => f.name).join(", ").slice(0, 400)}) — nothing is merged while it is red`,
+    );
+    let still = reported;
+    if (g.suite) {
+      const r = await g.suiteExec(g.suite, worktree);
+      if (aRunnerAnswered(r.code, r.output)) {
+        let v = suiteVerdictOf(r.code, r.output, worktree);
+        if (!v.green)
+          v = (
+            await repairSuiteAtGate({
+              suite: g.suite, tep, worktree, baseSha: g.baseSha, deps, state: g.state, exec,
+              suiteExec: g.suiteExec, verdict: v, log, defect,
+            })
+          ).verdict;
+        still = v.green ? [] : v.failures;
+        if (v.green) say(`${tep}: the repository's whole suite (${g.suite}) passes here — the report is answered`);
+      } else say(`${tep}: the repository's whole suite (${g.suite}) does not run here, so the report stands`);
+    }
+    if (still.length) {
+      const left = proofs.find((p) => p.kind === "suite" && p.verdict === "pending");
+      if (left) {
+        left.verdict = "red";
+        left.ref = `reported red at the gate: ${still.map((f) => f.file ?? f.name).join(", ")}`.slice(0, 400);
+      }
+      return withholdRedSuite(still);
+    }
+  }
   // A check proves a promise once; it does not join the repository's suite
   // because it exists. Its source and its verdict are kept on the delivery
   // record — where a person can read what was driven — and when a delivery
@@ -645,7 +731,7 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   }
   unkept = unkept.filter((x) => x.kind === "probe");
   if (unkept.length) {
-    await exec("git", ["add", "-A", "."], worktree);
+    await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
     await exec("git", ["commit", "-m", `tandem: ${tep} (withheld — ${unkept.length} unkept)`], worktree);
     const named = unkept.map((p) => `- ${p.label}${p.ref ? `: ${p.ref.split("\n")[0].slice(0, 160)}` : ""}`);
     // A person's Stop is not a verdict on the work. A run stopped
@@ -717,9 +803,12 @@ export async function closeGate(g: GateContext): Promise<DispatchOutcome> {
   const moduleSizes = await treeShape(worktree);
   g.state.phase("gate", "done", "every check held");
   g.state.phase("delivery", "running", "committing the work and opening the delivery");
+  // What the workers spent, added up over every unit, for the record.
+  const costUsd = deps.state.view().units.reduce((sum, u) => sum + (u.costUsd ?? 0), 0);
   return handOver({
     tep, branch, worktree, space, cut, deps, runId, producedAt, proofs, observations, undelivered, findings,
     ...(moduleSizes ? { moduleSizes } : {}),
+    ...(costUsd ? { costUsd } : {}),
     rulings: g.rulings, decisions: g.decisions, kept, recordPath, exec,
     // The work goes into the project here, so the platform can start
     // building it while the record is written.

@@ -18,7 +18,8 @@
  * sentences. It proposes; the human accepts, and nothing is ground until
  * they do.
  */
-import { RoundDeps, runReadRound, volumeDeps } from "./round";
+import { jsonSchemaOf, readAnswer, RoundDeps, runReadRound, volumeDeps } from "./round";
+import { z } from "zod";
 
 export interface ProposedModel {
   subjects: {
@@ -146,29 +147,39 @@ function asString(v: unknown): string {
   return typeof v === "string" ? v.trim() : "";
 }
 
-/** Parse the model reply. Fail-soft: junk yields nothing, never a throw. */
+/** The shape the reading round answers in. */
+const ModelAnswer = z.object({
+  subjects: z.array(
+    z.object({
+      name: z.string(),
+      from: z.array(z.number()).optional(),
+      claims: z.array(
+        z.object({
+          text: z.string(),
+          why: z.string().optional(),
+          from: z.number(),
+          quote: z.string().optional(),
+          mention: z.string().optional(),
+          replaces: z.string().optional(),
+        }),
+      ),
+    }),
+  ),
+});
+
+/** Read the round's answer. Fail-soft: junk yields nothing, never a throw. */
 function parseModel(raw: string | null, count: number): ProposedModel | undefined {
-  if (!raw) return undefined;
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start < 0 || end <= start) return undefined;
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return undefined;
-  }
-  const inRange = (n: unknown): number | undefined =>
-    typeof n === "number" && n >= 1 && n <= count ? n : undefined;
+  const parsed = readAnswer(ModelAnswer, raw);
+  if (!parsed) return undefined;
+  const inRange = (n: number | undefined): number | undefined =>
+    n !== undefined && n >= 1 && n <= count ? n : undefined;
 
   const subjects: ProposedModel["subjects"] = [];
-  for (const s of Array.isArray(parsed.subjects) ? parsed.subjects : []) {
-    const rec = (s ?? {}) as Record<string, unknown>;
+  for (const rec of parsed.subjects) {
     const name = asString(rec.name);
     if (!name) continue;
     const claims: ProposedModel["subjects"][number]["claims"] = [];
-    for (const c of Array.isArray(rec.claims) ? rec.claims : []) {
-      const cr = (c ?? {}) as Record<string, unknown>;
+    for (const cr of rec.claims) {
       const text = asString(cr.text);
       const from = inRange(cr.from);
       if (!text || from === undefined) continue;
@@ -189,13 +200,9 @@ function parseModel(raw: string | null, count: number): ProposedModel | undefine
       });
     }
     if (!claims.length) continue;
-    const from = (Array.isArray(rec.from) ? rec.from : [])
-      .map(inRange)
-      .filter((n): n is number => n !== undefined);
+    const from = (rec.from ?? []).map(inRange).filter((n): n is number => n !== undefined);
     subjects.push({ name, claims, from: from.length ? from : claims.map((c) => c.from) });
   }
-
-
   return subjects.length ? { subjects } : undefined;
 }
 
@@ -217,6 +224,9 @@ export async function solveModel(
   map = "",
 ): Promise<ProposedModel | undefined> {
   if (!sentences.length) return undefined;
-  const raw = await round(volumeDeps(deps), buildModelPrompt(sentences, map)).catch(() => null);
+  const raw = await round(
+    { ...volumeDeps(deps), schema: jsonSchemaOf(ModelAnswer) },
+    buildModelPrompt(sentences, map),
+  ).catch(() => null);
   return parseModel(raw, sentences.length);
 }

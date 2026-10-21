@@ -32,6 +32,9 @@ interface ThinkubeContainer {
   /** The CI test hook: run `command` in `image`, before the build; `one`
    *  runs a single test file, `<file>` relative to the build directory. */
   test?: ThinkubeTest;
+  /** The path the running container answers a health probe at, such as
+   *  "/health" — where a deploy is seen to have gone live. */
+  health?: string;
 }
 
 /** A path of the deployed address, and the container that answers it. */
@@ -81,6 +84,48 @@ export interface ThinkubeDeploy {
   /** Where the result can be seen once it is live, so the look has an
    *  address instead of a guess assembled from the directory name. */
   at?: string;
+  /** The repository's live checks: what only the running service at `at`
+   *  can answer, checked against it once it is live. */
+  live?: ThinkubeLive;
+}
+
+/**
+ * Where a repository keeps its live checks, and how one of them runs.
+ *
+ * A live check exercises the deployed service through its public API, so
+ * it needs the network and a deploy behind it: it never runs in the unit
+ * suite or an image build, only after the work is live.
+ */
+export interface ThinkubeLive {
+  /** Repository-relative directory the live checks are minted in,
+   *  "/"-separated, never the repository root. */
+  home: string;
+  /** The command that runs one live check; `<file>` is its
+   *  repository-relative path. */
+  one: string;
+}
+
+/** The `live` block as written, or why it cannot be used. Both fields are
+ *  required: without `home` a check has nowhere to be minted, and without
+ *  `one` nothing can run it. */
+function liveOf(v: unknown): { live: ThinkubeLive } | { refused: string } {
+  // `live:` written with nothing under it is a block with both fields missing.
+  if (v !== null && (typeof v !== "object" || Array.isArray(v)))
+    return { refused: "spec.deploy.live must be a mapping with `home` and `one`" };
+  const { home, one } = (v ?? {}) as { home?: unknown; one?: unknown };
+  const lacks = [
+    ...(typeof home === "string" && home.trim() ? [] : ["`home` (the directory of live checks, repository-relative)"]),
+    ...(typeof one === "string" && one.trim() ? [] : ["`one` (the command that runs one live check, with <file> for its path)"]),
+  ];
+  if (lacks.length) return { refused: `spec.deploy.live declares no ${lacks.join(" and no ")}` };
+  const h = rootOf((home as string).trim());
+  if (path.posix.isAbsolute(h) || h === ".." || h.startsWith("../"))
+    return { refused: `spec.deploy.live.home \`${home as string}\` is not inside the repository` };
+  if (h === ".")
+    return { refused: "spec.deploy.live.home is the repository root — name a directory of its own, such as `live`" };
+  if (!(one as string).includes("<file>"))
+    return { refused: "spec.deploy.live.one does not contain <file>, so it cannot be told which live check to run" };
+  return { live: { home: h, one: (one as string).trim() } };
 }
 
 /**
@@ -116,6 +161,8 @@ export interface ThinkubeVerify {
 export interface ThinkubeDeclaration {
   /** `app`, `knative`, `component`, or `none` when the platform does not deploy it. */
   deploymentType: string;
+  /** `spec.deployment.name`: the app the platform deploys it as. */
+  name?: string;
   containers: ThinkubeContainer[];
   /** Which container answers at which path of the address. The one that
    *  answers at the root serves the pages a person opens. */
@@ -126,6 +173,9 @@ export interface ThinkubeDeclaration {
   verify?: ThinkubeVerify;
   /** Where documentation lands, as declared; absent means the default. */
   docsRoot?: string;
+  /** `metadata.version`: the release this tree says it is, which its
+   *  newest `v` tag must name. */
+  version?: string;
 }
 
 /** A path as the repository writes it, normalised: "./backend" is "backend", "." stays. */
@@ -179,16 +229,18 @@ export function thinkubeDeclaration(
   }
   try {
     const doc = parseYaml(raw) as {
+      metadata?: { version?: unknown };
       spec?: {
-        deployment?: { type?: string };
+        deployment?: { type?: string; name?: unknown };
         parts?: { name?: string; root?: string; test?: { enabled?: boolean; command?: string; image?: string; one?: string } }[];
         docs?: { root?: unknown };
-        deploy?: { run?: unknown; in?: unknown; at?: unknown };
+        deploy?: { run?: unknown; in?: unknown; at?: unknown; live?: unknown };
         verify?: { still?: unknown; apply?: unknown; ask?: unknown; settled?: unknown };
         containers?: {
           name?: string;
           build?: string;
           test?: { enabled?: boolean; command?: string; image?: string; one?: string };
+          health?: unknown;
         }[];
         routes?: { path?: string; to?: string }[];
       };
@@ -197,7 +249,8 @@ export function thinkubeDeclaration(
       .filter((c) => typeof c?.name === "string" && typeof c?.build === "string")
       .map((c) => {
         const test = testOf(c.test);
-        return { name: c.name as string, build: c.build as string, ...(test ? { test } : {}) };
+        const health = typeof c.health === "string" && c.health.trim() ? c.health.trim() : undefined;
+        return { name: c.name as string, build: c.build as string, ...(test ? { test } : {}), ...(health ? { health } : {}) };
       });
     const routes: ThinkubeRoute[] = (doc?.spec?.routes ?? [])
       .filter((r) => typeof r?.path === "string" && typeof r?.to === "string")
@@ -212,13 +265,27 @@ export function thinkubeDeclaration(
       typeof doc?.spec?.docs?.root === "string" && doc.spec.docs.root.trim() ? rootOf(doc.spec.docs.root) : undefined;
     const d = doc?.spec?.deploy;
     const run = lines(d?.run);
+    const live = d && Object.prototype.hasOwnProperty.call(d, "live") ? liveOf(d.live) : undefined;
+    if (live && "refused" in live) return { unreadable: `thinkube.yaml ${live.refused}` };
+    if (live && !(typeof d?.at === "string" && d.at.trim()))
+      return { unreadable: "thinkube.yaml spec.deploy.live needs spec.deploy.at, the address its live checks run against" };
     const deploy: ThinkubeDeploy | undefined = d
       ? {
           run,
           ...(typeof d.in === "string" && d.in.trim() ? { in: d.in.trim() } : {}),
           ...(typeof d.at === "string" && d.at.trim() ? { at: d.at.trim() } : {}),
+          ...(live ? { live: live.live } : {}),
         }
       : undefined;
+    const declaredName = doc?.spec?.deployment?.name;
+    const appName = typeof declaredName === "string" && declaredName.trim() ? declaredName.trim() : undefined;
+    const declaredVersion = doc?.metadata?.version;
+    const version =
+      typeof declaredVersion === "string" && declaredVersion.trim()
+        ? declaredVersion.trim()
+        : typeof declaredVersion === "number"
+          ? String(declaredVersion)
+          : undefined;
     const v = doc?.spec?.verify;
     const verify: ThinkubeVerify | undefined = v
       ? {
@@ -231,15 +298,32 @@ export function thinkubeDeclaration(
     return {
       declared: {
         deploymentType: doc?.spec?.deployment?.type ?? "app",
+        ...(appName ? { name: appName } : {}),
         containers,
         routes,
         parts,
         ...(deploy ? { deploy } : {}),
         ...(verify ? { verify } : {}),
         ...(docsRoot ? { docsRoot } : {}),
+        ...(version ? { version } : {}),
       },
     };
   } catch (e) {
     return { unreadable: `thinkube.yaml exists but does not parse: ${(e as Error).message}` };
   }
+}
+
+/**
+ * Whether the platform's pipeline builds this repository's images: the
+ * platform deploys it (its type is not `none`) and it declares containers,
+ * which each push builds and tests in the cluster with the resources the
+ * declaration names. Such a repository's product is judged by that
+ * pipeline, never by a build run beside the editor. A declaration that
+ * cannot be read throws in its own words.
+ */
+export function imagesBuiltByPlatform(repoRoot: string): boolean {
+  const read = thinkubeDeclaration(repoRoot);
+  if (!read) return false;
+  if ("unreadable" in read) throw new Error(read.unreadable);
+  return read.declared.deploymentType !== "none" && read.declared.containers.length > 0;
 }

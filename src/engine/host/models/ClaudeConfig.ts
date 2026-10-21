@@ -42,6 +42,7 @@ export interface ClaudeConfig {
   skillsDir: string; // .claude/skills/
   agentsDir: string; // .claude/agents/
   rulesDir: string; // .claude/rules/
+  workflowsDir: string; // .claude/workflows/
   outputStylesDir: string; // .claude/output-styles/
 }
 
@@ -66,6 +67,7 @@ export function createDefaultConfig(basePath: string): ClaudeConfig {
     skillsDir: `${claudeDir}/skills`,
     agentsDir: `${claudeDir}/agents`,
     rulesDir: `${claudeDir}/rules`,
+    workflowsDir: `${claudeDir}/workflows`,
     outputStylesDir: `${claudeDir}/output-styles`,
   };
 }

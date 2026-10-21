@@ -5,13 +5,20 @@
 
 /**
  * One SDK worker executing one execution unit inside the TEP worktree.
- * Footprint containment is the engine's doctrine re-hosted: a PostToolUse
- * check diffs the whole tree against the run's footprint union, reverts
- * ONLY offending paths, and fails the unit with containment named. A
- * parked worker (the NEEDS-INPUT sentinel) keeps its session alive while
- * the human answers through the run view — the oracle lesson's door.
+ * The footprint is enforced by the harness: it is passed as allow rules,
+ * a file tool naming a path outside them comes to the door, and the door
+ * asks the run (src/run/footprintRules.ts). The shell names no path, so a
+ * file a command writes is still found in the tree afterwards: a
+ * PostToolUse check restores ONLY offending paths, and fails the unit
+ * with containment named on the second offence. A worker's question is a
+ * tool call (AskUserQuestion) the door carries to the run and answers in
+ * the same session; the engine's brief still names the NEEDS-INPUT
+ * sentinel, and a final message carrying it parks the unit the old way.
+ * A stop whose summary says nothing of what was left undone is refused
+ * (src/run/exitProtocol.ts).
  */
 import { theModel } from "../engine/theModel";
+import type { RoundPulse } from "../derive/round";
 import { workerEnv } from "./oracle";
 import { execFile } from "node:child_process";
 import { extractNeedsInput } from "../engine/core/preflight";
@@ -20,6 +27,11 @@ import { rtkRewrite } from "../engine/rtkRewrite";
 import { clearanceLesson, refusedToolUse, toolsRefusedTo, clusterReach } from "./toolsAllowed";
 export { clearanceLesson, refusedToolUse, toolsRefusedTo, FENCED_TOOLS } from "./toolsAllowed";
 import { describeTool } from "./toolsAllowed";
+import { CHALLENGE_TOOL_TEXT } from "./challengeBudget";
+import { allowedFor, doorFor, pathsNamedByTool, toolsGivenTo } from "./footprintRules";
+export { pathsNamedByTool } from "./footprintRules";
+import { stopRefusal } from "./exitProtocol";
+import { agentDefinitionOf, isOwn, roleDefinition, roleNameFor, type Role, type RoleName } from "./roles";
 
 export interface WorkerOutcome {
   ok: boolean;
@@ -29,13 +41,31 @@ export interface WorkerOutcome {
   /** The session this unit was worked in, so a repair can be the NEXT
    *  message in it rather than a stranger with a summary. */
   sessionId?: string;
+  /** Read, Glob and Grep tool uses in this session: what it spent finding
+   *  its way around the code. */
+  reads?: number;
+  /** Edit, Write and NotebookEdit tool uses in this session. */
+  writes?: number;
+  /** Tool calls that failed to run at all, with the tool's own words: a
+   *  missing binary, a timeout, a server that did not answer. An
+   *  environment's failures, named at the moment they happened, never a
+   *  verdict on the work. */
+  toolFailures?: { tool: string; error: string }[];
+  /** What this round cost, in US dollars, as the harness reported it. */
+  costUsd?: number;
 }
+
+/** Tools that only look at the code. */
+const LOOKING_TOOLS = new Set(["Read", "Glob", "Grep"]);
+/** Tools that change a file and name it. */
+const FILE_WRITING_TOOLS = new Set(["Edit", "Write", "NotebookEdit"]);
 
 export interface RunWorkerDeps {
   model: string;
   worktree: string;
   role: "code" | "test";
-  /** What this unit is cleared to change; anything else is restored. */
+  /** What this unit is cleared to change: a file tool naming anything
+   *  else is refused at the door, and a shell write elsewhere is restored. */
   footprint: string[];
   /** What OTHER units in this tree are cleared to change — their writes are
    *  legitimate, not this unit's (the frontier runs in parallel). */
@@ -65,6 +95,9 @@ export interface RunWorkerDeps {
   abort: AbortController;
   onPark: (question: string, answer: (a: string) => void) => void;
   log: (line: string) => void;
+  /** Opens the run's listener on this session's stream: every event it
+   *  yields is movement, including a long stretch with no line written. */
+  pulse?: () => RoundPulse;
   /** In-loop black-box check: runs the slice's acceptance checks against the
    *  current work and returns the oracle's formatted verdict. */
   verifyTool?: () => Promise<string>;
@@ -95,13 +128,21 @@ export interface RunWorkerDeps {
    */
   unfenced?: boolean;
   maxTurns?: number;
+  /** The model the harness switches to when `model` is overloaded. */
+  fallbackModel?: string;
   /** Continue a session this run already had: the author still holds its
    *  own reasoning, so the intent behind the code survives the repair. */
   resume?: string;
+  /** With `resume`: continue a COPY of that session under a new id, so the
+   *  session resumed stays as it was for its own unit's later repair, and
+   *  two units continuing it at once never write into one transcript. */
+  fork?: boolean;
 }
 
-/** Tools whose use can leave a change on disk. */
-const WRITING_TOOLS = ["Write", "Edit", "NotebookEdit", "Bash"];
+/** Tools whose use can leave a change on disk that no rule saw: a shell
+ *  command names no path, so the footprint is read from the tree after it
+ *  ran. A file tool names its path and is ruled on before it writes. */
+const WRITING_TOOLS = ["Bash"];
 
 /**
  * The guard, as it really runs: read what the tree has become, judge it
@@ -163,25 +204,6 @@ async function changeAt(worktree: string, path: string): Promise<string> {
   return (await git(worktree, ["diff", "--no-index", "--", "/dev/null", path])).slice(0, 8000);
 }
 
-/**
- * The repository-relative paths a tool call named, when it named any.
- *
- * `Write` and `Edit` carry `file_path`, `NotebookEdit` carries
- * `notebook_path` — each an absolute path into the worktree. `Bash` names
- * nothing: a shell command can write anywhere, so there is nothing to
- * narrow by and the guard falls back to reading the tree.
- */
-export function pathsNamedByTool(
-  h: { tool_name?: string; tool_input?: Record<string, unknown> },
-  worktree: string,
-): string[] {
-  const named = ["file_path", "notebook_path"]
-    .map((k) => h.tool_input?.[k])
-    .filter((v): v is string => typeof v === "string" && !!v);
-  const root = worktree.endsWith("/") ? worktree : `${worktree}/`;
-  return named.map((p) => (p.startsWith(root) ? p.slice(root.length) : p));
-}
-
 /** The dirty paths this tool call is answerable for. A call that named its
  *  path answers for that alone; a shell command named none, so the tree is
  *  all there is to go on. */
@@ -207,28 +229,6 @@ async function outsideClearance(
     deps.baseline,
   );
 }
-
-/**
- * What the worker is told the first time it writes outside its clearance.
- *
- * The tree is already safe — the file was restored before this is read.
- * What is left is a worker that believes it has made a change it has not,
- * and the brief's own rule is what it needs: the clearance is asked for,
- * and only then made. A unit once read "the run clears you and you make
- * the change yourself", kept the conclusion, dropped the asking, and died
- * for a single correct line it was entitled to write.
- *
- * So the first one teaches. Killing the unit there discards everything it
- * built for a change the run would almost certainly have granted, and the
- * guard has every fact needed to say so instead.
- */
-
-
-
-
-
-
-
 
 const git = (cwd: string, args: string[]): Promise<string> =>
   new Promise((resolve) => {
@@ -294,6 +294,21 @@ export async function runUnitWorker(
 ): Promise<WorkerOutcome> {
   let query: SdkQuery;
   let mcpServers: Record<string, unknown> | undefined;
+  // Who this session runs as: the role's file, the repository's own when
+  // it has one. Read before the model is reached, so a role that cannot be
+  // read is the unit's failure, named, and never a worker running as nobody.
+  const roleName: RoleName = roleNameFor(deps);
+  let role: Role;
+  try {
+    role = roleDefinition(roleName, deps.worktree);
+    if (isOwn(role)) deps.log(`as ${roleName}, in the repository's own words (${role.from})`);
+  } catch (err) {
+    return {
+      ok: false,
+      finalText: "",
+      undelivered: [`the role ${roleName} could not be read: ${err instanceof Error ? err.message : String(err)}`],
+    };
+  }
   try {
     const mod = (await theModel("the unit worker")) as {
       query: SdkQuery;
@@ -333,7 +348,7 @@ export async function runUnitWorker(
               ? [
                   mod.tool(
                     "challenge",
-                    "Challenge ONE check you believe misreads its criterion or cannot be satisfied by any correct implementation. Argue in intent terms with your verify evidence — you will never see the check's source. An independent judge rules; granted, the check is re-authored from its criterion and the ruling is recorded on the delivery; denied, meet it. Do not grind a red check when you believe it is wrong — file this instead. Budget: 2 per slice.",
+                    CHALLENGE_TOOL_TEXT,
                     { check: z.number(), argument: z.string() },
                     async (args: Record<string, unknown>) => ({
                       content: [
@@ -378,6 +393,13 @@ export async function runUnitWorker(
   /** The first uncleared write teaches; the second ends the unit. */
   let warned = false;
   let sessionId: string | undefined;
+  let reads = 0;
+  let writes = 0;
+  /** Stops refused for want of a report, so a worker is never made to loop. */
+  let stopsRefused = 0;
+  const toolFailures: { tool: string; error: string }[] = [];
+  let costUsd: number | undefined;
+  const listening = deps.pulse?.();
   try {
     const stream = query({
       prompt: input(),
@@ -387,16 +409,81 @@ export async function runUnitWorker(
         // A worker's environment carries no credential and no way into the
         // cluster; what a check needs, the runner is given by the engine.
         env: workerEnv(),
-        ...(deps.resume ? { resume: deps.resume } : {}),
-        permissionMode: "bypassPermissions",
+        ...(deps.resume ? { resume: deps.resume, ...(deps.fork ? { forkSession: true } : {}) } : {}),
+        // A fenced worker is ruled on before it writes: the footprint is
+        // its allow rules, and a file tool naming anything else comes to
+        // the door. The closer is fenced by nothing (see `unfenced`).
+        permissionMode: deps.unfenced ? "bypassPermissions" : "default",
+        tools: toolsGivenTo(deps),
+        ...(deps.unfenced
+          ? {}
+          : {
+              allowedTools: allowedFor(deps),
+              canUseTool: doorFor({
+                worktree: deps.worktree,
+                footprint: () => deps.footprint,
+                ...(deps.clearFor ? { clearFor: deps.clearFor } : {}),
+                granted: (paths) => {
+                  deps.footprint = [...new Set([...deps.footprint, ...paths])];
+                },
+                // A question parks the unit until the run answers, and the
+                // answer is the tool's result in this same session.
+                ask: (question) => new Promise<string>((resolve) => deps.onPark(question, resolve)),
+                log: deps.log,
+              }),
+            }),
+        // The worker's whole world is the brief and the tree. The person's
+        // own settings, hooks, instruction files and MCP servers belong to
+        // the person's sessions: a worker that inherits them is told to
+        // push, runs the person's hooks, and can call the platform and
+        // Tandem's own person-only tools under bypassPermissions.
+        settingSources: [],
+        strictMcpConfig: true,
         thinking: { type: "disabled" },
-        maxTurns: deps.maxTurns ?? 80,
+        // The session runs AS its role: the role's words are its system
+        // prompt, and the brief is what it is asked to do.
+        agent: roleName,
+        agents: { [roleName]: agentDefinitionOf(role) },
+        maxTurns: deps.maxTurns ?? role.maxTurns ?? 80,
+        ...(deps.fallbackModel ? { fallbackModel: deps.fallbackModel } : {}),
         abortController: deps.abort,
+        ...(listening ? { includePartialMessages: true } : {}),
         ...(mcpServers ? { mcpServers } : {}),
         // A tool that moves the session's working directory would let a
         // relative write land outside the footprint: none of those, ever.
         disallowedTools: toolsRefusedTo(deps),
         hooks: {
+          // A stop is refused while the summary says nothing of what was
+          // left undone: the report is written in the same session, not
+          // reconstructed from an incomplete one afterwards.
+          Stop: [
+            {
+              hooks: [
+                async (h: { last_assistant_message?: string }) => {
+                  const why = stopRefusal(h.last_assistant_message, stopsRefused);
+                  if (!why) return {};
+                  stopsRefused++;
+                  deps.log(`↩ the unit stopped without saying what was left undone — asked to report`);
+                  return { decision: "block", reason: why };
+                },
+              ],
+            },
+          ],
+          // A tool that could not run is the environment's failure, named
+          // as it happens with the tool's own words; it is never read later
+          // as the worker's.
+          PostToolUseFailure: [
+            {
+              hooks: [
+                async (h: { tool_name?: string; error?: string }) => {
+                  const error = (h.error ?? "").trim().slice(0, 400);
+                  toolFailures.push({ tool: h.tool_name ?? "tool", error });
+                  deps.log(`✗ ${h.tool_name ?? "a tool"} could not run — ${error.split("\n")[0]}`);
+                  return {};
+                },
+              ],
+            },
+          ],
           PreToolUse: [
             {
               hooks: [
@@ -439,8 +526,8 @@ export async function runUnitWorker(
               hooks: [
                 async (h: { tool_name?: string; tool_input?: Record<string, unknown> }) => {
                   if (deps.unfenced || !WRITING_TOOLS.includes(h.tool_name ?? "")) return {};
-                  // What THIS call wrote, when the tool said so. A shell
-                  // command names no path, so there the tree is all there is.
+                  // A shell command names no path, so the tree is all
+                  // there is to go on.
                   const wrote = pathsNamedByTool(h, deps.worktree);
                   const wanted = await outsideClearance(deps, wrote);
                   if (wanted.length && deps.clearFor) {
@@ -474,6 +561,7 @@ export async function runUnitWorker(
       },
     });
     for await (const msg of stream) {
+      listening?.heard();
       const rec = msg as Record<string, unknown>;
       if (typeof rec.session_id === "string") sessionId = rec.session_id;
       if (rec.type === "assistant") {
@@ -487,9 +575,14 @@ export async function runUnitWorker(
             for (const line of b.text.split("\n").map((l) => l.trim()).filter(Boolean))
               deps.log(line);
           }
-          if (b.type === "tool_use") deps.log(`⚙ ${describeTool(b)}`);
+          if (b.type === "tool_use") {
+            deps.log(`⚙ ${describeTool(b)}`);
+            if (LOOKING_TOOLS.has(String(b.name))) reads++;
+            if (FILE_WRITING_TOOLS.has(String(b.name))) writes++;
+          }
         }
       } else if (rec.type === "result") {
+        if (typeof rec.total_cost_usd === "number") costUsd = rec.total_cost_usd;
         const turn = typeof rec.result === "string" ? rec.result : text;
         const q = extractNeedsInput(turn);
         if (q && !parkedOnce) {
@@ -508,7 +601,7 @@ export async function runUnitWorker(
     }
   } catch (err) {
     if (containment)
-      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}) };
+      return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}), ...(costUsd !== undefined ? { costUsd } : {}) };
     return {
       ok: false,
       finalText: text,
@@ -516,15 +609,22 @@ export async function runUnitWorker(
         `worker errored: ${err instanceof Error ? err.message : String(err)}`,
       ],
       ...(sessionId ? { sessionId } : {}),
+      reads,
+      writes,
     };
+  } finally {
+    listening?.ended();
   }
-  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}) };
+  if (containment) return { ok: false, finalText: text, containment: true, ...(sessionId ? { sessionId } : {}), reads, writes, ...(toolFailures.length ? { toolFailures } : {}), ...(costUsd !== undefined ? { costUsd } : {}) };
   const undelivered = realUndelivered(text);
   return {
     ok: undelivered.length === 0,
     finalText: text,
     ...(undelivered.length ? { undelivered } : {}),
     ...(sessionId ? { sessionId } : {}),
+    reads,
+    writes,
+    ...(toolFailures.length ? { toolFailures } : {}), ...(costUsd !== undefined ? { costUsd } : {}),
   };
 }
 

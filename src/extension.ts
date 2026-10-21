@@ -13,6 +13,8 @@ import { catchUpOnMergedWork } from "./surfaces/runGate";
 import * as vscode from "vscode";
 import * as path from "node:path";
 import { startRunElsewhere } from "./run/spawnDriver";
+import { spendSettings } from "./run/spendSettings";
+import { checkReadiness, readinessNow } from "./run/readiness";
 import { harvestOwnRepairs } from "./engine/selfDefects";
 import { TandemSession } from "./surfaces/session";
 import { SpacePanel } from "./surfaces/panel";
@@ -22,7 +24,7 @@ import { appendDefect } from "./engine/defectLog";
 import { thinkubeDeclaration } from "./core/thinkubeYaml";
 import { configureDocsRoots, docsRootsOf } from "./core/docsDuty";
 import { followFor } from "./hostui/storeWatch";
-import { registerServer } from "./hostui/mcpRegister";
+import { retireServerRegistration } from "./hostui/mcpRegister";
 import { createProduct, EnabledProject, listProducts, setCardProduct } from "./core/identity";
 import { ProductItem, ProjectsTreeProvider } from "./hostui/projectsTree";
 import { activeOwnerKey, forgetProjects, openProjects, rememberedProject } from "./hostui/whichProject";
@@ -65,8 +67,13 @@ const sessions = new Map<string, TandemSession>();
 const lastChangeMs = new Map<string, number>();
 
 let statusBar: vscode.StatusBarItem | undefined;
+/** The Configuration view, scoped to the repository Tandem works on. */
+let configTree: ConfigTreeProvider | undefined;
 
 function updateStatusBar(project: EnabledProject | undefined): void {
+  // The Configuration view follows the same choice: the repository Tandem
+  // works on is the one whose .claude it shows.
+  configTree?.setSelectedRepo(project ? { path: project.gitRoot, name: project.card.label } : undefined);
   if (!statusBar) return;
   statusBar.text = project
     ? `$(repo) Tandem: ${project.card.product ? `${project.card.product} / ` : ""}${project.card.label}`
@@ -205,10 +212,23 @@ async function ensureSession(
       workerModel: config.get<string>("workerModel", "sonnet"),
       workerModelByRole: config.get<Record<string, string>>("workerModelByRole", {}),
     },
+    spend: spendSettings(config),
     maxConcurrent: config.get<number>("maxConcurrent", 4),
     docsGateMode: config.get<"blocking" | "advisory">("docsGateMode", "blocking"),
     nextTepNumber: () => nextTepNumber(storeRoot, project.card.id, author),
     onChanged: (message) => pushActive(context, sessionKey, message),
+    readiness: async (reading) => [
+      await checkReadiness({
+        repoRoot: bound.gitRoot,
+        home: { storeRoot, repoId: project.card.id },
+        log: (l) => pushActive(context, sessionKey, l),
+        ...(reading ? { reading } : {}),
+      }),
+    ],
+    readinessKept: () => {
+      const kept = readinessNow({ storeRoot, repoId: project.card.id }, bound.gitRoot);
+      return kept ? [kept] : [];
+    },
     // A run is a process of its own, so reloading this window does not end
     // it; the session follows the record the driver writes.
     runElsewhere: async ({ fresh }) =>
@@ -225,7 +245,9 @@ async function ensureSession(
   sessions.set(sessionKey, s);
   // What the platform did with work merged earlier — a verdict this window
   // was not open to hear. Asked once, on the way in.
-  void catchUpOnMergedWork(s).catch(() => undefined);
+  void catchUpOnMergedWork(s).catch((e: unknown) =>
+    s.changed(`what the platform did with merged work could not be asked: ${e instanceof Error ? e.message : String(e)}`),
+  );
   // The space follows what is written to it, whoever wrote: a server
   // acting on the person's behalf, or a run started outside this window.
   followFor(vscode, watches, sessionKey, {
@@ -257,7 +279,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   // The server that drives a space from outside this window is part of the
   // product, so the product keeps its own registration correct.
-  registerServer(context.globalStorageUri.fsPath);
+  retireServerRegistration(context.globalStorageUri.fsPath);
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusBar.command = "thinkube-tandem.switchProject";
   statusBar.tooltip = "Switch the repository or project Tandem works on";
@@ -313,13 +335,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // else the user's home (a neutral seed until a repository is chosen).
   const seedPath = rememberedProject(context)?.gitRoot ?? process.env.HOME ?? "/";
   const configService = new ClaudeConfigService(seedPath);
-  const configTree = new ConfigTreeProvider(configService);
+  configTree = new ConfigTreeProvider(configService);
   const configView = vscode.window.createTreeView("claudeConfigTree", {
     treeDataProvider: configTree,
     showCollapseAll: true,
   });
   context.subscriptions.push(configView);
   initActiveContext({ configService, treeProvider: configTree, statusBarItem: statusBar });
+  // Scoped to the remembered repository from the first paint.
+  updateStatusBar(rememberedProject(context));
   configService.onConfigChanged(() => {
     void updateConfigContext();
   });

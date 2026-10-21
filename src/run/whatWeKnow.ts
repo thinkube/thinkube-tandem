@@ -25,20 +25,56 @@ import { factsOf, rememberWhatHeld, type RepositoryFacts } from "./facts";
 import { missing, provisional, type Proved } from "./proved";
 import { downstreamOf, partsOf } from "./survey";
 import { partsDeclared, thinkubeDeclaration } from "../core/thinkubeYaml";
+import { singleCheckFor } from "./plainRunOne";
+import { setupFactsOf, takeSetupProof, type SetupProof } from "./setupProof";
 
 /**
  * Each declared part's own single-test command, as `thinkube.yaml` says it:
  * `test.one` with `<file>` relative to the part's root. Declared beats
- * guessed, so a part that says how one test runs is never inferred.
+ * guessed, so a part that says how one test runs is never inferred. A part
+ * built from "." is the whole repository: its command is keyed ".".
  */
 export function declaredPartCommands(repoRoot: string): Record<string, { runOne: string; suite?: string }> {
   const d = thinkubeDeclaration(repoRoot);
   if (!d || !("declared" in d)) return {};
   const out: Record<string, { runOne: string; suite?: string }> = {};
   for (const p of partsDeclared(d.declared))
-    if (p.root !== "." && p.test?.one)
-      out[p.root] = { runOne: p.test.one, ...(p.test.command ? { suite: p.test.command } : {}) };
+    if (p.test?.one) out[p.root] = { runOne: p.test.one, ...(p.test.command ? { suite: p.test.command } : {}) };
   return out;
+}
+
+/**
+ * What the declaration tells the door, in the door's terms.
+ *
+ * "." has one meaning: the whole repository. A check no deeper part owns is
+ * run by the repository-wide command, so a part built from "." that says how
+ * one of its tests runs IS that command, and its suite command is the
+ * repository's suite. The other parts keep their own commands. When parts
+ * declare commands and "." declares none, nothing repository-wide is wanted.
+ */
+export function toldByDeclaration(repoRoot: string): {
+  parts?: Record<string, { runOne: string; suite?: string }>;
+  runOne?: string;
+  suite?: string;
+} {
+  const { ".": wide, ...parts } = declaredPartCommands(repoRoot);
+  const owned = Object.keys(parts).length > 0;
+  return {
+    ...(owned ? { parts } : {}),
+    ...(wide ? { runOne: wide.runOne } : owned ? { runOne: "" } : {}),
+    ...(wide?.suite ? { suite: wide.suite } : {}),
+  };
+}
+
+/**
+ * What an earlier run proved, under what the repository declares now. A
+ * remembered suite that is not the declared one gives way to it, so the
+ * door proves the declared suite instead of taking the remembered one.
+ */
+export function knownUnderDeclaration<K extends { suite?: string }>(known: K | undefined, suite: string | undefined): K | undefined {
+  if (!known || !suite || known.suite === undefined || known.suite === suite) return known;
+  const { suite: _remembered, ...rest } = known;
+  return rest as K;
 }
 import type { DispatchDeps } from "./deps";
 import type { Cut, Space } from "../core/schema";
@@ -80,6 +116,54 @@ export function canJudgeOne(
   return Object.values(ready.parts ?? {}).some((p) => !!p.runOne);
 }
 
+/**
+ * The single-test command the door proves first: the repository's plain
+ * runner when it has one, else the declared command, else the told one. A
+ * declaration whose parts own every command declares "" for the whole
+ * repository, and that "" stands.
+ */
+export function firstSingleCheck(
+  plainRunOne: string | undefined,
+  declared: { runOne?: string },
+  told: string | undefined,
+): string | undefined {
+  return plainRunOne || ("runOne" in declared ? declared.runOne : told) || undefined;
+}
+
+/** Readiness's proof of the setup, when the door may take it; the log says
+ *  which, and why not. */
+async function provedByReadiness(
+  a: { deps: DispatchDeps; worktree: string; resumed: boolean; exec: Parameters<typeof openTheDoor>[0]["exec"]; log: (line: string) => void },
+  plainRunOne: string | undefined,
+  declared: { runOne?: string },
+): Promise<SetupProof | undefined> {
+  const { deps } = a;
+  const read = await a.exec("git", ["-C", a.worktree, "rev-parse", "HEAD"], a.worktree);
+  if (read.code !== 0) throw new Error(`git could not name the run tree's HEAD: ${read.out.trim().slice(0, 300)}`);
+  const head = read.out.trim();
+  const runOne = firstSingleCheck(plainRunOne, declared, deps.told?.runOne);
+  const answer = takeSetupProof(deps.setupProven!(deps.repoRoot), {
+    head,
+    facts: setupFactsOf(deps.repoRoot),
+    told: {
+      ...(deps.told?.provision ? { provision: deps.told.provision } : {}),
+      ...(deps.told?.prepare ? { prepare: deps.told.prepare } : {}),
+      ...(deps.told?.build ? { build: deps.told.build } : {}),
+      ...(runOne ? { runOne } : {}),
+    },
+    resumed: a.resumed,
+  });
+  if ("why" in answer) {
+    a.log(`proving the setup on this tree: ${answer.why}`);
+    return undefined;
+  }
+  a.log(
+    `readiness proved the setup of ${head.slice(0, 8)} on an untouched copy with these setup facts — the door takes its proof ` +
+      `of the build, the single-test command and the suite; it only installs and builds this tree for the workers`,
+  );
+  return answer.take;
+}
+
 export async function whatWeKnow(a: {
   deps: DispatchDeps;
   worktree: string;
@@ -102,10 +186,35 @@ export async function whatWeKnow(a: {
   // them can act on.
   const moved = await groundThatMoved({ worktree: a.worktree, space: a.space, cut: a.cut });
   if (moved.length) return { ok: false, refusal: regroundingNeeded(moved) };
+  // What the repository declares beats what was read or remembered: each
+  // part's own command, and the whole repository's when a part is built
+  // from ".". When parts declare commands and "." does not, nothing
+  // repository-wide is told: a guessed wide command that no test outside a
+  // part can prove was carried anyway, and every check that fell to it ran
+  // with the wrong part's runner.
+  const declared = toldByDeclaration(deps.repoRoot);
   // What this repository already proved about itself, in an earlier run.
   // Candidates, not facts: the door runs each one again here, so a file
   // somebody edited by hand fails now rather than at a judgement.
-  const known: RepositoryFacts | undefined = factsOf(deps.repoRoot);
+  const known: RepositoryFacts | undefined = knownUnderDeclaration(factsOf(deps.repoRoot), declared.suite);
+  // The declared single-check command runs in the pipeline's fresh
+  // container, so it may install again on every check. The door installs
+  // once per tree, and the repository's own facts may name the plain runner.
+  const single = declared.runOne
+    ? singleCheckFor({
+        worktree: a.worktree,
+        declared: declared.runOne,
+        ...(deps.told?.provision ? { provision: deps.told.provision } : {}),
+        ...(known?.runOne ? { facts: known.runOne } : {}),
+      })
+    : { kind: "declared" as const };
+  if (single.kind !== "declared") a.log(single.why);
+  const plainRunOne = single.kind === "plain" ? single.plain : undefined;
+  const toldOne = plainRunOne || declared.runOne || deps.told?.runOne;
+  // Readiness may have proved this same setup on this same commit already,
+  // in another process; the door then takes that proof instead of running
+  // it again (src/run/setupProof.ts).
+  const taken = deps.setupProven ? await provedByReadiness(a, plainRunOne, declared) : undefined;
   const ready = await openTheDoor({
     worktree: a.worktree,
     repoRoot: deps.repoRoot,
@@ -113,18 +222,13 @@ export async function whatWeKnow(a: {
     ...(known ? { known } : {}),
     told: {
       ...deps.told,
-      ...((): { parts?: Record<string, { runOne: string; suite?: string }>; runOne?: string } => {
-        const parts = declaredPartCommands(deps.repoRoot);
-        if (!Object.keys(parts).length) return {};
-        // Each part says how one of its tests runs, so nothing repository-
-        // wide is wanted: a guessed wide command that no test outside a
-        // part can prove was carried anyway, and every check that fell to
-        // it ran with the wrong part's runner.
-        return { parts, runOne: "" };
-      })(),
+      ...declared,
+      ...(declared.runOne ? { runOneDeclared: true } : {}),
+      ...(plainRunOne ? { plainRunOne } : {}),
       ...(deps.resetup ? { resetup: deps.resetup } : {}),
       ...(deps.proveSetup ? { proveSetup: deps.proveSetup } : {}),
     },
+    ...(taken ? { taken } : {}),
     exec: a.exec,
     boundedExec: a.boundedExec,
     log: a.log,
@@ -156,18 +260,18 @@ export async function whatWeKnow(a: {
           ? "; its declared tests run in the platform pipeline, after the merge"
           : ""),
     );
-  if (!canJudgeOne(ready, deps.told)) return { ok: false, refusal: missing("runOne") };
+  if (!canJudgeOne(ready, toldOne ? { runOne: toldOne } : undefined)) return { ok: false, refusal: missing("runOne") };
   rememberWhatHeld(deps.repoRoot, known, { ...ready, downstream }, deps.told ?? {}, new Date().toISOString());
   const runOne =
     ready.runOne ??
-    (deps.told?.runOne
+    (toldOne
       ? provisional(
-          deps.told.runOne,
+          toldOne,
           "no test exists yet to prove it on — the first check the tester writes proves it in use",
           a.log,
         )
       : partsRunOne(ready));
-  if (!ready.runOne && !deps.told?.runOne)
+  if (!ready.runOne && !toldOne)
     a.log("no repository-wide single-test command: every check runs with the command of the part it lives in");
   return {
     ok: true,

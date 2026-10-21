@@ -19,13 +19,21 @@
  */
 import * as path from "node:path";
 import { waitUntilLive } from "./goLive";
+import { waitOrStop } from "./waiting";
 import { judgeOnTheProduct, seedDrivers } from "./onTheProduct";
-import { repairUntilLive } from "./tryAgain";
 import { repairAfterTheMerge } from "./repairLive";
 import { repairWhatDidNotHold, whatDidNotHold } from "./repairOnTheProduct";
 import { landDelivery } from "./land";
 import { deployedAddress, knock, pageRoots as pageRootsOf, readLive, whyItFailed } from "./live";
 import { stampPending } from "./harvest";
+import { goLiveAndJudge, liveWhenAlreadyThere } from "./goingLive";
+import { templateGoesLive } from "./templateLive";
+import { judgeByLiveChecks, liveChecksOf } from "./liveChecks";
+import { liveSuiteDeclared } from "./liveSuite";
+import { runInShell } from "./makeLive";
+import { controlReachedBy } from "../hostui/templateCore";
+import { downstreamOf } from "./survey";
+import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { Cut, Ruling, Space } from "../core/schema";
 import type { SliceForDag } from "../engine/core/dag";
 import { pumpUnits } from "./pump";
@@ -62,11 +70,17 @@ import { runLogSink } from "./runLog";
 import { watchForStall } from "./watchdog";
 import { bindTestHomeConsumes } from "../dispatch/needs";
 import { renderTepBody } from "./briefs";
-import { clearanceStanza, coderStanza, testerStanza } from "./brief";
+import { clearanceStanza, coderStanza, exitStanza, fixturesStanza, liveCheckStanza, testerStanza } from "./brief";
+import { productionSeams, sharedFixtures } from "./seams";
+import { applyFixturePlan, commitSharedFixture, planSharedFixture, testerCode } from "./sharedFixture";
+import { testHomeStanza } from "./testHomeExamples";
 import { sliceBookkeeping } from "./plan";
 import { refusedBeforeDispatch } from "./refusals";
 import { runUnitWorker, porcelainPaths } from "./worker";
 import type { DispatchDeps } from "./deps";
+import type { RunWorkerDeps, WorkerOutcome } from "./worker";
+import { firstRoundOf, runFirstRound } from "./continuation";
+import { tallied } from "./unitReads";
 export type { DispatchDeps } from "./deps";
 import { criterionLookup } from "./criteria";
 import { closeGate } from "./gate";
@@ -181,7 +195,12 @@ export async function dispatchTep(
   // deployment from the first frame — the run's whole shape, before any of
   // it has happened.
   const pageRoots = pageRootsOf(deps.repoRoot);
-  const drivers = seedDrivers(st, space, cut, pageRoots);
+  // The live checks the repository declares take what the running service
+  // answers; the reviewers keep what a person does on the page.
+  const liveSuite = liveSuiteDeclared(deps.repoRoot);
+  const liveChecks = liveSuite ? liveChecksOf(slices, space) : [];
+  const liveFiles = new Set(liveChecks.map((c) => c.path));
+  const drivers = seedDrivers(st, space, cut, pageRoots, !!liveSuite);
 
   // Asked to start from nothing: the branch that holds the earlier run's
   // committed slices goes, so the door below cuts a fresh one from the base
@@ -236,6 +255,28 @@ export async function dispatchTep(
     refreshed.committedSlices, dag, worktree, (l) => log(`${tep}: ${l}`), deps.finishedBefore ?? [],
   );
   const standingRunOf = new Map(refreshed.committedSlices.map((c) => [c.slice, c.runId] as const));
+  // The check behind an ordinal, from the space — never from the probe.
+  const criterionOf = criterionLookup(slices, space);
+  // One shared fixture for a seam several testers of this run will double,
+  // written by the first of them before the others start.
+  const fixturePlan = planSharedFixture({
+    testers: await Promise.all(
+      dag
+        .filter((u) => u.role === "test" && !standing.has(u.slice))
+        .map(async (u) => ({
+          id: u.id,
+          footprint: u.footprint,
+          code: await testerCode(worktree, slices.find((s) => s.handle === u.slice)!),
+        })),
+    ),
+    seams: await productionSeams(worktree),
+    fixtures: await sharedFixtures(worktree),
+  });
+  if (fixturePlan) {
+    applyFixturePlan(dag, fixturePlan);
+    seedUnitViews(st, dag, slices);
+    log(`${tep}: ${fixturePlan.owner} writes the shared fixture ${fixturePlan.path} first — ${fixturePlan.waiters.join(", ")} wait for it`);
+  }
   for (const u of dag)
     if (standing.has(u.slice)) {
       done.add(u.id);
@@ -246,8 +287,6 @@ export async function dispatchTep(
 
   const briefBySlice = new Map<string, string>();
   const acting = new Map<string, { unit: string }>();
-  // The check behind an ordinal, from the space — never from the probe.
-  const criterionOf = criterionLookup(slices, space);
   const rulings: Ruling[] = [];
   const decisions: { unit: string; text: string }[] = [];
   const oracleArgs = buildOracleArgs({
@@ -260,6 +299,7 @@ export async function dispatchTep(
     commitBeforeWaiting: (id, w) => waits.door.commitBeforeWaiting(id, w),
     halted: () => st.halted,
     stop: st.stop.signal,
+    pulse: (who) => watch.round(who),
     // The audit card's own account: which criteria passed, per slice, from
     // the oracle's own verdicts — replaced whole on every re-grade.
     onGrade: (slice, results) => {
@@ -290,6 +330,13 @@ export async function dispatchTep(
   // The session each unit was worked in: a criterion red at the gate goes
   // back to the author that wrote the code, not to a stranger with a summary.
   const sessions = new Map<string, string>();
+  // The units whose recorded session was worked by a blinded coder: the
+  // only sessions a blinded coder of a later unit may continue.
+  const blindSessions = new Set<string>();
+  const isCoder = (id: string): boolean => {
+    const u = dag.find((x) => x.id === id);
+    return !!u && (u.role ?? "code") === "code" && !isMaintainUnit(u);
+  };
   const waits = runWaits({ dag, done, failed, waiting: () => waiting, live: () => liveFootprints, tree: worktree, commitUnitWork: (id, w) => commitUnitWork(id, w) });
   const wakers = (sl: string, self: string) => waits.wakers(sl, self);
   const unionFor = ownership(dag, (u) => ((u.role ?? "code") === "test" ? testerWt : worktree));
@@ -352,16 +399,35 @@ export async function dispatchTep(
       role, tree, probes: sliceProbes.get(next.slice) ?? [],
       owned: next.footprint.filter((f) => !isProbePath(f)),
     });
-    if (role !== "test") briefBySlice.set(next.slice, withNames);
+    // The brief every supervised unit was given — a coder's, or a
+    // maintainer's — is what its supervisor reads against the checks.
+    if (oracle) briefBySlice.set(next.slice, withNames);
+    // A tester's fixtures and seams are read when it starts, so a shared
+    // fixture committed before it is among those listed.
+    const ownsFixture = fixturePlan?.owner === next.id ? fixturePlan : undefined;
+    const doubles =
+      role === "test"
+        ? fixturesStanza(
+            await sharedFixtures(tree),
+            await productionSeams(tree),
+            ownsFixture
+              ? { write: ownsFixture.path, seams: ownsFixture.seams, users: [ownsFixture.owner, ...ownsFixture.waiters] }
+              : undefined,
+          ) + (await testHomeStanza(tree, next.footprint))
+        : "";
     // Each role's brief carries what it owns, read FRESH each attempt — a contract that crossed slices mid-run reaches its owner at its next attempt.
     const oracleStanza = () =>
       role === "test"
         ? testerStanza(built) +
+          doubles +
+          (liveSuite ? liveCheckStanza(next.footprint.filter((f) => liveFiles.has(f)), liveSuite.one) : "") +
           (maintain ? coderStanza(!!oracle) : "") +
-          testHomesStanza(testHomesOf(next.footprint), testHomeWorkOf(next))
+          testHomesStanza(testHomesOf(next.footprint.filter((f) => f !== ownsFixture?.path)), testHomeWorkOf(next)) +
+          exitStanza()
         : clearanceStanza(next) +
           coderStanza(!!oracle) +
-          decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text));
+          decisionsStanza(decisions.filter((d) => d.unit.startsWith(`${next.slice}#`)).map((d) => d.text)) +
+          exitStanza();
     // Dispatch-time audit: a decidable fact the brief lacks is missing at round zero.
     let disclosure = "";
     if (oracle?.preflight) {
@@ -380,30 +446,40 @@ export async function dispatchTep(
       role, tree, files: next.footprint.filter((f) => !isTestPath(f)),
       tests: (await repoTestFiles(tree)).filter((t: string) => !next.footprint.includes(t)),
     });
+    const blind = role !== "test" && !!oracle;
+    // A code unit that follows another code unit of this run continues that
+    // coder's session in its first round; every later round starts cold.
+    const start = firstRoundOf(next, {
+      coder: role === "code" && !maintain, blind, isCoder, sessions, blindSessions, failed,
+    });
+    let began = "started cold";
+    const tally = tallied(worker);
     for (let attempt = 1; attempt <= attempts && !st.halted; attempt++) {
-      let outcome = await worker(
-        {
+      const workerDeps: RunWorkerDeps = {
           model: resolveWorkerModel(
             deps.workerModel ?? { workerModel: deps.model },
             role,
           ),
           worktree: tree,
           role,
-          blind: role !== "test" && !!oracle,
+          blind,
           footprint: next.footprint,
+          ...(deps.spend?.fallbackModel ? { fallbackModel: deps.spend.fallbackModel } : {}),
           // A tester's turns scale with what it must write; a coder keeps the default.
           ...(role === "test" ? { maxTurns: testerTurns(next.footprint.length) } : {}),
           alsoAllowed: () => [...unionFor(tree, next.id)(), ...(tree === worktree ? testerPaths : [])],
           baseline,
           onRestored: (kept) => restored.push(...kept),
-          // The door, on the path that needs it. Without it the guard has no
-          // grant to consult: every write outside the footprint is restored
-          // at once, and the second one kills the unit. It was wired only to
+          // The door, on the path that needs it. Without it there is no
+          // grant to consult: every file tool outside the footprint is
+          // refused, and a shell write there is restored at once, the
+          // second one killing the unit. It was wired only to
           // the check-authoring continuation below, so no ordinary coder or
           // tester could ever be cleared for a file nobody owns — three
           // units in one run hit the fence, none was granted anything, and
           // one died for a change it was entitled to make.
           ...(oracleArgs.clearance ? { clearFor: (p: string[]) => oracleArgs.clearance!(next.slice, next.id, p) } : {}),
+          pulse: () => watch.round(next.id),
           abort,
           // A worker's question goes to the machine first; the human sees
           // only an intent-level question, in the human's words.
@@ -422,13 +498,22 @@ export async function dispatchTep(
                     st.doing(next.id, "working");
                   }
                 },
-                challengeTool: challengeFor(next.slice),
+                challengeTool: challengeFor(next.slice, () => oracle.last()?.result),
               }
             : {}),
-        },
-        brief,
-      );
-      if (outcome.sessionId) sessions.set(next.id, outcome.sessionId);
+      };
+      let outcome: WorkerOutcome;
+      if (attempt === 1) {
+        const first = await runFirstRound({ start, unit: next.id, worker: tally.worker, deps: workerDeps, brief, log: (l) => log(l, next.id) });
+        outcome = first.outcome;
+        began = first.began;
+      } else outcome = await tally.worker(workerDeps, brief);
+      if (outcome.costUsd) st.spent(next.id, outcome.costUsd);
+      if (outcome.sessionId) {
+        sessions.set(next.id, outcome.sessionId);
+        if (blind) blindSessions.add(next.id);
+        else blindSessions.delete(next.id);
+      }
       if (role === "test" && !outcome.containment)
         outcome = await finishAuthoring({
           outcome,
@@ -443,7 +528,7 @@ export async function dispatchTep(
           log: (line) => log(line, next.id),
           defect: (detail) => defect({ slice: next.slice, unit: next.id, activity: "check authoring", trigger: "probe-audit", type: "test", impact: "refused before anyone was graded", detail }),
           runWorker: (text, turns) =>
-            worker(
+            tally.worker(
               {
                 model: resolveWorkerModel(deps.workerModel ?? { workerModel: deps.model }, role),
                 worktree: tree,
@@ -453,6 +538,7 @@ export async function dispatchTep(
                 alsoAllowed: () => unionFor(tree, next.id)(),
                 baseline,
                 ...(oracleArgs.clearance ? { clearFor: (p: string[]) => oracleArgs.clearance!(next.slice, next.id, p) } : {}),
+                pulse: () => watch.round(next.id),
                 abort,
                 onPark: (q, answer) => void parkFor(next.slice, next.id)(q, answer),
                 log: (line: string) => log(line, next.id),
@@ -593,6 +679,7 @@ export async function dispatchTep(
         });
       }
     }
+    log(tally.line(next.id, began), next.id);
     st.aborts.delete(next.id);
     liveFootprints.delete(next.id);
     if (role === "test" && !maintain) testInflight--;
@@ -604,6 +691,10 @@ export async function dispatchTep(
     // the run stopped.
     if (!ok && st.halted && !st.units.get(next.id)?.note)
       failWith(next.id, "the run stopped before this unit finished — its work was never judged");
+    if (ok && ownsFixture && !(await commitSharedFixture({ worktree, tep, slice: next.slice, plan: ownsFixture, exec, log: (l) => log(l, next.id) }))) {
+      failWith(next.id, `it did not write the shared fixture ${ownsFixture.path} that ${ownsFixture.waiters.join(", ")} wait for`);
+      ok = false;
+    }
     await finishUnit(next.id, next.slice, ok);
   };
   await pumpUnits({
@@ -671,13 +762,31 @@ export async function dispatchTep(
     // other: repaired, landed, and judged again. The same for work the
     // project already had — a resume is not a reason to skip the repair.
     const judgeAndRepair = async (at: string, alsoMerged: string[]): Promise<DispatchOutcome> => {
-      const judge = (only?: (promise: string) => boolean) =>
-        judgeOnTheProduct({
-          at, st, log, deps, space, cut, outcome, pageRoots,
+      // The live checks first, against the deployed service at the
+      // repository's declared address; then the reviewers on the page.
+      const judge = async (only?: (promise: string) => boolean): Promise<DispatchOutcome> => {
+        if (liveSuite && outcome.delivery)
+          outcome = {
+            ...outcome,
+            delivery: await judgeByLiveChecks({
+              delivery: outcome.delivery,
+              checks: liveChecks,
+              ...(only ? { only } : {}),
+              suite: liveSuite,
+              tree: worktree,
+              control: deps.reachControl ?? controlReachedBy,
+              run: deps.invokeLive ?? runInShell,
+              log: (l) => log(l, "live"),
+              doing: (l) => st.phase("live", "running", l),
+            }),
+          };
+        return judgeOnTheProduct({
+          at, st, log, deps, space, cut, outcome, pageRoots, liveSuite: !!liveSuite,
           ...(deps.storeDir ? { storeDir: deps.storeDir } : {}),
           ...(runId ? { runId } : {}),
           ...(only ? { only } : {}),
         });
+      };
       outcome = await judge();
       // A promise that does not hold on the page is a red like any
       // other: the run repairs it rather than handing the person live
@@ -686,14 +795,41 @@ export async function dispatchTep(
         st,
         say: (l) => log(l, "live"),
         doing: (l) => st.phase("live", "running", l),
-        repair: (found, attempt) =>
+        repair: (found, attempt, recheck) =>
           repairAfterTheMerge({
-            tep, attempt, worktree, deps, st, exec, boundedExec,
-            evidence: `the reviewers opened ${at} and found these do not hold:\n${found.evidence}`,
+            tep, attempt, worktree, deps, st, exec, boundedExec, suiteExec,
+            evidence: `judged on the running product at ${at}, these do not hold:\n${found.evidence}`,
             files: found.files,
             log: (l) => log(l, "live"),
-            onTheProduct: { criteria: found.evidence.split("\n").filter((l) => l.startsWith("  - ")).map((l) => l.slice(4)) },
+            onTheProduct: {
+              criteria: found.evidence.split("\n").filter((l) => l.startsWith("  - ")).map((l) => l.slice(4)),
+              ...(recheck ? { recheck } : {}),
+            },
           }),
+        // Only the live checks run again here: they judge the deployed
+        // service, so their last result says nothing about it now.
+        ...(liveSuite
+          ? {
+              recheck: async (promises: string[]) => {
+                if (outcome.delivery)
+                  outcome = {
+                    ...outcome,
+                    delivery: await judgeByLiveChecks({
+                      delivery: outcome.delivery,
+                      checks: liveChecks,
+                      only: (p) => promises.includes(p),
+                      suite: liveSuite,
+                      tree: worktree,
+                      control: deps.reachControl ?? controlReachedBy,
+                      run: deps.invokeLive ?? runInShell,
+                      log: (l) => log(l, "live"),
+                      doing: (l) => st.phase("live", "running", l),
+                    }),
+                  };
+                return outcome;
+              },
+            }
+          : {}),
         buildsHere: async () => {
           if (!deps.build) return { ok: true, output: "" };
           const b = await boundedExec(deps.build, worktree);
@@ -708,16 +844,7 @@ export async function dispatchTep(
             return { ok: false, why: err instanceof Error ? err.message : String(err) };
           }
         },
-        waitUntilLive: () =>
-          waitUntilLive({
-            at,
-            app: path.basename(deps.repoRoot),
-            since: new Date().toISOString(),
-            read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
-            knock,
-            stop: st.stop.signal,
-            step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
-          }),
+        waitUntilLive: () => goLive(new Date().toISOString()),
         judgeAgain: async (promises) => {
           outcome = await judge((p) => promises.includes(p));
           return outcome;
@@ -736,118 +863,114 @@ export async function dispatchTep(
       );
       return outcome;
     };
-    const at = deployedAddress(deps.repoRoot);
+    // A template is made live by the deploy it declares; a push builds
+    // nothing for it. One that declares no way to deploy is not deployed
+    // by the platform, whatever address it names.
+    const template = downstreamOf(deps.repoRoot) === "template";
+    const declared = thinkubeDeclaration(deps.repoRoot);
+    const deploysItself = template && !!(declared && "declared" in declared && declared.declared.deploy?.run.length);
+    const at = template && !deploysItself ? undefined : deployedAddress(deps.repoRoot);
+    const byDeploy = deploysItself
+      ? templateGoesLive({
+          repoRoot: deps.repoRoot,
+          exec,
+          log: (l) => log(l, "live"),
+          wait: (ms) => waitOrStop(ms, st.stop.signal),
+        })
+      : undefined;
+    /** Make the work live: run the template's deploy, or wait for the
+     *  platform to build what was pushed. */
+    const goLive = (since: string) =>
+      byDeploy
+        ? byDeploy.goLive()
+        : waitUntilLive({
+            at: at!,
+            app: path.basename(deps.repoRoot),
+            since,
+            read: (from) => readLive(deps.repoRoot, path.basename(deps.repoRoot), from),
+            knock,
+            step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
+            stop: st.stop.signal,
+          });
+    /** The live phase that makes the work live and judges it there. */
+    const goLiveAt = (at: string, waiting: string): Promise<void> =>
+      goLiveAndJudge({
+        at,
+        delivery: d,
+        waiting,
+        goLive: () => goLive(producedAt),
+        whyItFailed: () =>
+          byDeploy ? byDeploy.whyItFailed() : whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
+        said: byDeploy ? "a validation deployment through thinkube-control" : "the platform",
+        // What the settling source answers, it has now answered. The run
+        // watched that build, or ran that deploy; leaving those criteria
+        // "pending" reported work as unreachable minutes after the machine
+        // that reaches it had said yes.
+        settle: async (x) =>
+          byDeploy
+            ? byDeploy.settle(x)
+            : stampPending(x, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt), !!liveSuite),
+        repair: (found, attempt) =>
+          repairAfterTheMerge({
+            tep, attempt, worktree, deps, st, exec, boundedExec, suiteExec,
+            evidence: found.evidence, files: found.files,
+            ...(found.testStep ? { testStep: true } : {}),
+            log: (l) => log(l, "live"),
+          }),
+        // A refusal of the pipeline's test step is reproduced by the whole
+        // suite, so nothing is pushed until it passes here.
+        buildsHere: async (found) => {
+          if (deps.build) {
+            const b = await boundedExec(deps.build, worktree);
+            if (b.code !== 0) return { ok: false, output: b.output };
+          }
+          if (!found.testStep) return { ok: true, output: "" };
+          if (!deps.suite)
+            return { ok: false, output: "the setup facts (.tandem/setup.json) name no `suite` to reproduce the platform's test step here" };
+          const s = await suiteExec(deps.suite, worktree);
+          return { ok: s.code === 0, output: s.output };
+        },
+        land: async () => {
+          try {
+            const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
+            return l.pushed
+              ? { ok: true, moved: l.moved, ...(l.head ? { head: l.head } : {}) }
+              : { ok: false, ...(l.why ? { why: l.why } : {}) };
+          } catch (err) {
+            return { ok: false, why: err instanceof Error ? err.message : String(err) };
+          }
+        },
+        halted: () => st.halted,
+        say: (l) => log(l, "live"),
+        phase: (state, note) => st.phase("live", state, note),
+        noProduct,
+        record: (delivery) => {
+          outcome = { ...outcome, delivery };
+        },
+        judge: async (alsoMerged) => {
+          outcome = await judgeAndRepair(at, alsoMerged);
+        },
+        defect,
+      });
     if (!at) {
       st.phase("live", "done", "this repository is not deployed by the platform");
       noProduct("this repository is not deployed by the platform, so nothing can be driven");
     } else if (d.alreadyThere) {
-      st.phase("live", "running", `the project already had this work — asking ${at}`);
-      const code = await knock(at);
-      const answering = code !== undefined && code < 500;
-      st.phase(
-        "live",
-        answering ? "done" : "failed",
-        answering ? `live at ${at}` : `${at} does not answer`,
-      );
-      if (!answering) noProduct(`${at} does not answer`);
-      outcome = answering
-        ? { ...outcome, delivery: { ...d, liveAt: at } }
-        : outcome;
-      if (answering) outcome = await judgeAndRepair(at, []);
-    } else {
-      st.phase("live", "running", "waiting for the platform to notice the push");
-      let went = await waitUntilLive({
+      await liveWhenAlreadyThere({
         at,
-        app: path.basename(deps.repoRoot),
-        since: producedAt,
-        read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
+        ...(byDeploy
+          ? { deploy: () => goLiveAt(at, "the project already had this work — deploying it as the repository declares") }
+          : {}),
         knock,
-        step: {
-          say: (l) => log(l, "live"),
-          doing: (l) => st.phase("live", "running", l),
+        phase: (state, note) => st.phase("live", state, note),
+        noProduct,
+        answering: async () => {
+          outcome = { ...outcome, delivery: { ...d, liveAt: at } };
+          outcome = await judgeAndRepair(at, []);
         },
-        stop: st.stop.signal,
       });
-      // The platform refused it. That is a red like any other red, and
-      // this run has a closer: repair what the platform's words name,
-      // prove it builds here, push again. Twice, then stop and say so.
-      let tried = { attempts: 0, spent: false };
-      const alsoMerged: string[] = [];
-      // Nothing to repair when nothing was judged: the platform said
-      // nothing about the work, and a repair after no fault changes nothing.
-      if (!went.live && !went.unjudged && !st.halted) {
-        const again = await repairUntilLive({
-          whyItFailed: () => whyItFailed(deps.repoRoot, path.basename(deps.repoRoot), producedAt),
-          repair: (found, attempt) =>
-            repairAfterTheMerge({
-              tep, attempt, worktree, deps, st, exec, boundedExec,
-              evidence: found.evidence, files: found.files,
-              log: (l) => log(l, "live"),
-            }),
-          buildsHere: async () => {
-            if (!deps.build) return { ok: true, output: "" };
-            const b = await boundedExec(deps.build, worktree);
-            return { ok: b.code === 0, output: b.output };
-          },
-          land: async () => {
-            try {
-              const l = await landDelivery({ repoRoot: deps.repoRoot, branch, tep, exec });
-              // Every merge this delivery made is remembered: taking the
-              // work back out means reverting all of them, and a repair
-              // pushed after the first merge is one of them.
-              if (l.head && l.moved) alsoMerged.push(l.head);
-              return l.pushed ? { ok: true, moved: l.moved } : { ok: false, ...(l.why ? { why: l.why } : {}) };
-            } catch (err) {
-              return { ok: false, why: err instanceof Error ? err.message : String(err) };
-            }
-          },
-          waitUntilLive: () =>
-            waitUntilLive({
-              at,
-              app: path.basename(deps.repoRoot),
-              since: new Date().toISOString(),
-              read: (since) => readLive(deps.repoRoot, path.basename(deps.repoRoot), since),
-              knock,
-              step: { say: (l) => log(l, "live"), doing: (l) => st.phase("live", "running", l) },
-              stop: st.stop.signal,
-            }),
-          say: (l) => log(l, "live"),
-          doing: (l) => st.phase("live", "running", l),
-          halted: () => st.halted,
-        });
-        tried = { attempts: again.attempts, spent: again.spent };
-        went = again.live ? { live: true } : { live: false, ...(again.why ? { why: again.why } : {}) };
-      }
-      st.phase("live", went.live ? "done" : "failed", went.live ? `live at ${at}` : went.why ?? "it did not go live");
-      if (!went.live) noProduct(went.why ?? "the work never went live");
-      const heads = alsoMerged.length && d.mergedHead ? { mergedHeads: [d.mergedHead, ...alsoMerged] } : {};
-      // What the pipeline settles, the pipeline has now answered. The run
-      // watched that build; leaving those criteria "pending" reported work
-      // as unreachable minutes after the machine that reaches it had said
-      // yes.
-      const settledByThePipeline = went.live
-        ? stampPending(d, await readLive(deps.repoRoot, path.basename(deps.repoRoot), producedAt))
-        : d;
-      outcome = went.live
-        ? { ...outcome, delivery: { ...settledByThePipeline, ...heads, liveAt: at } }
-        : {
-            ...outcome,
-            delivery: {
-              ...d,
-              ...heads,
-              afterMerge: {
-                at: new Date().toISOString(),
-                outcome: went.unjudged ? "unjudged" : "broke",
-                said: "the platform",
-                ...(went.why ? { detail: went.why } : {}),
-                ...(tried.attempts ? { tried: tried.attempts } : {}),
-              },
-            },
-          };
-      // What only the running product can show is judged on the running
-      // product. Each criterion is its own reviewer, and each waits on the
-      // deployment — so the graph says what the person is waiting for.
-      if (went.live) outcome = await judgeAndRepair(at, alsoMerged);
+    } else {
+      await goLiveAt(at, byDeploy ? "deploying it as the repository declares" : "waiting for the platform to notice the push");
     }
   }
   return outcome;

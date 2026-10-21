@@ -25,7 +25,8 @@ import type { Cut, Delivery, Proof, Space } from "../core/schema";
 import type { TreeShape } from "../gates/moduleSizes";
 import type { DispatchDeps } from "./deps";
 import type { DispatchOutcome } from "./dispatch";
-import { porcelainPaths } from "./worker";
+import { stageWork } from "./stageWork";
+import { downstreamOf } from "./survey";
 
 export async function handOver(a: {
   tep: string;
@@ -42,6 +43,8 @@ export async function handOver(a: {
   findings: { saw: string; ask?: string }[];
   /** The shape of this tree's modules, for the report to say. */
   moduleSizes?: TreeShape;
+  /** What the run's workers spent, for the record to say. */
+  costUsd?: number;
   rulings: Delivery["rulings"];
   decisions: Delivery["decisions"];
   kept: { path: string; criterionId: string }[];
@@ -61,13 +64,13 @@ export async function handOver(a: {
   // inherits every check pinning the files it touches.
   log(`${tep}: ${kept.length} check(s) recorded on the delivery and kept in the tree`);
   log(`${tep}: committing the delivery`);
-  await exec("git", ["add", "-A", "."], worktree);
+  const staged = await stageWork({ worktree, exec, log: (l) => log(`${tep}: ${l}`) });
   // A cut whose proofs left nothing new in the tree (every criterion
   // already settled, or graded but never written to disk) has no changes
   // to commit — running `git commit` anyway fails where the shell answers
-  // non-zero as a thrown error rather than a code, so the dirty tree is
-  // checked first and the commit is skipped when there is nothing to record.
-  if ((await porcelainPaths(worktree)).length) {
+  // non-zero as a thrown error rather than a code, so the index is checked
+  // first and the commit is skipped when there is nothing to record.
+  if (staged.toCommit) {
     await exec("git", ["commit", "-m", `tandem: deliver ${tep}`], worktree);
   } else {
     log(`${tep}: nothing new to commit for the delivery`);
@@ -85,6 +88,7 @@ export async function handOver(a: {
     id: `delivery-${tep}`,
     ...(findings.length ? { findings } : {}),
     ...(a.moduleSizes ? { moduleSizes: a.moduleSizes } : {}),
+    ...(a.costUsd ? { costUsd: a.costUsd } : {}),
     cutId: cut.id,
     branch,
     runId,
@@ -110,7 +114,9 @@ export async function handOver(a: {
   }
   if (landed.pushed === false) log(`${tep}: merged into the project, but ${landed.why}`);
   else if (landed.moved === false) log(`${tep}: the project already has this work — nothing was merged, and nothing was pushed`);
-  else log(`${tep}: merged and pushed — the platform is building it`);
+  // Only an app's push starts a build; anything else is built, if at all,
+  // by what its own live phase runs.
+  else log(`${tep}: merged and pushed${downstreamOf(deps.repoRoot) === "gitops-app" ? " — the platform is building it" : ""}`);
   return {
     refusals: [],
     undelivered,

@@ -212,8 +212,9 @@ export function registerConfigCommands(
           [
             { label: "command", description: "Run a shell command" },
             { label: "http", description: "Send HTTP request" },
-            { label: "prompt", description: "Inject a prompt" },
-            { label: "agent", description: "Invoke an agent" },
+            { label: "prompt", description: "A model answers a yes-or-no prompt" },
+            { label: "agent", description: "A subagent verifies a condition" },
+            { label: "mcp_tool", description: "Call a tool of an MCP server" },
           ],
           { placeHolder: "Select hook type" },
         );
@@ -235,7 +236,8 @@ export function registerConfigCommands(
             | "command"
             | "http"
             | "prompt"
-            | "agent";
+            | "agent"
+            | "mcp_tool";
           if (type === "command") {
             const command = await vscode.window.showInputBox({
               prompt: "Enter command to execute",
@@ -276,16 +278,36 @@ export function registerConfigCommands(
               projectPath,
             );
           } else if (type === "agent") {
-            const agent = await vscode.window.showInputBox({
-              prompt: "Enter agent name",
-              placeHolder: "e.g., code-reviewer",
+            const prompt = await vscode.window.showInputBox({
+              prompt: "Enter what the agent verifies",
+              placeHolder: "e.g., Confirm the changed files compile and the tests they touch still pass",
             });
-            if (!agent) {
+            if (!prompt) {
               return;
             }
             await configService.addHook(
               event as any,
-              { matcher, type: "agent", agent },
+              { matcher, type: "agent", prompt },
+              projectPath,
+            );
+          } else if (type === "mcp_tool") {
+            const server = await vscode.window.showInputBox({
+              prompt: "Enter the MCP server name",
+              placeHolder: "e.g., thinkube-control",
+            });
+            if (!server) {
+              return;
+            }
+            const tool = await vscode.window.showInputBox({
+              prompt: "Enter the tool name on that server",
+              placeHolder: "e.g., list_services_minimal",
+            });
+            if (!tool) {
+              return;
+            }
+            await configService.addHook(
+              event as any,
+              { matcher, type: "mcp_tool", server, tool },
               projectPath,
             );
           }

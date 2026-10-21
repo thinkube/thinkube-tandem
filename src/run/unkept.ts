@@ -29,6 +29,7 @@ import { close, probesForClosing, readProbes } from "./closer";
 import { repairByAuthors } from "./authorRepair";
 import type { RedCriterion } from "./authorRepair";
 import { prepareAtGate } from "./setup";
+import { liveSuiteDeclared } from "./liveSuite";
 import type { BoundedExec } from "./setup";
 import type { DispatchDeps } from "./dispatch";
 import type { Exec } from "./oracle";
@@ -67,6 +68,12 @@ export async function repairUnkept(a: {
   boundedExec: BoundedExec;
   suiteExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   log: (line: string, step?: string) => void;
+  /** Criteria someone said do not hold, with their words. Their checks
+   *  passing does not keep them: each stays red, with those words as its
+   *  evidence, until a repair changes the tree. */
+  saidNotToHold?: Map<string, string>;
+  /** The closer's report, for what it says beyond the promises. */
+  onReport?: (report: string) => void;
   defect: (entry: {
     slice?: string;
     unit?: string;
@@ -80,6 +87,41 @@ export async function repairUnkept(a: {
   }) => void;
 }): Promise<Proof[]> {
   const { tep, worktree, slices, space, cut, deps, proofs, observations, verifs, probeOfAc, criterionByProbe, exec, boundedExec, log, defect } = a;
+  /** This tree, exactly: what is committed and everything not yet. */
+  const treeAsItStands = async (): Promise<string> =>
+    [
+      (await exec("git", ["-C", worktree, "rev-parse", "HEAD"], worktree)).out.trim(),
+      (await exec("git", ["-C", worktree, "status", "--porcelain"], worktree)).out.trim(),
+    ].join("\n");
+  // What a person said against a criterion is evidence no check re-run on
+  // the same tree can answer: the criterion is red, in their words, while
+  // the tree is the one they judged. Once a repair changed it, the checks
+  // and reviews decide again, and a proof none of them re-judged returns
+  // to what it was.
+  const said = a.saidNotToHold ?? new Map<string, string>();
+  const before = new Map<Proof, Pick<Proof, "verdict" | "ref">>();
+  for (const p of proofs) {
+    const words = p.criterionId ? said.get(p.criterionId) : undefined;
+    if (!words) continue;
+    before.set(p, { verdict: p.verdict, ref: p.ref });
+    p.verdict = "red";
+    p.ref = words;
+  }
+  const judgedTree = before.size ? await treeAsItStands() : undefined;
+  const holdWhatWasSaid = async (): Promise<void> => {
+    if (!before.size) return;
+    const unchanged = (await treeAsItStands()) === judgedTree;
+    for (const [p, was] of before) {
+      const words = said.get(p.criterionId!)!;
+      if (unchanged) {
+        p.verdict = "red";
+        p.ref = words;
+      } else if (p.ref === words) {
+        p.verdict = was.verdict;
+        p.ref = was.ref;
+      }
+    }
+  };
   let unkept = proofs.filter(unkeptProof);
   // Each red criterion goes back to the unit that wrote its code, as the
   // next message in that unit's own session, with the drive's evidence and
@@ -143,6 +185,7 @@ export async function repairUnkept(a: {
         proof.verdict = "green";
         proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
+      await holdWhatWasSaid();
       unkept = proofs.filter(unkeptProof);
       log(`${tep}: after the authors' repairs, ${unkept.length} promise(s) are still unkept`, "gate");
     }
@@ -184,16 +227,37 @@ export async function repairUnkept(a: {
      * measurement is always that: a second draw on an unchanged tree.
      */
     let judgedOn: string | undefined;
+    /** What the last re-judgement ran, or why it ran nothing: the closer's
+     *  verify says it, so an answer is never silent. */
+    let asked = "";
+    const liveHome = liveSuiteDeclared(deps.repoRoot)?.home.replace(/\/+$/, "");
+    /** The files changed since the tree `before` names: committed or not. */
+    const changedSince = async (before: string): Promise<string[]> => {
+      const head = before.split("\n")[0];
+      const diff = (await exec("git", ["-C", worktree, "diff", "--name-only", head], worktree)).out;
+      const untracked = (await exec("git", ["-C", worktree, "status", "--porcelain"], worktree)).out
+        .split("\n")
+        .filter((l) => l.startsWith("?? "))
+        .map((l) => l.slice(3));
+      return [...new Set([...diff.split("\n"), ...untracked].map((l) => l.trim()).filter(Boolean))];
+    };
     const rejudge = async (): Promise<Proof[]> => {
       await prepareAtGate(deps.prepare, worktree, boundedExec, log);
       const tree = await treeNow();
       const moved = judgedOn !== undefined && tree !== judgedOn;
       const first = judgedOn === undefined;
+      const previous = judgedOn;
       judgedOn = tree;
       if (!moved) {
         if (!first) log(`${tep}: nothing changed the tree — the standing verdicts are not asked again`);
+        asked = first
+          ? "the verdicts the gate reached on this tree"
+          : "nothing changed the tree since the last reading, so no check and no review was asked again";
         return proofs.filter(unkeptProof);
       }
+      const changed = await changedSince(previous!);
+      const onlyLive =
+        !!liveHome && changed.length > 0 && changed.every((f) => f === liveHome || f.startsWith(`${liveHome}/`));
       // A red assessment is re-graded by a fresh reviewer over the repaired
       // tree, exactly as a check is re-run. Frozen first-pass verdicts held
       // three repaired promises red while the closer's edits could move
@@ -251,6 +315,12 @@ export async function repairUnkept(a: {
         proof.verdict = "green";
         proof.ref = r.evidence?.slice(0, 300) ?? proof.ref;
       }
+      asked =
+        `${changed.length} file(s) changed; re-ran ${again.length} check(s)` +
+        (redReviews.size ? ` and asked ${redReviews.size} review(s) again` : "") +
+        (onlyLive
+          ? `. Every change is under the live home (${liveHome}), whose checks run against the deployed service after the deploy, so none of them ran here`
+          : "");
       return proofs.filter(unkeptProof);
     };
     // The checks it is judged by, led by those behind the promises still
@@ -282,12 +352,16 @@ export async function repairUnkept(a: {
         // closer had already fixed, and withheld the delivery for a
         // document that was correct on disk.
         settled.clear();
-        const still = await rejudge();
+        await rejudge();
+        await holdWhatWasSaid();
+        const still = proofs.filter(unkeptProof);
         return {
           green: still.length === 0,
           score: still.length,
-          evidence: still
-            .map((p) => `- ${p.label}\n  ${(p.ref ?? "").split("\n").slice(0, 3).join("\n  ")}`)
+          evidence: [
+            `${still.length ? `RED — ${still.length} promise(s) not kept` : "GREEN — every promise is kept"}. What ran: ${asked}.`,
+            ...still.map((p) => `- ${p.label}\n  ${(p.ref ?? "").split("\n").slice(0, 3).join("\n  ")}`),
+          ]
             .join("\n")
             .slice(0, 8000),
         };
@@ -302,6 +376,7 @@ export async function repairUnkept(a: {
       defect: (e) => defect({ unit: "gate#closer", ...e }),
       ...(deps.worker ? { worker: deps.worker } : {}),
     });
+    a.onReport?.(closed.report);
     unkept = proofs.filter(unkeptProof);
     log(`${tep}: after the closer, ${unkept.length} promise(s) are ${closed.green ? "kept" : "still unkept"}`, "gate");
   }

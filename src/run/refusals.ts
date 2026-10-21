@@ -32,7 +32,9 @@ import type { Cut } from "../core/schema";
 import { buildUnitDag } from "../engine/core/dag";
 import { validateDag } from "../engine/methodology/parallelSlices";
 import { coderTestPaths } from "./plan";
-import { pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
+import { checksInAnotherLanguage, houseLiveChecks, pinRecordedChecks, rehouseChecks, unreachableCheckHomes } from "./checkHomes";
+import { isLiveCheckUnit } from "./liveChecks";
+import { liveHomeRefusal, liveSuiteDeclared, readsLiveUrl } from "./liveSuite";
 import { verifyCutSignature } from "../gates/sign";
 
 interface SliceLike extends SliceForDag {
@@ -223,12 +225,35 @@ export async function refusedBeforeDispatch(a: {
   // born is decided by the tree its subject lives in, never by one idiom
   // read over the whole repository.
   const declared = thinkubeDeclaration(a.repoRoot);
-  const partRoots = declared && "declared" in declared ? partsDeclared(declared.declared).map((p) => p.root) : [];
+  const parts = declared && "declared" in declared ? partsDeclared(declared.declared) : [];
+  // A live check is minted in the live home the repository declares, which
+  // must stand apart from the unit suite: one it collected would reach for
+  // the network at the gate and in the image build.
+  const live = liveSuiteDeclared(a.repoRoot);
+  const hasLive = a.slices.some((s) => s.workUnits.some(isLiveCheckUnit));
+  if (hasLive && !live)
+    return {
+      dag: buildUnitDag(a.slices),
+      refusal: {
+        trigger: "live-home",
+        refusal: "the plan holds live checks, but thinkube.yaml declares no spec.deploy.live to keep and run them",
+      },
+    };
+  if (live && hasLive) {
+    const why = liveHomeRefusal(live.home, repoFiles, parts, readsLiveUrl(a.repoRoot));
+    if (why) return { dag: buildUnitDag(a.slices), refusal: { trigger: "live-home", refusal: why } };
+    const housed = houseLiveChecks(a.slices, live.home, repoFiles, new Set([...onBranch, ...(a.recordedChecks ?? [])]));
+    if (housed.length) a.log(`${housed.length} live check(s) minted under ${live.home}, e.g. ${housed[0].to}`);
+  }
+  // What is a live check here is what readiness read as one: a file that
+  // reads the live address, wherever it sits.
+  const isLive = readsLiveUrl(a.repoRoot);
   const rehoused = rehouseChecks(
     a.slices,
     repoFiles,
     new Set([...onBranch, ...(a.recordedChecks ?? [])]),
-    partRoots,
+    parts,
+    isLive,
   );
   if (rehoused.length)
     a.log(`${rehoused.length} check(s) born in the repository's own test homes, e.g. ${rehoused[0].to}`);
@@ -257,7 +282,7 @@ export async function refusedBeforeDispatch(a: {
   // it never runs — and the unit holding it is failed for work that was
   // correct. The fix is a build configuration no worker is cleared for, so
   // the placement is refused here, before anybody spends a round on it.
-  const stranded = unreachableCheckHomes(a.slices, repoFiles, partRoots);
+  const stranded = unreachableCheckHomes(a.slices, repoFiles, parts, isLive);
   if (stranded.where.length)
     return {
       dag,
@@ -266,6 +291,22 @@ export async function refusedBeforeDispatch(a: {
         refusal:
           `these checks are born where this repository runs no test of its own, so nothing would compile or run them — ` +
           `refused before dispatch: ${stranded.where.join(", ")}. Its tests live under ${stranded.roots.join(", ")}.`,
+      },
+    };
+
+  // A check left at the run's own coordinate in a language the repository
+  // does not test in is run by a runner that runs nothing of it.
+  const foreign = checksInAnotherLanguage(a.slices, repoFiles, isLive);
+  if (foreign.where.length)
+    return {
+      dag,
+      refusal: {
+        trigger: "plan-check-homes",
+        refusal:
+          `these checks would stay at the run's own coordinate in a language this repository's tests are not written in ` +
+          `(${foreign.languages.join(", ")}), so its runner would run nothing of them — refused before dispatch: ` +
+          `${foreign.where.join(", ")}. A check an earlier run already wrote keeps its address; start the work again ` +
+          `from nothing (full rerun) so it is placed in the repository's own test home.`,
       },
     };
 

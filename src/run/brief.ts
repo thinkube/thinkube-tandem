@@ -13,6 +13,7 @@
  * failure. Both halves have to exist: a gate nobody explains reads as a
  * broken environment, and a sentence nothing enforces is a suggestion.
  */
+import { describeSeam, type Seam, type SharedFixture } from "./seams";
 
 /**
  * What this unit is cleared to do, stated as actions. A list of paths says
@@ -29,8 +30,9 @@ export function clearanceStanza(unit: { units?: unknown[] }): string {
   return (
     "\n\n──── WHAT YOU ARE CLEARED TO DO ────\n" +
     cleared.map((c) => `- ${say[c.action] ?? c.action.toUpperCase()} ${c.path}`).join("\n") +
-    "\nWriting anywhere else does not happen: the change is restored before your next step, so the " +
-    "edit you believe you made is gone. This is the ORDER, not a refusal — every file here is " +
+    "\nWriting anywhere else does not happen: a file tool naming another path is refused before it " +
+    "writes, and a file a shell command leaves elsewhere is restored before your next step. This is " +
+    "the ORDER, not a refusal — every file here is " +
     "reachable, and the way to reach one is to ASK FIRST. Say which file you need and which " +
     "criterion requires it. The run rules on it and clears you, waiting if another unit is changing " +
     "that file at this moment; only then do you make the change yourself, in this session. Your " +
@@ -41,6 +43,23 @@ export function clearanceStanza(unit: { units?: unknown[] }): string {
 }
 
 /** The stanza appended to a worker's brief when the oracle can answer. */
+/**
+ * How a unit leaves. The harness holds it to both: a stop without the
+ * report line is refused, and a question asked through the tool is
+ * answered in the same session.
+ */
+export function exitStanza(): string {
+  return (
+    "\n\n──── HOW YOU LEAVE ────\n" +
+    "A question you cannot settle from this brief — which of two files, whether to keep an old column — " +
+    "you ask with the AskUserQuestion tool and carry on with the answer; it reaches the run, and the " +
+    "answer comes back as the tool's result. Never guess, never stop to ask.\n" +
+    "Your final summary ends with the line `UNDELIVERED: none` when everything was delivered, or one " +
+    "line per obligation left undone, each starting exactly with `UNDELIVERED: `. A stop without that " +
+    "line is refused and you are asked to write the summary again."
+  );
+}
+
 export function coderStanza(oracleAvailable: boolean): string {
   if (!oracleAvailable) return "";
   return (
@@ -62,6 +81,65 @@ export function coderStanza(oracleAvailable: boolean): string {
     "misreads its criterion, do not grind against it: challenge it, in intent terms. " +
     "Granted, the check is re-authored from its criterion and the ruling is recorded on " +
     "the delivery; denied, meet it as it stands. A challenge is never a way to see the check."
+  );
+}
+
+/** What a stanza of shared fixtures may carry of one file's source. */
+const FIXTURE_SOURCE_CHARS = 6000;
+/** What the seams list may carry in all. */
+const SEAMS_CHARS = 8000;
+
+/**
+ * The rule every tester is held to about doubles, with what it applies to:
+ * the repository's shared test fixtures, read from the tree, and the methods
+ * the production path calls on each seam, read from the production code.
+ * A double with fewer methods than the code calls fails every correct
+ * implementation and passes only one that skips a call.
+ *
+ * `fixture` says this tester's part in the run's one shared fixture: it
+ * writes it (`write`), or the fixture was written before it started and is
+ * already among the fixtures listed.
+ */
+export function fixturesStanza(
+  fixtures: readonly SharedFixture[],
+  seams: readonly Seam[],
+  fixture?: { write: string; seams: readonly Seam[]; users: readonly string[] },
+): string {
+  const files = fixtures.length
+    ? fixtures
+        .map((f) => {
+          const cut = f.source.length > FIXTURE_SOURCE_CHARS;
+          return `── ${f.path} ──\n${f.source.slice(0, FIXTURE_SOURCE_CHARS)}${cut ? `\n… (${f.source.length - FIXTURE_SOURCE_CHARS} more characters — read the file)` : ""}`;
+        })
+        .join("\n")
+    : "This repository has no shared test fixture yet (no conftest.py, setup file, or helpers module under a test home).";
+  let listed = "";
+  let shown = 0;
+  for (const s of seams) {
+    const line = describeSeam(s);
+    if (listed.length + line.length > SEAMS_CHARS) break;
+    listed += (listed ? "\n" : "") + line;
+    shown++;
+  }
+  const more = seams.length - shown;
+  return (
+    "\n\n──── THE REPOSITORY'S SHARED TEST FIXTURES ────\n" +
+    files +
+    "\n\n──── THE SEAMS THE PRODUCTION CODE CALLS THROUGH (what a double of each must implement) ────\n" +
+    (listed || "No production function here takes a collaborator it calls methods on.") +
+    (more > 0 ? `\n… ${more} more seam(s) not listed — read the production code before you double one.` : "") +
+    "\n\nDOUBLES: when a shared fixture above provides a double for a seam, USE IT — never write a second " +
+    "fake of the same seam. A double you write implements EVERY method the production path calls on " +
+    "that seam, as listed above, including the ones after the call you care about (commit, rollback, " +
+    "close): a double missing one crashes correct code and lets through only code that skips the call." +
+    (fixture
+      ? `\n\nYOU WRITE THE RUN'S SHARED FIXTURE at ${fixture.write}, BEFORE your checks. These seams are ` +
+        `doubled by checks of ${fixture.users.join(", ")}, and no fixture provides them:\n` +
+        fixture.seams.map(describeSeam).join("\n") +
+        `\nWrite one double per seam there, each implementing every method listed, so the code under test ` +
+        `runs its real path through it. Your checks use it, and the other testers start only after your ` +
+        `work is committed and use it too. Keep what the file already holds; add to it.`
+      : "")
   );
 }
 
@@ -89,5 +167,31 @@ export function testerStanza(built: readonly string[] = []): string {
     "process EXITS on its own. A check that does not exit is a defective check " +
     "and counts as failed. A criterion that IS an effect on the world is not " +
     "yours to prove — the delivery reports it as not verified, with its reason."
+  );
+}
+
+/**
+ * What a tester is told about the live checks it writes: checks of the
+ * deployed service, run after the work is live and never at the gate. The
+ * rules above about fakes and seams are for the checks that run in the
+ * worktree; a live check talks to the real service.
+ */
+export function liveCheckStanza(files: readonly string[], one: string): string {
+  if (!files.length) return "";
+  return (
+    "\n\n──── LIVE CHECKS (checks of the deployed service) ────\n" +
+    files.map((f) => `- ${f}`).join("\n") +
+    "\nThese files are LIVE CHECKS. Each proves its criterion against the DEPLOYED service, after the work " +
+    "is merged and live — never in this worktree, and never at the gate. The rules above about fakes and " +
+    "seams are for the other checks; for these:\n" +
+    "- The service answers at the address in the environment variable TANDEM_LIVE_URL. " +
+    "THINKUBE_CONTROL_URL and THINKUBE_API_TOKEN are in the environment too; send the token as " +
+    "`Authorization: Bearer <token>` where the platform's APIs need it.\n" +
+    "- Create the data the check needs through the services' PUBLIC APIs, under names unique to this " +
+    "run of the check (a random suffix), and remove it before the check ends, whether it passed or not.\n" +
+    "- Assert on what the running service ANSWERS: status, headers, body.\n" +
+    "- NEVER import the repository's code: the check is a client of the service, nothing more.\n" +
+    `- It is run alone with: ${one} (<file> is its path as listed above). Write it so that command runs it, and ` +
+    "so it exits non-zero when the criterion does not hold."
   );
 }

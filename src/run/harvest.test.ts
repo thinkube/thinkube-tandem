@@ -23,6 +23,7 @@ import {
   validateComponentsAfterAccept,
 } from "./harvest";
 import type { Delivery } from "../core/schema";
+import { LIVE_SETTLING } from "../derive/ground";
 
 const delivered = (): Delivery =>
   ({
@@ -62,7 +63,7 @@ test("a settled pipeline stamps the pending proofs; an unreachable one stamps no
   });
   assert.equal(reading.settled, true);
 
-  const stamped = stampPending(delivered(), reading);
+  const stamped = stampPending(delivered(), reading, false);
   assert.equal(stamped.proofs[1].verdict, "red", "the pipeline's own answer, brought home");
   assert.match(stamped.proofs[1].ref ?? "", /test-backend failed/);
   assert.equal(stamped.proofs[0].verdict, "green", "proofs already settled here are untouched");
@@ -71,7 +72,7 @@ test("a settled pipeline stamps the pending proofs; an unreachable one stamps no
     settled: false,
     stages: [],
     unreachable: "GET … → 503",
-  });
+  }, false);
   assert.equal(unreachable.proofs[1].verdict, "pending", "not being able to look is not an answer");
   assert.match(unreachable.proofs[1].ref ?? "", /still pending/);
 });
@@ -198,13 +199,44 @@ test("a pipeline that passed is green whatever case the platform names it in", (
   // The platform answers SUCCEEDED; reading that as anything but a pass
   // puts a repair on work that is already right.
   for (const phase of ["SUCCEEDED", "Succeeded", "succeeded"]) {
-    const stamped = stampPending(delivered(), { settled: true, phase, stages: [] });
+    const stamped = stampPending(delivered(), { settled: true, phase, stages: [] }, false);
     assert.equal(stamped.proofs[1].verdict, "green", `${phase} is a pass`);
     assert.match(stamped.proofs[1].ref ?? "", /pipeline/);
   }
 });
 
 test("a pipeline that did not pass is still red", () => {
-  const stamped = stampPending(delivered(), { settled: true, phase: "FAILED", stages: [] });
+  const stamped = stampPending(delivered(), { settled: true, phase: "FAILED", stages: [] }, false);
   assert.equal(stamped.proofs[1].verdict, "red");
+});
+
+/**
+ * A pipeline that deployed shows the service runs, not what a criterion
+ * the running service answers claims of it: that proof stays pending for
+ * its live check, and without live checks it says nothing exercises it.
+ */
+test("a pipeline that passed leaves a criterion settled on the running service pending", () => {
+  const live = (): Delivery => {
+    const d = delivered();
+    return {
+      ...d,
+      proofs: [
+        ...d.proofs,
+        {
+          kind: "staged",
+          label: "the storage service returns the document's XLIFF for a key",
+          verdict: "pending",
+          settledBy: LIVE_SETTLING,
+          criterionId: "c2",
+        },
+      ],
+    };
+  };
+  const withSuite = stampPending(live(), { settled: true, phase: "Succeeded", stages: [] }, true);
+  assert.equal(withSuite.proofs[1].verdict, "green", "the pipeline's own criterion is answered");
+  assert.equal(withSuite.proofs[2].verdict, "pending");
+  assert.match(withSuite.proofs[2].ref ?? "", /its live check judges it on the running service next/);
+  const without = stampPending(live(), { settled: true, phase: "Succeeded", stages: [] }, false);
+  assert.equal(without.proofs[2].verdict, "pending", "never green without a live check");
+  assert.match(without.proofs[2].ref ?? "", /no live checks are declared \(spec\.deploy\.live/);
 });

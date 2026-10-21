@@ -25,6 +25,7 @@ import {
 } from "../engine/verifyOracle";
 import { resolveWorkerModel, WorkerModelConfig } from "../engine/workerModel";
 import { runReadRound } from "../derive/round";
+import type { RoundPulse } from "../derive/round";
 import { runAuthoringRound } from "./author";
 import { runScopedSuite, withSuite } from "./suite";
 import { linkProvisioned } from "./linkProvisioned";
@@ -32,6 +33,9 @@ import { evidenceKey } from "./owner";
 import { clearanceNote } from "./clearance";
 import { withCpuTruth } from "./cpuAllowance";
 import type { ClearanceRuling } from "./clearance";
+import { isCheckOf } from "../core/testShape";
+import { makeTestFault } from "./challenge";
+import { installedVersions } from "./installed";
 
 /** Probe runs and oracle rounds must not inherit the host test-runner's
  *  context: a child `node --test` that detects a parent runner SKIPS itself
@@ -208,6 +212,9 @@ export interface OracleFactoryArgs {
   model: string;
   workerModel?: WorkerModelConfig;
   supervisorRound?: typeof runReadRound;
+  /** Opens the run's listener on a supervisor round working for `who`, so
+   *  a round that streams without writing a line still counts as movement. */
+  pulse?: (who: string) => RoundPulse;
   exec: Exec;
   boundedExec: (cmd: string, cwd: string) => Promise<{ code: number | null; output: string }>;
   /** Build/typecheck command the runner needs before probes can run. */
@@ -298,23 +305,39 @@ async function applyClearance(a: OracleFactoryArgs, slice: string, unit: string,
   return clearanceNote(await a.clearance(slice, unit, paths));
 }
 
-/** Challenges ONE CHECK may take — the judge runs the probe, so a plea is
- *  grounded in what it printed, never in argument alone. Counted per check
- *  (not per slice): a coder that questioned two other checks must still be
- *  able to question the one that is actually wrong. */
-export function sliceOracleFactory(
-  a: OracleFactoryArgs,
-): (slice: string) => VerifyOracle | undefined {
-  const oracles = new Map<string, VerifyOracle>();
-  const logFor = (slice: string) => (line: string) => a.log(line, a.acting?.(slice)?.unit);
+/** The pulse a supervisor round for `who` streams into, when the run listens. */
+export function pulseOf(a: Pick<OracleFactoryArgs, "pulse">, who: string): { pulse?: () => RoundPulse } {
+  const open = a.pulse;
+  return open ? { pulse: () => open(who) } : {};
+}
 
+/** The brief the slice's unit was given, which its supervisor reads. A
+ *  slice with none recorded, or an empty one, is an error naming it: a
+ *  supervisor reading no brief discloses against nothing. */
+export function briefOf(a: Pick<OracleFactoryArgs, "briefBySlice">, slice: string): string {
+  const brief = a.briefBySlice.get(slice);
+  if (!brief?.trim())
+    throw new Error(`no brief is recorded for ${slice}: its unit's brief must be recorded before its supervisor is asked`);
+  return brief;
+}
+
+/**
+ * The run supervisor for a slice's red rounds: it reads the coder's brief
+ * against the failing checks' source and answers with one verdict. A
+ * TEST-FAULT is acted on here, before the coder's next verify: the checks
+ * it names are re-authored from their criteria by `testFault`.
+ */
+export function makeSupervisor(
+  a: OracleFactoryArgs,
+  testFault: (slice: string, verdict: string, failingAcs: readonly number[]) => Promise<string>,
+): (slice: string) => (evidence: string, failingAcs: number[]) => Promise<string | undefined> {
+  const logFor = (slice: string) => (line: string) => a.log(line, a.acting?.(slice)?.unit);
   // The engine offers every red round for review. A failure is reviewed the
   // FIRST time it appears — help arrives at once — and not again while it
   // stays the same failure; a new failure is reviewed anew. The pre-flight
   // audit (its evidence begins with PRE-FLIGHT) is always answered.
   const seenFailures = new Map<string, Set<string>>();
-  const supervise =
-    (slice: string) =>
+  return (slice: string) =>
     async (evidence: string, failingAcs: number[]): Promise<string | undefined> => {
       if (!/^PRE-FLIGHT/.test(evidence)) {
         const key = `${failingAcs.join(",")}:${evidenceKey(evidence)}`;
@@ -323,15 +346,27 @@ export function sliceOracleFactory(
         seen.add(key);
         seenFailures.set(slice, seen);
       }
+      let brief: string;
+      try {
+        brief = briefOf(a, slice);
+      } catch (e) {
+        // Said in the run's log as well: the engine does not let a
+        // supervisor's error stop the round.
+        logFor(slice)(`⛔ ${(e as Error).message}`);
+        throw e;
+      }
       const probes = a.sliceProbes.get(slice) ?? [];
       let probeSrc = "";
+      let versions = "";
       for (const rel of probes) {
-        if (!failingAcs.some((ac) => rel.includes(`_AC-${ac}.`))) continue;
+        if (!failingAcs.some((ac) => isCheckOf(rel, ac))) continue;
         try {
           probeSrc += `\n── ${rel} ──\n` + (await fs.readFile(path.join(a.testerWt, rel), "utf8")).slice(0, 8000);
         } catch {
           /* absent probe — skip */
+          continue;
         }
+        versions += `\n── ${rel} ──\n${installedVersions(a.testerWt, rel)}`;
       }
       const prompt = [
         "You are the RUN SUPERVISOR — the disclosure authority of an autonomous delivery.",
@@ -341,7 +376,10 @@ export function sliceOracleFactory(
         "Your FIRST line must be EXACTLY one verdict word with content after it:",
         '- "DISCLOSE: <every fact the failing checks require that the brief does not state,',
         "   complete and concrete; verbatim check source never crosses, everything it MEANS does>",
-        '- "TEST-FAULT: <a check contradicts the intent — name both; the coder must NOT conform>',
+        '- "TEST-FAULT: <the failing check file(s) at fault> — <what in each contradicts the intent or the',
+        "   production path: a double missing a method the code calls on its seam, behaviour the installed",
+        "   library version lacks, an assertion the criterion never asks for>. Each check you name is",
+        "   re-authored from its criterion at once, before the coder verifies again.",
         '- "CAPABILITY: <the brief already states every required fact — cite exactly where>',
         '- "CLEAR: <repo-relative PRODUCTION file paths, space-separated> — <why the checks cannot pass without changing them>"',
         "   ONLY when a check requires changing a production file this unit is not cleared for. The run clears it",
@@ -352,13 +390,16 @@ export function sliceOracleFactory(
         `WHERE YOU ARE: ${a.worktree} — the delivery's one tree. Read ONLY under that path; any other copy of this`,
         "repository on the machine is not the delivery. Everything you need is named here:",
         `  the coder's files: ${(a.footprintOf?.(slice) ?? []).join(", ") || "(none)"}`,
-        `  the failing checks: ${probes.filter((rel) => failingAcs.some((ac) => rel.includes(`_AC-${ac}.`))).join(", ") || "(none)"}`,
+        `  the failing checks: ${probes.filter((rel) => failingAcs.some((ac) => isCheckOf(rel, ac))).join(", ") || "(none)"}`,
         "",
         "──── THE CODER'S BRIEF ────",
-        (a.briefBySlice.get(slice) ?? "(brief unavailable)").slice(0, 60000),
+        brief.slice(0, 60000),
         "",
         "──── FAILING CHECK SOURCE (never quote it) ────",
         probeSrc.slice(0, 16000),
+        "",
+        "──── THE INSTALLED VERSIONS of the libraries each failing check touches ────",
+        versions.slice(0, 4000),
         "",
         "──── THE REPEATED FAILURE EVIDENCE ────",
         evidence.slice(0, 4000),
@@ -368,6 +409,7 @@ export function sliceOracleFactory(
           model: resolveWorkerModel(a.workerModel ?? { workerModel: a.model }, "judge"),
           repoRoot: a.worktree,
           log: logFor(slice),
+          ...pulseOf(a, a.acting?.(slice)?.unit ?? slice),
         },
         prompt,
       );
@@ -384,16 +426,19 @@ export function sliceOracleFactory(
           impact: "round lost",
           detail: reply.slice(0, 1000),
         });
-      if (reply.trimStart().startsWith("TEST-FAULT"))
+      if (reply.trimStart().startsWith("TEST-FAULT")) {
+        const note = await testFault(slice, reply.trimStart(), failingAcs);
+        if (note) return note;
         a.defect({
           slice,
           activity: "verify-oracle supervision",
           trigger: "supervisor",
           type: "test",
           stage: "check",
-          impact: "a check contradicts the intent",
+          impact: "a check contradicts the intent, and none of this slice's failing checks has a file",
           detail: reply.slice(0, 1000),
         });
+      }
       if (/^(CLEAR|WIDEN)/.test(reply.trimStart())) {
         const unit = a.acting?.(slice)?.unit ?? slice;
         const note = await applyClearance(a, slice, unit, reply);
@@ -424,6 +469,15 @@ export function sliceOracleFactory(
       }
       return reply.slice(0, 4000);
     };
+}
+
+/** One oracle per slice, memoized; undefined when the slice has no probes. */
+export function sliceOracleFactory(
+  a: OracleFactoryArgs,
+): (slice: string) => VerifyOracle | undefined {
+  const oracles = new Map<string, VerifyOracle>();
+  const logFor = (slice: string) => (line: string) => a.log(line, a.acting?.(slice)?.unit);
+  const supervise = makeSupervisor(a, makeTestFault(a));
 
   return (slice: string): VerifyOracle | undefined => {
     const probes = a.sliceProbes.get(slice) ?? [];

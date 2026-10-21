@@ -30,8 +30,9 @@ import { theModel } from "../engine/theModel";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Proof } from "../core/schema";
-import { Finding, findingsIn } from "./findings";
-import { collectText } from "../derive/round";
+import { Finding } from "./findings";
+import { collectText, jsonSchemaOf, readAnswer } from "../derive/round";
+import { z } from "zod";
 
 /** What a driver is asked to settle: one promise, and the criteria that
  *  say what it means. They are judged in one session, on one product. */
@@ -113,6 +114,24 @@ const BROWSER_TOOLS = [
   "mcp__browser__browser_close",
 ];
 
+/**
+ * The shape a reviewer answers in. The harness holds it to this, so a
+ * verdict is a field, never a line found by a pattern: one entry per
+ * numbered item, what it noticed and did not judge, and what it could not
+ * remove.
+ */
+const ReviewAnswer = z.object({
+  items: z.array(
+    z.object({
+      item: z.number(),
+      verdict: z.enum(["GREEN", "RED", "BLOCKED"]),
+      said: z.string(),
+    }),
+  ),
+  findings: z.array(z.object({ saw: z.string(), ask: z.string().optional() })),
+  leftBehind: z.string().optional(),
+});
+
 /** The one origin the browser will open, in the form it wants it. */
 export function originOf(at: string): string {
   try {
@@ -124,20 +143,24 @@ export function originOf(at: string): string {
 }
 
 /**
- * The reviewer's word for one criterion, from a reply that answers them
- * all: the last line that names that criterion by its number.
+ * The reviewer's word for one criterion, from an answer that covers them
+ * all: the last entry that names that criterion by its number.
  */
 function verdictFor(
   reply: string | null | undefined,
   ord: number,
 ): { verdict: "GREEN" | "RED" | "BLOCKED"; said: string } | undefined {
-  if (!reply) return undefined;
-  const lines = reply.split(/\r?\n/).map((l) => l.trim().replace(/^[*_`#>\-\s]+/, ""));
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const m = new RegExp(`^${ord}[).:\\s]+\\s*(GREEN|RED|BLOCKED)\\b[:\\s—-]*(.*)$`, "i").exec(lines[i]);
-    if (m) return { verdict: m[1].toUpperCase() as "GREEN" | "RED" | "BLOCKED", said: (m[2] ?? "").trim() };
-  }
+  const items = readAnswer(ReviewAnswer, reply ?? null)?.items ?? [];
+  for (let i = items.length - 1; i >= 0; i--)
+    if (items[i].item === ord) return { verdict: items[i].verdict, said: items[i].said.trim() };
   return undefined;
+}
+
+/** What the reviewer noticed and did not judge, in its own words. */
+function noticedIn(reply: string | null | undefined): Finding[] {
+  return (readAnswer(ReviewAnswer, reply ?? null)?.findings ?? [])
+    .filter((f) => f.saw.trim())
+    .map((f) => ({ saw: f.saw.trim(), ...(f.ask?.trim() ? { ask: f.ask.trim() } : {}) }));
 }
 
 
@@ -187,6 +210,8 @@ async function drive(
             thinking: { type: "adaptive" },
             effort: "high",
             maxTurns: turns,
+            // Its verdicts come back in a shape, held to it by the harness.
+            outputFormat: { type: "json_schema", schema: jsonSchemaOf(ReviewAnswer) },
             ...(session?.id ? { resume: session.id } : {}),
             ...(withBrowser ? { mcpServers: { browser: { type: "http", url: a.browserAt } } } : { mcpServers: {} }),
             // Only this browser. Without it the machine's own browser
@@ -196,6 +221,8 @@ async function drive(
             // The browser and nothing else: no file, no command, no
             // network tool of its own. A driver that could read the
             // repository would judge the code again instead of the product.
+            // No built-in tool exists for it at all.
+            tools: [],
             allowedTools: withBrowser ? [...BROWSER_TOOLS] : [],
             disallowedTools: [
               // Arbitrary code in the browser server's own process, which
@@ -265,7 +292,7 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "Name everything you create so a person can recognise it later:",
       "start every name you type with `tandem check ·`. Before you answer,",
       "delete everything you created where the product offers a way; what it",
-      "does not let you remove, say in a last line beginning LEFT BEHIND:.",
+      "does not let you remove, say in `leftBehind`.",
       "",
       "You have the product to yourself: no other reviewer is working in it",
       "while you are. So anything already named `tandem check ·` is a",
@@ -307,17 +334,18 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       "",
       "You will see things that are not what you were asked to judge — a",
       "word that is wrong, a control that behaves oddly, something half",
-      "done. Do not judge them here and do not act on them: write each one",
-      "in one line —",
-      "FINDING: <what you saw and where> | ASK: <one sentence asking for",
-      "what a person would want instead, in their words>",
-      "— you are the one who saw it, so you draft the ask; the person keeps",
-      "it or does not.",
+      "done. Do not judge them here and do not act on them: put each one in",
+      "`findings`, with `saw` (what you saw and where) and `ask` (one",
+      "sentence asking for what a person would want instead, in their",
+      "words) — you are the one who saw it, so you draft the ask; the",
+      "person keeps it or does not.",
       "",
-      "Answer with ONE LINE PER ITEM at the end, numbered as above:",
-      "1. GREEN <what you did and what you saw>",
-      "2. RED <what you did and what happened instead>",
-      "3. BLOCKED <what stopped you reaching it>",
+      "Your answer has the shape you were given. In `items`, ONE ENTRY PER",
+      "ITEM, numbered as above: `item` is the number, `verdict` is GREEN",
+      "(you did the thing and saw what was promised), RED (you did the",
+      "thing and the product did something else) or BLOCKED (what stopped",
+      "you reaching it), and `said` is what you did and what you saw, with",
+      "the picture's file name.",
     ].join("\n"),
     TURNS_PER_ROUND,
     true,
@@ -339,9 +367,9 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
       a,
       [
         "You have not answered every item yet. What you have already done",
-        "stands — do not repeat it. Finish what is left and then give your",
-        "numbered lines: GREEN, RED, or BLOCKED for anything you could not",
-        "reach.",
+        "stands — do not repeat it. Finish what is left and then answer in",
+        "the shape again, every item with its verdict: GREEN, RED, or",
+        "BLOCKED for anything you could not reach.",
         "",
         "WHAT YOU ARE JUDGING:",
         ...c.criteria.map((x, i) => `${i + 1}. ${x.text}`),
@@ -376,15 +404,16 @@ export async function driveOne(a: DriveArgs, c: ToDrive, ord: number): Promise<P
           "WHAT YOU WROTE WHILE YOU WERE THERE:",
           (finished ?? "").slice(-6000),
           "",
-          "ONE LINE PER ITEM, numbered as above: GREEN, RED, or BLOCKED",
-          "when you never reached it, each with what you did and saw.",
+          "Answer in the shape: one entry per item, numbered as above, with",
+          "GREEN, RED, or BLOCKED when you never reached it, each with what",
+          "you did and saw.",
         ].join("\n"),
         3,
         false,
         session,
       )) ?? finished;
   // What it saw that nobody asked about, in its own words.
-  const noticed = findingsIn(finished ?? "");
+  const noticed = noticedIn(finished);
   for (const f of noticed) a.log?.(`noticed: ${f.saw}`);
   const proofs = c.criteria.map((x, i) => {
     const answer = verdictFor(finished, i + 1);
