@@ -9,6 +9,7 @@ import type { TandemShown, TandemView } from '../types'
 // The command is the extension's own code; nothing is decided here.
 
 const PANE = 'tandem'
+// The plugin's skill already answers to /tandem, so the command is /module.
 const TITLE = 'Tandem'
 const SHOWN_CHARS = 220
 // The engine masks credentials in texts up to this length.
@@ -52,8 +53,10 @@ async function record(
 }
 
 // Keeps what the record answered for the pane: a new view when it gave one,
-// and what it could not do when it failed.
+// and what it could not do when it failed. A failure is also a line of the
+// transcript, so it is seen where no pane is drawn.
 async function keep($: EngineInterface, answer: Answer): Promise<void> {
+  if (!answer.ok) $.ui.log(`Tandem: ${answer.reason}`)
   await update($, shown, was =>
     answer.ok
       ? { view: answer.view ?? was.view, problem: answer.note ?? null }
@@ -99,8 +102,8 @@ function page({ view, problem }: TandemShown): string {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: 'tandem',
-      description: 'Show the module this session owns. Also: /tandem own <folder>, /tandem leave',
+      name: 'module',
+      description: 'Show the module this session owns. Also: /module own <folder>, /module leave',
     })
     const answer = await record($, 'view', {})
     await keep($, answer)
@@ -110,10 +113,10 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'tandem' }, async ($, e) => {
+  on('command.run', { command: 'module' }, async ($, e) => {
     const [word = '', ...rest] = e.args.trim().split(/\s+/)
     if (word !== '' && word !== 'own' && word !== 'leave')
-      return { text: 'Use /tandem, /tandem own <folder> or /tandem leave.' }
+      return { text: 'Use /module, /module own <folder> or /module leave.' }
 
     const answer =
       word === 'own'
@@ -132,17 +135,22 @@ export const register: Register = on => {
     if (entered.drop !== undefined || e.command) return entered
 
     const whole = e.text.length <= MASKED_CHARS
-    let text: string
+    let text = whole ? e.text : e.text.slice(0, MASKED_CHARS)
     try {
-      text = await $.session.redact(whole ? e.text : e.text.slice(0, MASKED_CHARS))
+      text = await $.session.redact(text)
     } catch (err) {
-      // The store is pushed to a remote: a prompt that could not be masked
-      // is not written there, and the pane says that it is missing.
-      await keep($, {
-        ok: false,
-        reason: `A prompt was not kept: its credentials could not be masked (${String(err)}).`,
-      })
-      return entered
+      // An engine older than this method has nothing to call: the text then
+      // goes as typed to the store's own scan, which the record's command
+      // runs on every prompt and which refuses a hit. Any other failure is
+      // a prompt that could not be masked: the store is pushed to a remote,
+      // so it is not written there, and the person is told it is missing.
+      if (!(err instanceof TypeError)) {
+        await keep($, {
+          ok: false,
+          reason: `A prompt was not kept: its credentials could not be masked (${String(err)}).`,
+        })
+        return entered
+      }
     }
     const answer = await record($, 'said', {
       text: whole ? text : `${text}\n[cut here: the prompt had ${e.text.length} characters]`,
@@ -152,7 +160,10 @@ export const register: Register = on => {
     if (!answer.ok || answer.view) await keep($, answer)
 
     return entered
-  }).catch(($, e, next) => next(e))
+  }).catch(($, e, next) => {
+    $.ui.log(`Tandem: a prompt was not kept, the hook failed: ${JSON.stringify(next.error)}`)
+    return next(e)
+  })
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)

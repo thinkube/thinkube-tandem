@@ -129,6 +129,15 @@ test("a commit made with no sentence before it is kept apart", () => {
   assert.deepEqual(ended.ok && ended.view?.loose, [{ sha, subject: "From the shell" }]);
 });
 
+test("asking for the view files a commit made since the last turn ended", () => {
+  const { deps, root } = world();
+  own(deps, { session: "s-1", cwd: root, dir: "extensions/forge" });
+  const sha = commit(root, { "extensions/forge/backend/runs.py": "y\n" }, "Between turns");
+
+  const shown = view(deps, { session: "s-1", cwd: root });
+  assert.deepEqual(shown.ok && shown.view?.loose, [{ sha, subject: "Between turns" }]);
+});
+
 test("a folder outside a repository has no module to own, and the answer says so", () => {
   const { deps } = world();
   const nowhere = tmp("nowhere");

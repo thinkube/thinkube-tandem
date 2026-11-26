@@ -21,4 +21,4 @@ The store is at `~/thinkube-tandem-store` in Thinkube IDE. A second machine writ
 
 * *Autosync.* The store commits and pushes itself whenever it has changed; the pushed remote is the backup.
 * *Secret scan.* Every write is scanned for secret-shaped content, such as tokens, keys and private key blocks; a hit refuses the write and names the pattern.
-* *Your words, verbatim.* Your sentences are stored as typed and never edited by the machine. One exception: in the record of a module, a credential that Claude Code recognises in a prompt is masked before the prompt is stored, and a prompt that still holds what looks like a secret is not stored; the Tandem pane says so.
+* *Your words, verbatim.* Your sentences are stored as typed and never edited by the machine. One exception: in the record of a module, where the installed Claude Code can mask credentials, those it recognises in a prompt are masked before the prompt is stored. A prompt that still holds what looks like a secret is not stored, and Claude Code says so in the conversation.

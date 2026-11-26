@@ -136,7 +136,10 @@ export function leaveModule(deps: Deps, input: From): Answer {
   return { ok: true, view: viewOf(deps.storeRoot, deps.author, input.session, input.cwd) };
 }
 
-/** What the session shows now. */
+/** What the session shows now. An owner's view is brought up to date first:
+ *  a commit made since the last turn ended is filed before it is shown. */
 export function view(deps: Deps, input: From): Answer {
+  const looked = turnEnded(deps, input);
+  if (!looked.ok || looked.view) return looked;
   return { ok: true, view: viewOf(deps.storeRoot, deps.author, input.session, input.cwd) };
 }
