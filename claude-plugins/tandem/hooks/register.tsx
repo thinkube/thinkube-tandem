@@ -374,7 +374,7 @@ export const register: Register = on => {
                 if (r.message !== undefined) await $.prompt.submit({ text: r.message })
               }}
             />
-            <Text dimColor> from {r.module}, not given to this session yet</Text>
+            <Text dimColor> from {r.module}</Text>
           </Box>
         ))}
         <Box>

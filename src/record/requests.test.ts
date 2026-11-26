@@ -102,6 +102,7 @@ test("a request to a module with no owner waits, and the session that takes the 
   assert.ok(taken.ok);
   const [waiting] = taken.view?.requests ?? [];
   assert.equal(waiting.direction, "received");
+  assert.equal(waiting.state, "not given to this session yet");
   assert.match(waiting.message ?? "", new RegExp(`^Tandem request ${asked.request} `));
 
   // Started from the pane, the message enters as a prompt of the plugin.

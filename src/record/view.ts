@@ -134,14 +134,17 @@ export function viewOf(storeRoot: string, author: string, session: string, cwd: 
     ...all.filter((r) => !r.answered),
   ].map((r): RequestView => {
     const received = r.to.module === held.moduleId;
+    // A request this session was asked and has not been given: why an
+    // earlier hand-over failed matters to the one who asked, not here.
+    const notGiven = received && !r.answered && !r.arrivedAt;
     return {
       id: r.id,
       direction: received ? "received" : "asked",
       module: received ? r.from.label : r.to.label,
       text: r.text,
-      state: stateOf(r),
+      state: notGiven ? "not given to this session yet" : stateOf(r),
       ...(r.answered ? { answer: r.answered.text } : {}),
-      ...(received && !r.answered && !r.arrivedAt ? { message: requestMessage(r) } : {}),
+      ...(notGiven ? { message: requestMessage(r) } : {}),
     };
   });
   return {
