@@ -4,8 +4,9 @@
  */
 
 /**
- * A module's journal: what was said to its owner session and what was
- * committed to it, as rows that are only ever added.
+ * A module's journal: what was said to its owner session, what that session
+ * sent to others and what was committed to the module, as rows that are
+ * only ever added.
  *
  * The rows are facts the tool observed. A hook the engine runs writes them,
  * so the session that does the work never reports on itself.
@@ -36,6 +37,16 @@ export interface Said extends Stamp {
   /** Where the engine says the prompt came from. */
   origin: string;
   text: string;
+  /** The request between modules this message carried, when it was one. */
+  request?: string;
+}
+
+/** A message the owner session sent to another session or agent. */
+interface Sent extends Stamp {
+  kind: "sent";
+  /** The recipient, as the session named it. */
+  to: string;
+  text: string;
 }
 
 /** A commit that touched the module's files. */
@@ -48,8 +59,8 @@ interface CommitSeen extends Stamp {
   committedAt: string;
   /** The module's files the commit changed, relative to the repository. */
   files: string[];
-  /** The person's sentence the session was working on, when the commit
-   *  was made after it. */
+  /** What was last said to the session, by the person or by another
+   *  session, when the commit was made after it. */
   said?: string;
 }
 
@@ -59,11 +70,12 @@ interface OwnerChange extends Stamp {
   state: "took" | "left";
 }
 
-export type Row = Said | CommitSeen | OwnerChange;
+export type Row = Said | Sent | CommitSeen | OwnerChange;
 
 /** A row before the journal stamps it. */
 type NewRow =
   | Omit<Said, "id" | "at">
+  | Omit<Sent, "id" | "at">
   | Omit<CommitSeen, "id" | "at">
   | Omit<OwnerChange, "id" | "at">;
 

@@ -8,8 +8,21 @@ export type TandemSentence = {
   at: string
   by: 'person' | 'session'
   text: string
+  request?: string
   commits: TandemCommit[]
 }
+
+export type TandemRequest = {
+  id: string
+  direction: 'asked' | 'received'
+  module: string
+  text: string
+  state: string
+  answer?: string
+  message?: string
+}
+
+export type TandemSent = { at: string; to: string; text: string }
 
 export type TandemPlace = {
   dir: string
@@ -23,6 +36,8 @@ export type TandemView = {
   module?: { id: string; label: string; product?: string; repo: string; prefix: string }
   sentences: TandemSentence[]
   loose: TandemCommit[]
+  requests: TandemRequest[]
+  sent: TandemSent[]
   here: TandemPlace[]
   note?: string
 }

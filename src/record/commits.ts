@@ -11,9 +11,9 @@
  * that changed a file the module owns. It does not matter how a commit was
  * made: by the session, by a script it ran, or from the person's own shell.
  *
- * A commit is tied to the person's sentence the session was working on only
- * when it was made after that sentence. Whether it does what the sentence
- * asked is not decided here.
+ * A commit is tied to what was last said to the session, by the person or
+ * by another session, only when it was made after that. Whether it does
+ * what was asked is not decided here.
  *
  * On disk: `modules/<module-id>/seen/<author>.json` holds the commit the
  * checkout stood at when it was last looked at.
@@ -145,7 +145,7 @@ export function fileNewCommits(w: Where): { filed: number; note?: string } {
     const rows = readRows(w.storeRoot, w.module.id);
     const known = new Set(rows.flatMap((r) => (r.kind === "commit" ? [r.sha] : [])));
     const sentence = rows
-      .filter((r): r is Said => r.kind === "said" && r.by === "person" && r.session === w.session)
+      .filter((r): r is Said => r.kind === "said" && r.session === w.session)
       .at(-1);
     // Git keeps a commit's time to the second.
     const since = sentence ? Math.floor(Date.parse(sentence.at) / 1000) * 1000 : undefined;

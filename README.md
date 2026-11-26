@@ -41,6 +41,16 @@ for you, and the machine's data one gesture away.
   `out/record/cli.js`; the rules are in `src/record/`. The session that does
   the work writes nothing of this itself. The pane beside the conversation
   shows the module, the last sentences and the commits under each.
+- **Requests between modules.** When the work on one module needs a change
+  in another, its owner session calls the plugin's tool `ask_module`. The
+  record writes the request (`requests/<id>.json` in the store) and the
+  plugin hands it to the owner session of the other module by its session
+  id. That session builds it and calls `answer_request`; the answer is
+  written on the request and handed back. Both panes show the same state.
+  A request to a module with no owner session waits, and the session that
+  takes the module is shown it with a *Start on* button. A message an owner
+  session sends to another session with Claude Code's own messaging is kept
+  in the journal too.
 - **The MCP server, as a plugin.** `out/mcp/server.js` serves Tandem's
   tools to Claude Code over stdio. The Claude Code plugin in
   `claude-plugins/tandem` declares it as `thinkube-tandem`, through a path

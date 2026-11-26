@@ -5,8 +5,13 @@ import type { TandemShown, TandemView } from '../types'
 
 // The record of a module is kept by Tandem, not by the session that does the
 // work. These hooks are run by the engine: they tell the record's command
-// what entered the session and when a turn ended, and draw what it answers.
+// what entered the session, what it sent and when a turn ended, carry a
+// request between two owner sessions, and draw what the command answers.
 // The command is the extension's own code; nothing is decided here.
+//
+// Two engines load this file on one machine, the editor's and the older
+// command line's, so it keeps to what both know: a tool is served at
+// tool.call.
 
 const PANE = 'tandem'
 // The plugin's skill already answers to /tandem, so the command is /module.
@@ -21,7 +26,15 @@ const shown = atom({ plugin: 'tandem', key: 'shown' } as const, {
 } as TandemShown)
 
 type Answer =
-  | { ok: true; view?: TandemView; filed?: boolean; commits?: number; note?: string }
+  | {
+      ok: true
+      view?: TandemView
+      filed?: boolean
+      commits?: number
+      note?: string
+      request?: string
+      send?: { session: string; text: string }
+    }
   | { ok: false; reason: string }
 
 // Runs the record's command of the installed extension, the same path the
@@ -89,14 +102,106 @@ function page({ view, problem }: TandemShown): string {
   lines.push('**Said to this session**', '')
   if (view.sentences.length === 0) lines.push('Nothing yet.')
   view.sentences.forEach((s, i) => {
-    lines.push(`${i + 1}. ${s.by === 'session' ? '*(from another session)* ' : ''}${cut(s.text)}`)
+    const from = s.request
+      ? `*(request ${s.request})* `
+      : s.by === 'session'
+        ? '*(from another session)* '
+        : ''
+    lines.push(`${i + 1}. ${from}${cut(s.text)}`)
     for (const c of s.commits) lines.push(`   - \`${c.sha.slice(0, 7)}\` ${c.subject}`)
   })
   if (view.loose.length > 0) {
     lines.push('', '**Commits with no sentence**', '')
     for (const c of view.loose) lines.push(`- \`${c.sha.slice(0, 7)}\` ${c.subject}`)
   }
+  if (view.requests.length > 0) {
+    lines.push('', '**Requests between modules**', '')
+    for (const r of view.requests) {
+      const who = r.direction === 'asked' ? `to ${r.module}` : `from ${r.module}`
+      lines.push(`- \`${r.id}\` ${who} · ${r.state}: ${cut(r.text)}`)
+      if (r.answer) lines.push(`   - answer: ${cut(r.answer)}`)
+    }
+  }
+  if (view.sent.length > 0) {
+    lines.push('', '**Sent to other sessions**', '')
+    for (const m of view.sent) lines.push(`- to ${m.to}: ${cut(m.text)}`)
+  }
   return lines.join('\n')
+}
+
+// Masks the credentials the engine finds in a text that is about to be
+// filed. An engine older than this method has nothing to call: the text
+// then goes as it is to the store's own scan, which the record's command
+// runs on every text and which refuses a hit. Any other failure means the
+// text could not be masked: the store is pushed to a remote, so the text is
+// not written there, and undefined says so.
+async function masked($: EngineInterface, text: string): Promise<string | undefined> {
+  const whole = text.length <= MASKED_CHARS
+  const head = whole ? text : text.slice(0, MASKED_CHARS)
+  const mark = whole ? '' : `\n[cut here: the text had ${text.length} characters]`
+  try {
+    return `${await $.session.redact(head)}${mark}`
+  } catch (err) {
+    if (err instanceof TypeError) return `${head}${mark}`
+    await keep($, {
+      ok: false,
+      reason: `A text was not kept: its credentials could not be masked (${String(err)}).`,
+    })
+    return undefined
+  }
+}
+
+// The two tools an owner session works with other modules through. They are
+// in the tool list of a session that owns a module, and behind the tool
+// search of one that does not.
+async function offerTools($: EngineInterface, isOwner: boolean): Promise<void> {
+  await $.tool.register({
+    name: 'ask_module',
+    description:
+      'Ask another module for something the module of this session needs. Use it when the work here depends on a change in another module: that module has an owner session of its own, so do not edit its files. Tandem writes the request in the record of both modules and hands it to the owner session of the module asked. The result says whether it was handed over. The answer comes later, as a message that starts with "Tandem answer to request".',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        module: {
+          type: 'string',
+          description: 'The module to ask: its name as /module shows it, such as "mill", or its id.',
+        },
+        text: {
+          type: 'string',
+          description:
+            'What is needed, and why. Write it in full: the other session knows nothing of this conversation.',
+        },
+      },
+      required: ['module', 'text'],
+    },
+    isDeferred: !isOwner,
+  })
+  await $.tool.register({
+    name: 'answer_request',
+    description:
+      'Answer a request another module made to the module of this session (a message that starts with "Tandem request r-..."). Call it when what was asked is built and pushed, or when it cannot be done. Tandem writes the answer on the request and tells the owner session of the module that asked.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        request: { type: 'string', description: 'The id of the request, such as "r-1a2b3c".' },
+        text: {
+          type: 'string',
+          description: 'What was done and how to use it, or why it was not done.',
+        },
+      },
+      required: ['request', 'text'],
+    },
+    isDeferred: !isOwner,
+  })
+}
+
+// Hands a message of the record to another session, and says how it went.
+async function hand(
+  $: EngineInterface,
+  send: { session: string; text: string },
+): Promise<{ delivered: boolean; reason?: string }> {
+  const went = await $.session.send({ to: { sessionId: send.session }, text: send.text })
+  return went.isDelivered ? { delivered: true } : { delivered: false, reason: went.reason }
 }
 
 export const register: Register = on => {
@@ -107,8 +212,10 @@ export const register: Register = on => {
     })
     const answer = await record($, 'view', {})
     await keep($, answer)
+    const isOwner = answer.ok && answer.view?.module !== undefined
+    await offerTools($, isOwner)
     // Unasked, the pane opens only for a session that already owns a module.
-    if (answer.ok && answer.view?.module) void $.ui.open({ id: PANE, title: TITLE })
+    if (isOwner) void $.ui.open({ id: PANE, title: TITLE })
 
     return next(e)
   })
@@ -123,6 +230,7 @@ export const register: Register = on => {
         ? await record($, 'own', rest.length > 0 ? { dir: rest.join(' ') } : {})
         : await record($, word === 'leave' ? 'leave' : 'view', {})
     await keep($, answer)
+    if (answer.ok && word !== '') await offerTools($, answer.view?.module !== undefined)
     const opened = await $.ui.open({ id: PANE, title: TITLE })
 
     // A surface that draws the pane shows the page there.
@@ -134,26 +242,10 @@ export const register: Register = on => {
     const entered = await next(e)
     if (entered.drop !== undefined || e.command) return entered
 
-    const whole = e.text.length <= MASKED_CHARS
-    let text = whole ? e.text : e.text.slice(0, MASKED_CHARS)
-    try {
-      text = await $.session.redact(text)
-    } catch (err) {
-      // An engine older than this method has nothing to call: the text then
-      // goes as typed to the store's own scan, which the record's command
-      // runs on every prompt and which refuses a hit. Any other failure is
-      // a prompt that could not be masked: the store is pushed to a remote,
-      // so it is not written there, and the person is told it is missing.
-      if (!(err instanceof TypeError)) {
-        await keep($, {
-          ok: false,
-          reason: `A prompt was not kept: its credentials could not be masked (${String(err)}).`,
-        })
-        return entered
-      }
-    }
+    const text = await masked($, e.text)
+    if (text === undefined) return entered
     const answer = await record($, 'said', {
-      text: whole ? text : `${text}\n[cut here: the prompt had ${e.text.length} characters]`,
+      text,
       origin: e.origin.kind,
       surface: await $.session.surface(),
     })
@@ -164,6 +256,69 @@ export const register: Register = on => {
     $.ui.log(`Tandem: a prompt was not kept, the hook failed: ${JSON.stringify(next.error)}`)
     return next(e)
   })
+
+  // A message the session's own model sends to another session is kept as
+  // sent. One to an agent of this session is its own inner work, and one
+  // the record composes is already on its request.
+  on('session.send', async ($, e, next) => {
+    const went = await next(e)
+    if (!went.isDelivered || e.origin.kind !== 'model' || e.agentId !== undefined) return went
+    const agents = await $.agent.list()
+    if (agents.some(a => a.id === e.to || a.name === e.to || a.teammateId === e.to)) return went
+
+    const text = await masked($, e.text)
+    if (text !== undefined) {
+      const answer = await record($, 'sent', { to: e.to, text })
+      if (!answer.ok || answer.view) await keep($, answer)
+    }
+
+    return went
+  }).catch(($, e, next) => {
+    $.ui.log(`Tandem: a sent message was not kept, the hook failed: ${JSON.stringify(next.error)}`)
+    return next(e)
+  })
+
+  on('tool.call', { tool: 'mcp__tandem__ask_module' }, async ($, e) => {
+    const text = await masked($, String(e.text ?? ''))
+    if (text === undefined) return { deny: 'The request could not be masked, so it was not kept.' }
+    const answer = await record($, 'ask', { to: String(e.module ?? ''), text })
+    if (!answer.ok) return { deny: answer.reason }
+    await keep($, answer)
+    if (!answer.send) return { result: `Request ${answer.request} is in the record. ${answer.note}` }
+
+    const went = await hand($, answer.send)
+    await keep(
+      $,
+      await record($, 'handed', { request: answer.request, to: answer.send.session, ...went }),
+    )
+
+    return {
+      result: went.delivered
+        ? `Request ${answer.request} is in the record and was handed to the owner session of the module. Its answer will arrive as a message that starts with "Tandem answer to request ${answer.request}".`
+        : `Request ${answer.request} is in the record, but the owner session of the module was not reached: ${went.reason}. That session is shown the request when it runs again.`,
+    }
+  }).catch(($, e, next) => ({
+    deny: `Tandem could not ask the module, its tool failed: ${JSON.stringify(next.error)}`,
+  }))
+
+  on('tool.call', { tool: 'mcp__tandem__answer_request' }, async ($, e) => {
+    const text = await masked($, String(e.text ?? ''))
+    if (text === undefined) return { deny: 'The answer could not be masked, so it was not kept.' }
+    const answer = await record($, 'answer', { request: String(e.request ?? ''), text })
+    if (!answer.ok) return { deny: answer.reason }
+    await keep($, answer)
+    if (!answer.send) return { result: `The answer is on request ${answer.request}. ${answer.note}` }
+
+    const went = await hand($, answer.send)
+
+    return {
+      result: went.delivered
+        ? `The answer is on request ${answer.request}, and the owner session of the module that asked was told.`
+        : `The answer is on request ${answer.request}. The owner session of the module that asked was not reached: ${went.reason}. It sees the answer in its pane.`,
+    }
+  }).catch(($, e, next) => ({
+    deny: `Tandem could not keep the answer, its tool failed: ${JSON.stringify(next.error)}`,
+  }))
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
@@ -179,8 +334,12 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Markdown } = $.ui.resolve(e)
     const now = await read($, shown)
-    const act = async (command: string, input: Record<string, unknown>) =>
-      keep($, await record($, command, input))
+    const act = async (command: string, input: Record<string, unknown>) => {
+      const answer = await record($, command, input)
+      await keep($, answer)
+      if (answer.ok && command !== 'view') await offerTools($, answer.view?.module !== undefined)
+    }
+    const waiting = now.view?.requests.filter(r => r.message !== undefined) ?? []
 
     return (
       <Box flexDirection="column">
@@ -205,6 +364,19 @@ export const register: Register = on => {
             ))}
           </Box>
         )}
+        {waiting.map(r => (
+          <Box key={r.id}>
+            <Button
+              key={`start:${r.id}`}
+              label={`Start on ${r.id}`}
+              variant="primary"
+              onPress={async () => {
+                if (r.message !== undefined) await $.prompt.submit({ text: r.message })
+              }}
+            />
+            <Text dimColor> from {r.module}, not given to this session yet</Text>
+          </Box>
+        ))}
         <Box>
           <Button key="refresh" label="Refresh" onPress={() => act('view', {})} />
           {now.view?.module && (

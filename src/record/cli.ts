@@ -14,12 +14,22 @@
 import * as fs from "node:fs";
 import { AUTHOR_MISSING, currentAuthor } from "../core/author";
 import { storeRootOf } from "../core/storeRoot";
-import { leaveModule, own, said, turnEnded, view } from "./commands";
+import { answer, ask, handed, leaveModule, own, said, sent, turnEnded, view } from "./commands";
 import type { Answer, Deps } from "./commands";
 
-const COMMANDS = { said, turn: turnEnded, own, leave: leaveModule, view } as const;
+const COMMANDS = {
+  said,
+  sent,
+  turn: turnEnded,
+  own,
+  leave: leaveModule,
+  view,
+  ask,
+  handed,
+  answer,
+} as const;
 
-function answer(command: string, input: string): Answer {
+function answerTo(command: string, input: string): Answer {
   const author = currentAuthor();
   if (!author) return { ok: false, reason: AUTHOR_MISSING };
   if (!Object.hasOwn(COMMANDS, command))
@@ -34,7 +44,7 @@ function answer(command: string, input: string): Answer {
 
 let out: Answer;
 try {
-  out = answer(process.argv[2] ?? "", fs.readFileSync(0, "utf8"));
+  out = answerTo(process.argv[2] ?? "", fs.readFileSync(0, "utf8"));
 } catch (err) {
   out = { ok: false, reason: err instanceof Error ? err.message : String(err) };
 }
