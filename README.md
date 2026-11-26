@@ -33,7 +33,7 @@ for you, and the machine's data one gesture away.
   (`thinkubeTandem.storeRoot`).
 - **The record of a module.** A module is a folder with a `thinkube.yaml`
   of its own, or a repository that has none. One Claude Code session owns a
-  module (`/tandem own <folder>`, or *Own* in the Tandem pane). From then on
+  module (`/module own <folder>`, or *Own* in the Tandem pane). From then on
   the plugin's hooks module (`claude-plugins/tandem/hooks/register.tsx`),
   which Claude Code runs, files in the store what the person types in that
   session, the messages other sessions send to it, and, when a turn ends,
