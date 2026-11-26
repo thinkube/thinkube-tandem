@@ -26,6 +26,7 @@ import { discoverProjects } from "../core/identity";
 import type { EnabledProject } from "../core/identity";
 import { listThinkingSpaces, nextTepNumber, thinkingSpaceDirs } from "../core/spaces";
 import { allCards } from "../core/cards";
+import { storeRootOf } from "../core/storeRoot";
 import { thinkubeDeclaration } from "../core/thinkubeYaml";
 import { configureDocsRoots, docsRootsOf } from "../core/docsDuty";
 import { factsOf } from "../run/facts";
@@ -37,10 +38,7 @@ import { checkReadiness, readinessNow } from "../run/readiness";
 const EDITOR_STORAGE =
   "/home/thinkube/.local/share/code-server/User/globalStorage/thinkube.thinkube-tandem";
 
-/** The store, from the environment or the same default the editor uses. */
-export function storeRootOf(env: NodeJS.ProcessEnv = process.env): string {
-  return env.TANDEM_STORE || path.join(env.HOME ?? "~", "thinkube-tandem-store");
-}
+export { storeRootOf };
 
 /** The project a directory belongs to, by its card in the store. */
 export function projectAt(repoRoot: string, storeRoot: string): EnabledProject | undefined {

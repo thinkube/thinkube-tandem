@@ -9,6 +9,7 @@ Everything Tandem records about your work lives in the store, a git repository o
 * *Your projects:* which code repository each project belongs to.
 * *Your thinking spaces:* your sentences exactly as you typed them, and each space's history, snapshot by snapshot.
 * *Your signed work:* each piece of work, by its number (`TEP-<author>-<n>`, as the *Cuts* row shows it), its run's log, the delivery with its proofs, and the reading of your code made for each sentence.
+* *The record of each module:* a module is a folder with a `thinkube.yaml` of its own, or a repository that has none. For each module that one of your Claude Code sessions owns, `modules/<module>/journal/` keeps what you typed in that session, the messages other sessions sent to it, and each commit that changed the module's files. Claude Code writes these rows itself, at every prompt and at the end of every turn; the session that does the work does not report them.
 * *The defect ledger:* one file per month, `defects/<YYYY-MM>.jsonl`, shared by every space, so deleting a space never deletes the record of what went wrong in it. xref:defect-ledger.adoc[The defect ledger: ODC for work done with an AI] says why it is kept.
 * *Work started outside the editor:* each space keeps `runs/working-out.log`, a line for each step of work started through the MCP server, such as reading a draft, thinking or choosing a set. The side panel of the space offers *Read the working-out log* when there is one.
 * *Readiness answers:* the last readiness answer for each repository and commit, so every window and the MCP server show the same answer without checking again.
@@ -20,4 +21,4 @@ The store is at `~/thinkube-tandem-store` in Thinkube IDE. A second machine writ
 
 * *Autosync.* The store commits and pushes itself whenever it has changed; the pushed remote is the backup.
 * *Secret scan.* Every write is scanned for secret-shaped content, such as tokens, keys and private key blocks; a hit refuses the write and names the pattern.
-* *Your words, verbatim.* Your sentences are stored as typed and never edited by the machine.
+* *Your words, verbatim.* Your sentences are stored as typed and never edited by the machine. One exception: in the record of a module, a credential that Claude Code recognises in a prompt is masked before the prompt is stored, and a prompt that still holds what looks like a secret is not stored; the Tandem pane says so.

@@ -3,7 +3,8 @@
     ".": {
       "entry": [
         "src/mcp/server.ts",
-        "src/run/driver.ts"
+        "src/run/driver.ts",
+        "src/record/cli.ts"
       ],
       "project": [
         "src/**/*.ts"

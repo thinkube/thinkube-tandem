@@ -31,6 +31,16 @@ for you, and the machine's data one gesture away.
 - **The store.** Spaces, products and the defect ledger are kept in the
   tandem store, by default `~/thinkube-tandem-store`
   (`thinkubeTandem.storeRoot`).
+- **The record of a module.** A module is a folder with a `thinkube.yaml`
+  of its own, or a repository that has none. One Claude Code session owns a
+  module (`/tandem own <folder>`, or *Own* in the Tandem pane). From then on
+  the plugin's hooks module (`claude-plugins/tandem/hooks/register.tsx`),
+  which Claude Code runs, files in the store what the person types in that
+  session, the messages other sessions send to it, and, when a turn ends,
+  each commit that changed the module's files. The hooks call
+  `out/record/cli.js`; the rules are in `src/record/`. The session that does
+  the work writes nothing of this itself. The pane beside the conversation
+  shows the module, the last sentences and the commits under each.
 - **The MCP server, as a plugin.** `out/mcp/server.js` serves Tandem's
   tools to Claude Code over stdio. The Claude Code plugin in
   `claude-plugins/tandem` declares it as `thinkube-tandem`, through a path
